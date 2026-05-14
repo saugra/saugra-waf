@@ -1,0 +1,662 @@
+# CAPSTONE SPEC: Saugra WAF
+
+## Project Name
+
+**Saugra WAF**
+
+**Meaning:** Derived from the Lithuanian root *Sauga*, meaning security/protection.
+
+## Project Summary
+
+Saugra WAF is a lightweight, Rust-based, AI-assisted Web Application Firewall designed to protect web applications and APIs from common security threats, including OWASP Top 10 risks. It is built to be easy to deploy behind common reverse proxies such as Nginx and Apache, while also being capable of running as a standalone reverse proxy.
+
+The goal is not to replace traditional WAF rules with AI, but to combine proven rule-based protection, behavioral scoring, rate limiting, and AI-assisted explanations to help developers and small teams secure their applications with less configuration complexity.
+
+## Problem Statement
+
+Many small teams, startups, and developers need web application protection but face challenges with existing WAF solutions:
+
+- Cloud WAFs can be expensive or vendor-locked.
+- Traditional WAFs can be hard to configure.
+- False positives are difficult to understand and tune.
+- Open-source WAF tooling can feel complex for beginners.
+- API-first applications need modern JSON, REST, and GraphQL-aware protection.
+
+Saugra WAF addresses this by offering a developer-friendly, self-hosted, Rust-powered WAF with simple configuration and AI-assisted observability.
+
+## Target Users
+
+- Small SaaS teams
+- API-first startups
+- DevOps engineers
+- Backend developers
+- Self-hosted application owners
+- Students and security learners
+- Organizations that want lightweight protection without full cloud lock-in
+
+## Core Product Promise
+
+Saugra WAF should be:
+
+1. **Secure** — protects against common web threats and OWASP Top 10 risks.
+2. **Fast** — built in Rust for high-performance request inspection.
+3. **Easy to configure** — uses simple YAML/TOML configuration.
+4. **Proxy compatible** — works with Nginx, Apache, and standalone deployments.
+5. **Explainable** — shows why requests were blocked and suggests safer tuning.
+6. **Developer-friendly** — includes logs, dashboard, CLI tools, and Docker support.
+
+## High-Level Architecture
+
+```txt
+Client
+  ↓
+Nginx / Apache / Direct Traffic
+  ↓
+Saugra WAF
+  ↓
+Backend Application
+```
+
+Saugra can run in two main modes:
+
+### 1. Behind Existing Proxy
+
+```txt
+Client → Nginx/Apache → Saugra WAF → Backend App
+```
+
+This mode is useful for teams already using Nginx or Apache.
+
+### 2. Standalone Reverse Proxy
+
+```txt
+Client → Saugra WAF → Backend App
+```
+
+This mode is useful for simpler deployments, demos, Docker Compose, and development environments.
+
+## Core MVP Features
+
+### 1. Rust Reverse Proxy
+
+Saugra should include a lightweight reverse proxy capable of:
+
+- Receiving HTTP/HTTPS requests
+- Forwarding requests to upstream backend services
+- Inspecting request method, path, headers, query parameters, and body
+- Returning allow/block decisions
+- Supporting host-based routing
+- Supporting path-based routing
+- Supporting upstream health checks
+
+Recommended Rust libraries:
+
+- `axum`
+- `hyper`
+- `tower`
+- `tokio`
+- `serde`
+- `serde_yaml`
+- `tracing`
+
+## 2. OWASP Top 10 Protection
+
+Saugra should provide protection for common OWASP Top 10-style risks, including:
+
+- Broken access control patterns
+- SQL injection
+- Cross-site scripting
+- Command injection
+- Path traversal
+- Server-side request forgery patterns
+- Insecure file upload patterns
+- Authentication abuse
+- API abuse
+- Security misconfiguration exposure
+- Suspicious vulnerable component fingerprints
+- Cryptographic misconfiguration hints
+
+The MVP should start with practical detection rules for:
+
+- SQL injection
+- XSS
+- Path traversal
+- Command injection
+- Suspicious user agents
+- Scanner/bot behavior
+- Oversized request bodies
+- Suspicious file upload extensions
+
+## 3. Rule Engine
+
+The rule engine should be rule-first, not AI-first.
+
+Saugra should support:
+
+- Built-in security rules
+- Custom user-defined rules
+- Rule IDs
+- Rule descriptions
+- Rule severity levels
+- Rule categories
+- Rule enable/disable options
+- Per-route exclusions
+- Monitor mode
+- Block mode
+
+Example rule structure:
+
+```yaml
+rules:
+  - id: SAUGRA-SQLI-001
+    name: Basic SQL Injection Pattern
+    category: injection
+    severity: high
+    target: query
+    pattern: "(?i)(union select|or 1=1|drop table)"
+    action: block
+```
+
+## 4. CRS-Compatible Direction
+
+Saugra should aim to become compatible with OWASP Core Rule Set concepts.
+
+MVP support may include:
+
+- CRS-inspired rule categories
+- Paranoia level concept
+- Severity score
+- Rule exclusions
+- Rule IDs
+- Detection phases
+
+Future versions may support importing a subset of ModSecurity/CRS-style rules.
+
+Example configuration:
+
+```yaml
+site:
+  name: api.example.com
+  upstream: http://127.0.0.1:8080
+
+mode: block
+
+rules:
+  owasp_crs: true
+  paranoia_level: 1
+
+exclusions:
+  - path: /api/upload
+    disable_rules:
+      - file_upload_strict
+```
+
+## 5. Nginx Compatibility
+
+Saugra should provide simple integration with Nginx.
+
+Example Nginx configuration:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8787;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+Saugra CLI should support:
+
+```bash
+saugra init nginx
+saugra test-config
+saugra reload
+```
+
+## 6. Apache Compatibility
+
+Saugra should also provide simple Apache reverse-proxy integration.
+
+Example Apache configuration:
+
+```apache
+ProxyPass / http://127.0.0.1:8787/
+ProxyPassReverse / http://127.0.0.1:8787/
+RequestHeader set X-Forwarded-Proto "https"
+```
+
+Saugra CLI should support:
+
+```bash
+saugra init apache
+saugra test-config
+saugra reload
+```
+
+## 7. Configuration System
+
+Saugra should use a simple configuration file.
+
+Recommended format: YAML.
+
+Example:
+
+```yaml
+server:
+  listen: 0.0.0.0:8787
+  mode: block
+
+upstreams:
+  - name: main-api
+    host: api.example.com
+    target: http://127.0.0.1:8080
+
+security:
+  max_body_size: 2mb
+  block_suspicious_user_agents: true
+  enable_rate_limiting: true
+
+rate_limit:
+  requests_per_minute: 120
+  burst: 30
+
+ai:
+  enabled: true
+  mode: explain_only
+
+logging:
+  format: json
+  level: info
+```
+
+Supported modes:
+
+- `off` — WAF disabled
+- `monitor` — log suspicious traffic but do not block
+- `block` — actively block malicious traffic
+
+## 8. AI-Assisted Features
+
+AI should assist, not fully control blocking decisions.
+
+Recommended MVP AI features:
+
+- Explain why a request was blocked
+- Summarize attack logs
+- Suggest possible rule exclusions for false positives
+- Classify requests into categories such as SQLi, XSS, bot, scanner, brute force, or unknown
+- Provide a risk score explanation
+
+Recommended decision model:
+
+```txt
+Final decision = Rules + Rate Limiting + Behavior Score + Optional AI Risk Score
+```
+
+AI should not be the only blocking mechanism in the MVP.
+
+## 9. Rate Limiting and Bot Defense
+
+Saugra should include basic traffic abuse protection:
+
+- Per-IP rate limiting
+- Per-route rate limiting
+- Login brute-force protection
+- Suspicious user-agent detection
+- Known scanner pattern detection
+- Request burst protection
+- Temporary IP blocking
+- Allowlist and blocklist support
+
+Example:
+
+```yaml
+rate_limit:
+  default:
+    requests_per_minute: 120
+    burst: 30
+
+  routes:
+    - path: /login
+      requests_per_minute: 10
+      burst: 5
+```
+
+## 10. API Security Features
+
+Because many modern applications are API-first, Saugra should support:
+
+- JSON body inspection
+- REST API protection
+- Oversized payload blocking
+- Suspicious content-type blocking
+- Basic JWT validation helper
+- GraphQL query depth limit in future versions
+- OpenAPI schema import in future versions
+
+MVP API protections:
+
+- Inspect JSON request bodies
+- Limit body size
+- Detect malicious payloads inside JSON fields
+- Apply different rules per route
+
+## 11. Logging and Observability
+
+Saugra should produce structured logs.
+
+Each security event should include:
+
+- Timestamp
+- Request ID
+- Client IP
+- HTTP method
+- Path
+- Rule ID
+- Rule name
+- Severity
+- Action taken
+- Risk score
+- OWASP category
+- Explanation
+
+Example JSON log:
+
+```json
+{
+  "timestamp": "2026-05-14T19:00:00Z",
+  "request_id": "req_12345",
+  "client_ip": "192.168.1.10",
+  "method": "GET",
+  "path": "/search?q=' OR 1=1",
+  "rule_id": "SAUGRA-SQLI-001",
+  "severity": "high",
+  "action": "blocked",
+  "risk_score": 92,
+  "category": "sql_injection",
+  "explanation": "Query parameter matched a common SQL injection pattern."
+}
+```
+
+## 12. Developer Dashboard
+
+The dashboard should help users understand what is happening.
+
+MVP dashboard features:
+
+- Total requests
+- Blocked requests
+- Allowed requests
+- Top attacking IPs
+- Most targeted paths
+- Recent blocked requests
+- Rule triggered
+- Risk score
+- OWASP category
+- Request timeline
+- False positive review
+
+Future dashboard features:
+
+- Rule tuning assistant
+- Attack trend charts
+- Geo/IP intelligence
+- Team accounts
+- Multi-site management
+- Export reports
+
+## 13. CLI Tool
+
+Saugra should include a CLI for setup and management.
+
+Recommended commands:
+
+```bash
+saugra init
+saugra init nginx
+saugra init apache
+saugra test-config
+saugra run
+saugra reload
+saugra rules list
+saugra rules enable <rule-id>
+saugra rules disable <rule-id>
+saugra logs tail
+saugra explain <request-id>
+```
+
+## 14. Deployment Options
+
+Saugra should be easy to deploy in different environments.
+
+MVP deployment targets:
+
+- Single binary
+- Docker image
+- Docker Compose
+- Linux systemd service
+
+Future deployment targets:
+
+- Kubernetes sidecar
+- Kubernetes ingress integration
+- Helm chart
+- Cloud marketplace image
+
+Example Docker Compose:
+
+```yaml
+services:
+  saugra:
+    image: saugra/saugra:latest
+    ports:
+      - "8787:8787"
+    volumes:
+      - ./saugra.yml:/etc/saugra/saugra.yml
+    depends_on:
+      - app
+
+  app:
+    image: example/backend:latest
+    ports:
+      - "8080:8080"
+```
+
+## 15. Security Modes
+
+Saugra should support multiple operating modes:
+
+### Off Mode
+
+No inspection or blocking. Useful for disabling protection temporarily.
+
+### Monitor Mode
+
+Logs suspicious traffic but does not block. Useful for testing and reducing false positives.
+
+### Block Mode
+
+Actively blocks malicious traffic.
+
+### Strict Mode
+
+Future mode with stronger rules, higher paranoia level, and more aggressive blocking.
+
+## 16. False Positive Management
+
+False positives are a major WAF problem, so Saugra should make tuning easy.
+
+Features:
+
+- Monitor mode before block mode
+- Rule exclusions per route
+- Rule exclusions per parameter
+- Severity-based blocking
+- AI explanation for blocked requests
+- Suggested safe exclusions
+- Temporary allow action
+
+Example:
+
+```yaml
+exclusions:
+  - path: /api/articles
+    params:
+      - content
+    disable_rules:
+      - SAUGRA-XSS-002
+```
+
+## 17. Suggested MVP Scope
+
+The first version should avoid being too large.
+
+Recommended MVP:
+
+1. Rust reverse proxy
+2. YAML configuration
+3. Built-in SQLi, XSS, path traversal, command injection rules
+4. Monitor and block modes
+5. Nginx integration template
+6. Apache integration template
+7. JSON security logs
+8. Basic rate limiting
+9. Simple dashboard
+10. AI explanation for blocked requests
+11. Docker deployment
+12. CLI commands for init, run, reload, and config testing
+
+## 18. Future Roadmap
+
+### Version 0.2
+
+- More complete OWASP Top 10 mapping
+- Rule exclusion UI
+- Better dashboard charts
+- IP reputation integration
+- OpenAPI schema import
+- GraphQL query inspection
+
+### Version 0.3
+
+- CRS-style rule import
+- Plugin system
+- Multi-site support
+- Team accounts
+- Alert notifications
+- Slack/email/webhook alerts
+
+### Version 1.0
+
+- Production-ready WAF engine
+- Stable rule format
+- Kubernetes support
+- Helm chart
+- Cloud deployment templates
+- Enterprise reporting
+- Paid hosted dashboard option
+
+## 19. Differentiation
+
+Saugra should differentiate itself by being:
+
+- Rust-native and fast
+- Easy to configure
+- AI-assisted but not AI-dependent
+- Friendly to developers and students
+- Compatible with Nginx and Apache
+- Suitable for APIs, not only traditional websites
+- Self-hosted by default
+- Transparent and explainable
+
+## 20. Success Criteria
+
+The capstone project is successful if it can:
+
+- Run as a reverse proxy
+- Protect a sample backend app
+- Detect and block SQLi, XSS, path traversal, and command injection attempts
+- Run behind Nginx
+- Run behind Apache
+- Log blocked requests in JSON
+- Show blocked requests in a dashboard
+- Explain why a request was blocked
+- Support monitor and block modes
+- Be configured using a simple YAML file
+
+## 21. Example Demo Scenario
+
+A demo can include:
+
+1. Run a vulnerable demo backend app.
+2. Place Saugra WAF in front of it.
+3. Send normal requests and show they are allowed.
+4. Send SQL injection payloads and show they are blocked.
+5. Send XSS payloads and show they are blocked.
+6. Show logs in JSON format.
+7. Open the dashboard and view blocked attacks.
+8. Click a blocked request and show the AI explanation.
+9. Switch from monitor mode to block mode.
+10. Demonstrate Nginx or Apache proxy compatibility.
+
+## 22. Recommended Tech Stack
+
+### Core Engine
+
+- Rust
+- Axum or Hyper
+- Tokio
+- Tower middleware
+- Serde
+- Serde YAML
+- Regex engine
+- Tracing
+
+### Storage
+
+MVP:
+
+- SQLite or local JSON logs
+
+Later:
+
+- PostgreSQL
+- ClickHouse for high-volume logs
+- Redis for distributed rate limiting
+
+### Dashboard
+
+Options:
+
+- React / Next.js
+- SvelteKit
+- Rust-based frontend with Leptos/Yew, if desired
+
+### AI Layer
+
+MVP:
+
+- Local explain-only module
+- Optional LLM API integration
+
+Later:
+
+- Local ONNX model
+- Anomaly detection model
+- Privacy-preserving local inference
+
+## 23. Final Recommendation
+
+Saugra should be positioned as:
+
+> **A lightweight Rust-based, AI-assisted Web Application Firewall for modern web apps and APIs.**
+
+The strongest product direction is not pure AI blocking. The better and more trustworthy approach is:
+
+```txt
+Rules-first protection + rate limiting + behavior scoring + AI explanations
+```
+
+This makes Saugra practical, safer, easier to trust, and more suitable for a serious cybersecurity business.

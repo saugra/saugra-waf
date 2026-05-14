@@ -1,0 +1,26 @@
+server:
+  listen: 127.0.0.1:8787
+  mode: monitor
+
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+
+security:
+  max_body_size: 2mb
+  enable_rate_limiting: true
+  block_suspicious_user_agents: true
+  inspect_json_body: true
+
+rules:
+  owasp_crs: true
+  paranoia_level: 1
+
+ai:
+  enabled: true
+  mode: explain_only
+
+logging:
+  format: json
+  level: info
