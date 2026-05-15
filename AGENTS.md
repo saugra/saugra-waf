@@ -48,8 +48,8 @@ saugra/
 │   └── express-nginx/
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   ├── PLANS.md
 │   └── CAPSTONE_SPEC.md
+├── ROADMAP.md
 ├── tests/
 │   ├── integration/
 │   └── attacks/
@@ -256,7 +256,7 @@ Keep documentation practical and demo-friendly:
 - README quick start
 - CAPSTONE_SPEC.md product specification
 - ARCHITECTURE.md technical architecture
-- PLANS.md implementation plan
+- ROADMAP.md public implementation roadmap
 - deployment examples
 - demo commands
 

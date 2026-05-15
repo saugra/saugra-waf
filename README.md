@@ -12,6 +12,25 @@ Rules-first protection + rate limiting + behavior scoring + AI explanations
 AI is used for explanations and tuning support. Blocking decisions should come
 from deterministic rules, rate limits, and explicit configuration.
 
+## Why Saugra?
+
+Saugra is not trying to replace mature, established WAF platforms today. Those
+tools are powerful and battle-tested, but they can be complex to configure,
+tune, and explain.
+
+Saugra focuses on a different developer experience: a lightweight Rust-based WAF
+that is simple to configure, easy to run locally, explainable by default, and
+friendly to modern API-first applications.
+
+Choose Saugra if you want:
+
+- Simple YAML configuration
+- Monitor-first deployment
+- Clear JSON security logs
+- Explainable rule decisions
+- Nginx and Apache compatibility
+- A Rust-based self-hosted WAF
+
 ## Current Status
 
 This repository now has the Phase 1 foundation:
@@ -23,6 +42,13 @@ This repository now has the Phase 1 foundation:
 - Structured logging setup
 - Minimal Axum service with `/_saugra/health`
 - Example config at `configs/saugra.example.yml`
+
+See `ROADMAP.md` for the public development roadmap.
+
+Public docs:
+
+- `docs/ARCHITECTURE.md` — technical architecture
+- `docs/CAPSTONE_SPEC.md` — capstone product specification
 
 ## Quick Start
 

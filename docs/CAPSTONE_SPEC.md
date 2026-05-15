@@ -24,6 +24,32 @@ Many small teams, startups, and developers need web application protection but f
 
 Saugra WAF addresses this by offering a developer-friendly, self-hosted, Rust-powered WAF with simple configuration and AI-assisted observability.
 
+## Positioning Against Established WAFs
+
+Saugra should be positioned honestly against mature, established WAF platforms.
+Those tools are powerful, widely deployed, and battle-tested. Saugra should not
+claim to replace them in production environments today.
+
+Saugra's differentiation is developer experience:
+
+- simpler configuration
+- Rust-based single-binary deployment
+- explainable decisions
+- API-first inspection direction
+- monitor-first tuning workflow
+- local-first operation with future centralized management options
+
+The product promise should be:
+
+```txt
+Modern, developer-friendly, rules-first protection with explainable decisions.
+```
+
+Saugra should communicate its scope clearly: it is an additional protection
+layer that combines deterministic rules, rate limiting, observability, and
+explainable security events. It should be evaluated and tuned in monitor mode
+before being used to block production traffic.
+
 ## Target Users
 
 - Small SaaS teams
@@ -170,7 +196,8 @@ MVP support may include:
 - Rule IDs
 - Detection phases
 
-Future versions may support importing a subset of ModSecurity/CRS-style rules.
+Future versions may support importing a subset of established rule formats and
+community rule sets.
 
 Example configuration:
 
