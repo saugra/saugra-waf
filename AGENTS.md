@@ -12,6 +12,29 @@ Rules-first protection + rate limiting + behavior scoring + AI explanations
 
 AI must assist with explanations and tuning. It must not be the only blocking mechanism in the MVP.
 
+## Production-Ready MVP Rule
+
+Saugra is intended to be usable in production as soon as the MVP is complete.
+Agents must avoid throwaway implementations for security-critical features.
+Build each feature once as a production-oriented foundation, then improve it
+incrementally. Do not implement a temporary version that must be replaced later
+unless it is clearly isolated behind a stable interface and the follow-up work is
+tracked immediately.
+
+Security features must be designed for real deployment from the start:
+
+- Rate limiting must support a durable or distributed backend for production
+  deployments. In-memory rate limiting is acceptable only as a local/demo backend
+  behind a stable storage abstraction, not as the production endpoint.
+- Request logs and explanations must be retained in a queryable local store or
+  explicitly configured external store. Do not rely only on stdout for production
+  workflows.
+- Blocking behavior must be deterministic, configurable, observable, and tested.
+- Any feature marked done for MVP must have a clear path to production use
+  without a rewrite.
+- Default guidance should be monitor-first for safe rollout, then block mode
+  after tuning.
+
 ## Primary Goal
 
 Build a working capstone MVP that can:
@@ -93,11 +116,14 @@ Use these libraries unless there is a strong reason not to:
 - Prefer simple, readable code over clever abstractions.
 - Keep the WAF engine separate from proxy transport code.
 - Make decisions explainable.
+- Prefer stable interfaces around storage, rate limiting, logging, and proxy
+  transport so implementations can improve without rewriting call sites.
 - Never silently block traffic without producing a security event.
 - Support `monitor` mode before `block` mode.
 - Avoid panics in request-handling paths.
 - Treat config parsing errors as clear user-facing errors.
-- Write tests for rules, config validation, and attack detection.
+- Write tests for rules, config validation, attack detection, monitor/block
+  behavior, rate limiting, and production deployment assumptions.
 
 ## Security Principles
 
@@ -112,6 +138,9 @@ Important rules:
 - Support allowlists and blocklists.
 - Default new deployments to `monitor` mode where appropriate.
 - Provide clear false-positive tuning options.
+- Do not mark a security feature production-ready if it resets state on process
+  restart, cannot work across multiple Saugra instances, or cannot be observed
+  and tuned from logs.
 
 ## MVP Rule Categories
 
@@ -181,6 +210,16 @@ security:
   block_suspicious_user_agents: true
   inspect_json_body: true
 
+rate_limit:
+  backend: redis
+  redis_url: redis://127.0.0.1:6379
+  requests_per_minute: 120
+  burst: 30
+  routes:
+    - path: /sensitive-action
+      requests_per_minute: 10
+      burst: 5
+
 rules:
   owasp_crs: true
   paranoia_level: 1
@@ -192,6 +231,9 @@ ai:
 logging:
   format: json
   level: info
+  event_log_path: /var/log/saugra/saugra-events.jsonl
+  event_log_max_size: 100mb
+  event_log_max_files: 30
 ```
 
 ## CLI Requirements
@@ -271,3 +313,8 @@ The MVP is done when a user can:
 5. Send attack payloads and see them blocked or logged.
 6. View structured JSON logs.
 7. Run `saugra explain <request-id>`.
+8. Configure production-safe rate limiting with durable or distributed state.
+9. Restart Saugra without losing the security events needed for explanation and
+   audit workflows.
+10. Run the documented deployment path without replacing core security
+    implementations.

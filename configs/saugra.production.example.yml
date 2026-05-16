@@ -14,7 +14,8 @@ security:
   inspect_json_body: true
 
 rate_limit:
-  backend: memory
+  backend: redis
+  redis_url: redis://127.0.0.1:6379
   requests_per_minute: 120
   burst: 30
   routes:
@@ -33,6 +34,6 @@ ai:
 logging:
   format: json
   level: info
-  event_log_path: logs/saugra-events.jsonl
+  event_log_path: /var/log/saugra/saugra-events.jsonl
   event_log_max_size: 100mb
-  event_log_max_files: 10
+  event_log_max_files: 30

@@ -17,6 +17,16 @@ pub enum ConfigError {
     InvalidUpstreamTarget { name: String },
     #[error("security.max_body_size must be a positive byte size, for example 2mb")]
     InvalidMaxBodySize,
+    #[error("logging.event_log_max_size must be a positive byte size, for example 100mb")]
+    InvalidEventLogMaxSize,
+    #[error("logging.event_log_max_files must be greater than zero")]
+    InvalidEventLogMaxFiles,
+    #[error("rate_limit.requests_per_minute must be greater than zero")]
+    InvalidRateLimit,
+    #[error("rate_limit.routes entries must include a non-empty path")]
+    InvalidRateLimitRoute,
+    #[error("rate_limit.redis_url is required when rate_limit.backend is redis")]
+    MissingRedisUrl,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
 }
@@ -27,6 +37,8 @@ pub struct SaugraConfig {
     pub upstreams: Vec<UpstreamConfig>,
     #[serde(default)]
     pub security: SecurityConfig,
+    #[serde(default)]
+    pub rate_limit: RateLimitConfig,
     #[serde(default)]
     pub rules: RuleSettings,
     #[serde(default)]
@@ -88,6 +100,54 @@ impl Default for SecurityConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct RateLimitConfig {
+    #[serde(default)]
+    pub backend: RateLimitBackend,
+    #[serde(default)]
+    pub redis_url: Option<String>,
+    #[serde(default = "default_requests_per_minute")]
+    pub requests_per_minute: u32,
+    #[serde(default = "default_rate_limit_burst")]
+    pub burst: u32,
+    #[serde(default)]
+    pub routes: Vec<RouteRateLimitConfig>,
+}
+
+impl Default for RateLimitConfig {
+    fn default() -> Self {
+        Self {
+            backend: RateLimitBackend::Memory,
+            redis_url: None,
+            requests_per_minute: default_requests_per_minute(),
+            burst: default_rate_limit_burst(),
+            routes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RouteRateLimitConfig {
+    pub path: String,
+    #[serde(default = "default_requests_per_minute")]
+    pub requests_per_minute: u32,
+    #[serde(default = "default_rate_limit_burst")]
+    pub burst: u32,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RateLimitBackend {
+    Memory,
+    Redis,
+}
+
+impl Default for RateLimitBackend {
+    fn default() -> Self {
+        Self::Memory
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct RuleSettings {
     #[serde(default = "default_true")]
     pub owasp_crs: bool,
@@ -127,6 +187,12 @@ pub struct LoggingConfig {
     pub format: String,
     #[serde(default = "default_log_level")]
     pub level: String,
+    #[serde(default = "default_event_log_path")]
+    pub event_log_path: String,
+    #[serde(default = "default_event_log_max_size")]
+    pub event_log_max_size: String,
+    #[serde(default = "default_event_log_max_files")]
+    pub event_log_max_files: usize,
 }
 
 impl Default for LoggingConfig {
@@ -134,6 +200,9 @@ impl Default for LoggingConfig {
         Self {
             format: default_log_format(),
             level: default_log_level(),
+            event_log_path: default_event_log_path(),
+            event_log_max_size: default_event_log_max_size(),
+            event_log_max_files: default_event_log_max_files(),
         }
     }
 }
@@ -164,6 +233,40 @@ impl SaugraConfig {
             return Err(ConfigError::InvalidMaxBodySize);
         }
 
+        if parse_byte_size(&self.logging.event_log_max_size).is_none() {
+            return Err(ConfigError::InvalidEventLogMaxSize);
+        }
+
+        if self.logging.event_log_max_files == 0 {
+            return Err(ConfigError::InvalidEventLogMaxFiles);
+        }
+
+        if self.rate_limit.requests_per_minute == 0 {
+            return Err(ConfigError::InvalidRateLimit);
+        }
+
+        for route in &self.rate_limit.routes {
+            if route.path.trim().is_empty() {
+                return Err(ConfigError::InvalidRateLimitRoute);
+            }
+
+            if route.requests_per_minute == 0 {
+                return Err(ConfigError::InvalidRateLimit);
+            }
+        }
+
+        if self.rate_limit.backend == RateLimitBackend::Redis
+            && self
+                .rate_limit
+                .redis_url
+                .as_deref()
+                .unwrap_or("")
+                .trim()
+                .is_empty()
+        {
+            return Err(ConfigError::MissingRedisUrl);
+        }
+
         if self.ai.enabled && self.ai.mode != "explain_only" {
             return Err(ConfigError::InvalidAiMode);
         }
@@ -182,6 +285,10 @@ impl SaugraConfig {
         parse_byte_size(&self.security.max_body_size).ok_or(ConfigError::InvalidMaxBodySize)
     }
 
+    pub fn event_log_max_size_bytes(&self) -> Result<u64, ConfigError> {
+        parse_byte_size(&self.logging.event_log_max_size).ok_or(ConfigError::InvalidEventLogMaxSize)
+    }
+
     pub fn summary(&self) -> String {
         let upstreams = self
             .upstreams
@@ -191,12 +298,16 @@ impl SaugraConfig {
             .join(",");
 
         format!(
-            "listen={}, mode={:?}, upstreams=[{}], max_body_size={}, rate_limiting={}, inspect_json_body={}, owasp_crs={}, paranoia_level={}",
+            "listen={}, mode={:?}, upstreams=[{}], max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, inspect_json_body={}, owasp_crs={}, paranoia_level={}",
             self.server.listen,
             self.server.mode,
             upstreams,
             self.security.max_body_size,
             self.security.enable_rate_limiting,
+            self.rate_limit.backend,
+            self.rate_limit.requests_per_minute,
+            self.rate_limit.burst,
+            self.rate_limit.routes.len(),
             self.security.inspect_json_body,
             self.rules.owasp_crs,
             self.rules.paranoia_level
@@ -232,6 +343,14 @@ fn default_paranoia_level() -> u8 {
     1
 }
 
+fn default_requests_per_minute() -> u32 {
+    120
+}
+
+fn default_rate_limit_burst() -> u32 {
+    30
+}
+
 fn default_ai_mode() -> String {
     "explain_only".to_string()
 }
@@ -242,6 +361,18 @@ fn default_log_format() -> String {
 
 fn default_log_level() -> String {
     "info".to_string()
+}
+
+fn default_event_log_path() -> String {
+    "logs/saugra-events.jsonl".to_string()
+}
+
+fn default_event_log_max_size() -> String {
+    "100mb".to_string()
+}
+
+fn default_event_log_max_files() -> usize {
+    10
 }
 
 #[cfg(test)]
@@ -271,6 +402,172 @@ upstreams: []
         assert!(matches!(
             config.validate(),
             Err(ConfigError::MissingUpstream)
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_rate_limit() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rate_limit:
+  backend: memory
+  requests_per_minute: 0
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidRateLimit)
+        ));
+    }
+
+    #[test]
+    fn requires_redis_url_for_redis_rate_limit_backend() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rate_limit:
+  backend: redis
+  requests_per_minute: 120
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::MissingRedisUrl)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_redis_url_for_redis_rate_limit_backend() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rate_limit:
+  backend: redis
+  redis_url: "   "
+  requests_per_minute: 120
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::MissingRedisUrl)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_rate_limit_route_path() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rate_limit:
+  backend: memory
+  requests_per_minute: 120
+  routes:
+    - path: " "
+      requests_per_minute: 10
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidRateLimitRoute)
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_route_rate_limit() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rate_limit:
+  backend: memory
+  requests_per_minute: 120
+  routes:
+    - path: /sensitive-action
+      requests_per_minute: 0
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidRateLimit)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_event_log_max_size() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+logging:
+  event_log_max_size: nope
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidEventLogMaxSize)
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_event_log_max_files() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+logging:
+  event_log_max_files: 0
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidEventLogMaxFiles)
         ));
     }
 }

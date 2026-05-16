@@ -1,15 +1,10 @@
-mod ai;
-mod config;
-mod decision;
-mod logging;
-mod proxy;
-mod rules;
-
 use std::path::PathBuf;
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use config::SaugraConfig;
+use saugra::{
+    ai, config::SaugraConfig, event_store, event_store::EventLogRetention, logging, proxy, rules,
+};
 
 #[derive(Debug, Parser)]
 #[command(name = "saugra")]
@@ -41,6 +36,17 @@ enum Commands {
         #[command(subcommand)]
         command: RulesCommand,
     },
+    /// Read local Saugra security events.
+    Logs {
+        #[command(subcommand)]
+        command: LogsCommand,
+    },
+    /// Explain a recorded request decision.
+    Explain {
+        request_id: String,
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -55,6 +61,17 @@ enum InitTarget {
 enum RulesCommand {
     /// List built-in WAF rules.
     List,
+}
+
+#[derive(Debug, Subcommand)]
+enum LogsCommand {
+    /// Print recent local security events.
+    Tail {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+        #[arg(short, long, default_value_t = 20)]
+        limit: usize,
+    },
 }
 
 #[tokio::main]
@@ -88,7 +105,50 @@ async fn main() -> anyhow::Result<()> {
                 Ok(())
             }
         },
+        Commands::Logs { command } => match command {
+            LogsCommand::Tail { config, limit } => {
+                let config = load_valid_config(&config)?;
+                let retention = event_log_retention(&config)?;
+                let events = event_store::tail(
+                    PathBuf::from(config.logging.event_log_path).as_path(),
+                    retention,
+                    limit,
+                )?;
+                for event in events {
+                    println!("{}", serde_json::to_string(&event)?);
+                }
+                Ok(())
+            }
+        },
+        Commands::Explain { request_id, config } => {
+            let config = load_valid_config(&config)?;
+            let retention = event_log_retention(&config)?;
+            let event = event_store::find_by_request_id(
+                PathBuf::from(config.logging.event_log_path).as_path(),
+                retention,
+                &request_id,
+            )?
+            .with_context(|| format!("request ID not found: {request_id}"))?;
+
+            println!("{}", ai::explain(&event.decision));
+            println!("{}", serde_json::to_string_pretty(&event.decision)?);
+            Ok(())
+        }
     }
+}
+
+fn load_valid_config(path: &PathBuf) -> anyhow::Result<SaugraConfig> {
+    let config = SaugraConfig::from_file(path)
+        .with_context(|| format!("failed to load config {}", path.display()))?;
+    config.validate()?;
+    Ok(config)
+}
+
+fn event_log_retention(config: &SaugraConfig) -> anyhow::Result<EventLogRetention> {
+    Ok(EventLogRetention {
+        max_size_bytes: config.event_log_max_size_bytes()?,
+        max_files: config.logging.event_log_max_files,
+    })
 }
 
 fn print_init(target: Option<InitTarget>) -> anyhow::Result<()> {

@@ -18,6 +18,12 @@ Client → Saugra WAF → Backend Application
 
 The recommended production-style capstone setup is to keep Nginx or Apache as the public web server and run Saugra on a local/private port.
 
+Production deployment examples live in:
+
+- `configs/nginx.production.example.conf`
+- `configs/apache.production.example.conf`
+- `docs/PRODUCTION_DEPLOYMENT.md`
+
 ## Design Philosophy
 
 Saugra should be:
@@ -358,7 +364,7 @@ rate_limit:
     requests_per_minute: 120
     burst: 30
   routes:
-    - path: /login
+    - path: /sensitive-action
       requests_per_minute: 10
       burst: 5
 
@@ -419,6 +425,18 @@ Dashboard cards:
 - top targeted paths
 - top rule categories
 - recent blocked requests
+
+## Local Event Retention
+
+For single-node deployments, Saugra stores security events in local JSONL files.
+The active event log path, maximum file size, and number of retained rotated
+files are configurable. When the active log would exceed the configured size,
+Saugra rotates it to `.1`, shifts older rotated files upward, and removes files
+older than the configured retention count.
+
+`saugra logs tail` and `saugra explain <request-id>` read across the active and
+rotated event files so recent audit and explanation workflows continue after
+rotation.
 
 ## Future Architecture
 

@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::{config::WafMode, rules::RuleMatch};
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum WafAction {
     Allow,
@@ -10,7 +10,7 @@ pub enum WafAction {
     Block,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct WafDecision {
     pub request_id: String,
     pub action: WafAction,
@@ -65,6 +65,94 @@ impl WafDecision {
             risk_score,
             explanation,
             owasp_category,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::rules::{RuleMatch, RuleSeverity, RuleTarget};
+
+    #[test]
+    fn monitor_mode_marks_matched_requests_for_monitoring() {
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Monitor,
+            vec![rule_match()],
+        );
+
+        assert_eq!(decision.action, WafAction::Monitor);
+        assert_eq!(decision.risk_score, 80);
+        assert_eq!(decision.severity, "high");
+        assert_eq!(decision.matched_rules.len(), 1);
+    }
+
+    #[test]
+    fn block_mode_blocks_matched_requests() {
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Block, vec![rule_match()]);
+
+        assert_eq!(decision.action, WafAction::Block);
+        assert_eq!(decision.risk_score, 80);
+        assert_eq!(
+            decision.owasp_category.as_deref(),
+            Some("A03:2021-Injection")
+        );
+    }
+
+    #[test]
+    fn strict_mode_blocks_matched_requests() {
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Strict, vec![rule_match()]);
+
+        assert_eq!(decision.action, WafAction::Block);
+    }
+
+    #[test]
+    fn off_mode_allows_even_when_rules_match() {
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Off, vec![rule_match()]);
+
+        assert_eq!(decision.action, WafAction::Allow);
+        assert!(decision.matched_rules.is_empty());
+        assert_eq!(decision.risk_score, 0);
+    }
+
+    #[test]
+    fn requests_without_matches_are_allowed() {
+        let decision = WafDecision::from_matches("request-1".to_string(), WafMode::Block, vec![]);
+
+        assert_eq!(decision.action, WafAction::Allow);
+        assert_eq!(
+            decision.explanation,
+            "No security rules matched this request."
+        );
+    }
+
+    #[test]
+    fn serializes_decision_with_expected_json_shape() {
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Block, vec![rule_match()]);
+        let json = serde_json::to_value(decision).unwrap();
+
+        assert_eq!(json["request_id"], "request-1");
+        assert_eq!(json["action"], "block");
+        assert_eq!(json["severity"], "high");
+        assert_eq!(json["risk_score"], 80);
+        assert_eq!(json["matched_rules"][0]["rule_id"], "SAUGRA-SQLI-001");
+        assert_eq!(json["owasp_category"], "A03:2021-Injection");
+    }
+
+    fn rule_match() -> RuleMatch {
+        RuleMatch {
+            rule_id: "SAUGRA-SQLI-001".to_string(),
+            rule_name: "Basic SQL Injection Pattern".to_string(),
+            category: "sql_injection".to_string(),
+            severity: RuleSeverity::High,
+            matched_target: RuleTarget::Query,
+            explanation: "Query data matched a common SQL injection pattern.".to_string(),
+            owasp_category: Some("A03:2021-Injection".to_string()),
         }
     }
 }

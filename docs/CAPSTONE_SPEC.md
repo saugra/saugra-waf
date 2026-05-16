@@ -12,6 +12,11 @@ Saugra WAF is a lightweight, Rust-based, AI-assisted Web Application Firewall de
 
 The goal is not to replace traditional WAF rules with AI, but to combine proven rule-based protection, behavioral scoring, rate limiting, and AI-assisted explanations to help developers and small teams secure their applications with less configuration complexity.
 
+The MVP goal is production-ready, not throwaway. Features should be built once
+as stable foundations that can be improved over time. A local/demo backend is
+acceptable only when it sits behind a stable abstraction and the production
+backend is part of the MVP plan.
+
 ## Problem Statement
 
 Many small teams, startups, and developers need web application protection but face challenges with existing WAF solutions:
@@ -28,7 +33,8 @@ Saugra WAF addresses this by offering a developer-friendly, self-hosted, Rust-po
 
 Saugra should be positioned honestly against mature, established WAF platforms.
 Those tools are powerful, widely deployed, and battle-tested. Saugra should not
-claim to replace them in production environments today.
+claim broad parity with them, but the MVP should be designed for cautious
+production use on real applications after monitor-mode tuning.
 
 Saugra's differentiation is developer experience:
 
@@ -49,6 +55,26 @@ Saugra should communicate its scope clearly: it is an additional protection
 layer that combines deterministic rules, rate limiting, observability, and
 explainable security events. It should be evaluated and tuned in monitor mode
 before being used to block production traffic.
+
+## Production-Ready MVP Principle
+
+Saugra should avoid implementing the same security feature twice: once for a
+prototype and again for production. MVP implementations must use stable
+interfaces and production-oriented data models so they can be improved without
+rewriting the feature.
+
+Required principles:
+
+- Rate limiting must support durable or distributed state before production MVP
+  completion. In-memory counters are only a local/demo backend.
+- Security events must be retained in durable, queryable storage for audit,
+  `logs tail`, and `explain <request-id>` workflows. Local JSONL storage must
+  include bounded retention and rotation.
+- Block decisions must be deterministic, explainable, configurable, and tested.
+- Monitor-first rollout is required for safe adoption, but block mode must be
+  production-safe after tuning.
+- Any implementation that is intentionally incomplete must be isolated behind a
+  stable trait/interface and tracked in the roadmap before it is merged.
 
 ## Target Users
 
@@ -242,6 +268,11 @@ saugra test-config
 saugra reload
 ```
 
+Production examples should be maintained in:
+
+- `configs/nginx.production.example.conf`
+- `docs/PRODUCTION_DEPLOYMENT.md`
+
 ## 6. Apache Compatibility
 
 Saugra should also provide simple Apache reverse-proxy integration.
@@ -261,6 +292,11 @@ saugra init apache
 saugra test-config
 saugra reload
 ```
+
+Production examples should be maintained in:
+
+- `configs/apache.production.example.conf`
+- `docs/PRODUCTION_DEPLOYMENT.md`
 
 ## 7. Configuration System
 
@@ -296,6 +332,9 @@ ai:
 logging:
   format: json
   level: info
+  event_log_path: /var/log/saugra/saugra-events.jsonl
+  event_log_max_size: 100mb
+  event_log_max_files: 30
 ```
 
 Supported modes:
@@ -326,7 +365,7 @@ AI should not be the only blocking mechanism in the MVP.
 
 ## 9. Rate Limiting and Bot Defense
 
-Saugra should include basic traffic abuse protection:
+Saugra should include production-oriented traffic abuse protection:
 
 - Per-IP rate limiting
 - Per-route rate limiting
@@ -341,15 +380,23 @@ Example:
 
 ```yaml
 rate_limit:
+  backend: redis
+  redis_url: redis://127.0.0.1:6379
+
   default:
     requests_per_minute: 120
     burst: 30
 
   routes:
-    - path: /login
+    - path: /sensitive-action
       requests_per_minute: 10
       burst: 5
 ```
+
+The MVP may include `backend: memory` for local development and single-process
+demos, but production documentation must recommend `backend: redis` or another
+durable/distributed backend. The rate-limiting engine should be abstracted so
+memory and Redis implementations share the same policy evaluation path.
 
 ## 10. API Security Features
 
@@ -406,6 +453,15 @@ Example JSON log:
   "explanation": "Query parameter matched a common SQL injection pattern."
 }
 ```
+
+Local event retention:
+
+- Saugra may use local JSONL files for single-node production event retention.
+- The event log path must be configurable.
+- The active event log must rotate when it reaches a configured maximum size.
+- Operators must be able to configure how many rotated files are retained.
+- `saugra logs tail` and `saugra explain <request-id>` should read across active
+  and rotated event files.
 
 ## 12. Developer Dashboard
 
@@ -549,7 +605,7 @@ Recommended MVP:
 5. Nginx integration template
 6. Apache integration template
 7. JSON security logs
-8. Basic rate limiting
+8. Production-safe rate limiting with a durable/distributed backend
 9. Simple dashboard
 10. AI explanation for blocked requests
 11. Docker deployment
@@ -582,7 +638,7 @@ Recommended MVP:
 - Kubernetes support
 - Helm chart
 - Cloud deployment templates
-- Enterprise reporting
+- Saugra Pro reporting
 - Paid hosted dashboard option
 
 ## 19. Differentiation
@@ -645,13 +701,13 @@ A demo can include:
 
 MVP:
 
-- SQLite or local JSON logs
+- SQLite or local JSONL logs for single-node event retention
+- Redis for distributed rate limiting
 
 Later:
 
 - PostgreSQL
 - ClickHouse for high-volume logs
-- Redis for distributed rate limiting
 
 ### Dashboard
 
