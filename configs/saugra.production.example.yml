@@ -27,6 +27,13 @@ rate_limit:
 rules:
   owasp_crs: true
   paranoia_level: 1
+  files:
+    - /etc/saugra/rules/REQUEST-913-SCANNER-DETECTION.yml
+    - /etc/saugra/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml
+    - /etc/saugra/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
+    - /etc/saugra/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
+    - /etc/saugra/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
+    - /etc/saugra/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
 
 ai:
   enabled: true

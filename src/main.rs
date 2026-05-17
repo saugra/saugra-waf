@@ -3,7 +3,8 @@ use std::path::PathBuf;
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use saugra::{
-    ai, config::SaugraConfig, event_store, event_store::EventLogRetention, logging, proxy, rules,
+    ai, config::SaugraConfig, crs_convert, event_store, event_store::EventLogRetention, logging,
+    proxy, rules,
 };
 
 #[derive(Debug, Parser)]
@@ -59,8 +60,18 @@ enum InitTarget {
 
 #[derive(Debug, Subcommand)]
 enum RulesCommand {
-    /// List built-in WAF rules.
-    List,
+    /// List configured WAF rules.
+    List {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+    /// Convert supported OWASP CRS regex rules into Saugra YAML.
+    ConvertCrs {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(short, long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -84,7 +95,9 @@ async fn main() -> anyhow::Result<()> {
             let config = SaugraConfig::from_file(&config)
                 .with_context(|| format!("failed to load config {}", config.display()))?;
             config.validate()?;
+            let rule_set = rules::load_rule_set(&config.rules)?;
             println!("config OK: {}", config.summary());
+            println!("loaded rules: {}", rule_set.rules().len());
             Ok(())
         }
         Commands::Run { config } => {
@@ -95,13 +108,23 @@ async fn main() -> anyhow::Result<()> {
             proxy::run(config).await
         }
         Commands::Rules { command } => match command {
-            RulesCommand::List => {
-                for rule in rules::builtin_rules()? {
+            RulesCommand::List { config } => {
+                let config = load_valid_config(&config)?;
+                let rule_set = rules::load_rule_set(&config.rules)?;
+                for rule in rule_set.rules() {
                     println!(
                         "{}\t{}\t{}\t{}\t{}",
                         rule.id, rule.severity, rule.category, rule.target, rule.name
                     );
                 }
+                Ok(())
+            }
+            RulesCommand::ConvertCrs { input, output } => {
+                let summary = crs_convert::convert_crs_path(&input, &output)?;
+                println!(
+                    "converted CRS rules: {} written, {} skipped",
+                    summary.converted, summary.skipped
+                );
                 Ok(())
             }
         },

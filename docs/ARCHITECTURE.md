@@ -393,14 +393,64 @@ A built-in rule should have:
 Example:
 
 ```yaml
-id: SAUGRA-SQLI-001
-name: Basic SQL Injection Pattern
-category: sql_injection
-severity: high
-target: query
-pattern: "(?i)(union select|or 1=1|drop table)"
-action: block
+metadata:
+  name: saugra-application-attack-sqli
+  version: 0.1.0
+
+rules:
+  - id: SAUGRA-SQLI-001
+    name: Basic SQL Injection Pattern
+    category: sql_injection
+    severity: high
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table)"
+    explanation: Query data matched a common SQL injection pattern.
+    owasp_category: A03:2021-Injection
 ```
+
+Native rule packs are split into CRS-style files such as
+`REQUEST-941-APPLICATION-ATTACK-XSS.yml` and
+`REQUEST-942-APPLICATION-ATTACK-SQLI.yml`. Operators can also import supported
+OWASP CRS regex rules with:
+
+```bash
+saugra rules convert-crs --input /path/to/coreruleset/rules --output /etc/saugra/rules/converted-crs.yml
+```
+
+The converter is intentionally conservative: unsupported CRS operators and
+engine-specific features are skipped until Saugra has equivalent execution
+support.
+
+Saugra YAML is the product rule format. OWASP CRS is treated as an upstream
+source of maintained detection knowledge that can be converted into Saugra's
+native format; Saugra does not aim to become a ModSecurity syntax clone. The
+intended flow is:
+
+```txt
+OWASP CRS .conf files
+  -> saugra rules convert-crs
+  -> Saugra YAML rule packs
+  -> Saugra rule engine
+```
+
+Next rule-engine milestones:
+
+- Add anomaly scoring thresholds so several findings can combine into a block
+  decision instead of relying only on first-match blocking.
+- Add rule exclusions by path, parameter, header, category, and rule ID for
+  false-positive tuning.
+- Add rule-pack versioning and validation output that lists loaded files, rule
+  counts, skipped imports, disabled rules, and warnings.
+- Treat transforms as first-class ordered pipelines with dedicated tests.
+- Add CRS-style data files and `@pmFromFile` matcher support.
+- Add fixtures for every imported CRS category before marking that category
+  production-supported.
+- Keep unsupported CRS features explicitly documented.
 
 ## API and Dashboard Architecture
 

@@ -27,7 +27,7 @@ use crate::{
     decision::{WafAction, WafDecision},
     event_store::{self, EventLogRetention, SecurityEvent},
     rate_limit::{self, RateLimitExceeded, RateLimitPolicy, RateLimitStore},
-    rules::{self, RequestParts, RuleMatch, RuleSeverity, RuleTarget},
+    rules::{self, RequestParts, RuleMatch, RuleSet, RuleSeverity, RuleTarget},
 };
 
 #[derive(Clone)]
@@ -39,6 +39,7 @@ pub struct ProxyState {
     rate_limit_store: Arc<dyn RateLimitStore>,
     event_log_path: PathBuf,
     event_log_retention: EventLogRetention,
+    rule_set: Arc<RuleSet>,
 }
 
 impl ProxyState {
@@ -58,6 +59,7 @@ impl ProxyState {
             .max_body_size_bytes()?
             .try_into()
             .context("security.max_body_size is too large for this platform")?;
+        let rule_set = Arc::new(rules::load_rule_set(&config.rules)?);
 
         Ok(Self {
             config,
@@ -67,6 +69,7 @@ impl ProxyState {
             rate_limit_store,
             event_log_path,
             event_log_retention,
+            rule_set,
         })
     }
 }
@@ -221,23 +224,13 @@ pub async fn proxy_request(
         .to_string();
     let body_for_rules = String::from_utf8_lossy(&body_bytes);
 
-    let matches = rules::inspect(&RequestParts {
+    let matches = state.rule_set.inspect(&RequestParts {
         path: &path,
         query: &query,
         headers: &headers,
         body: &body_for_rules,
         user_agent: &user_agent,
-    })
-    .map_err(|error| {
-        error!(request_id, %error, "failed to inspect request");
-        json_response(
-            StatusCode::INTERNAL_SERVER_ERROR,
-            json!({
-                "request_id": request_id,
-                "error": "failed to inspect request"
-            }),
-        )
-    })?;
+    });
     let decision = WafDecision::from_matches(request_id.clone(), state.config.server.mode, matches);
 
     log_decision(&parts.method, &path, &query, &decision);

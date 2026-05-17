@@ -1,0 +1,18 @@
+metadata:
+  name: saugra-application-attack-sqli
+  version: 0.1.0
+
+rules:
+  - id: SAUGRA-SQLI-001
+    name: Basic SQL Injection Pattern
+    category: sql_injection
+    severity: high
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table|--|/\\*)"
+    explanation: Query data matched a common SQL injection pattern.
+    owasp_category: A03:2021-Injection

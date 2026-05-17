@@ -1,0 +1,15 @@
+metadata:
+  name: saugra-scanner-detection
+  version: 0.1.0
+
+rules:
+  - id: SAUGRA-BOT-001
+    name: Suspicious Scanner User Agent
+    category: scanner_behavior
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - user_agent
+    pattern: "(?i)(sqlmap|nikto|nmap|masscan|acunetix|nessus|wpscan)"
+    explanation: User-Agent matched a known scanner or security testing tool.
+    owasp_category: A06:2021-Vulnerable and Outdated Components

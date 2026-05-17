@@ -1,5 +1,6 @@
 pub mod ai;
 pub mod config;
+pub mod crs_convert;
 pub mod decision;
 pub mod event_store;
 pub mod logging;

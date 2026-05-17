@@ -1,4 +1,4 @@
-use std::{fs, net::SocketAddr, path::Path};
+use std::{fs, net::SocketAddr, path::Path, path::PathBuf};
 
 use serde::Deserialize;
 use thiserror::Error;
@@ -158,6 +158,8 @@ pub struct RuleSettings {
     pub owasp_crs: bool,
     #[serde(default = "default_paranoia_level")]
     pub paranoia_level: u8,
+    #[serde(default = "default_rule_files")]
+    pub files: Vec<PathBuf>,
 }
 
 impl Default for RuleSettings {
@@ -165,6 +167,7 @@ impl Default for RuleSettings {
         Self {
             owasp_crs: true,
             paranoia_level: default_paranoia_level(),
+            files: default_rule_files(),
         }
     }
 }
@@ -355,6 +358,17 @@ fn default_max_body_size() -> String {
 
 fn default_paranoia_level() -> u8 {
     1
+}
+
+fn default_rule_files() -> Vec<PathBuf> {
+    vec![
+        PathBuf::from("configs/rules/REQUEST-913-SCANNER-DETECTION.yml"),
+        PathBuf::from("configs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml"),
+        PathBuf::from("configs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml"),
+        PathBuf::from("configs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml"),
+        PathBuf::from("configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml"),
+        PathBuf::from("configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml"),
+    ]
 }
 
 fn default_requests_per_minute() -> u32 {

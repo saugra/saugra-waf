@@ -35,7 +35,7 @@ The repository has a working Rust foundation:
 cargo fmt --check
 cargo test
 cargo run -- test-config --config configs/saugra.example.yml
-cargo run -- rules list
+cargo run -- rules list --config configs/saugra.example.yml
 ```
 
 Current test status:
@@ -112,6 +112,53 @@ Future Saugra Pro/cloud work may focus on:
 - [x] In `block` mode, return a safe block response.
 - [x] Forward allowed traffic to the configured upstream.
 - [x] Add tests for monitor and block behavior.
+
+## Phase 3.5 — External Rule Packs and CRS-Style Tuning
+
+Saugra should scale beyond hardcoded Rust rules. The community rule engine will
+load validated YAML rule packs at startup, compile rule regexes before accepting
+traffic, and expose the same rules through `saugra rules list`.
+
+The rule-pack design is inspired by OWASP CRS operational concepts while
+remaining native to Saugra instead of copying ModSecurity syntax directly:
+
+- [x] Define Saugra YAML as the product rule format; CRS is an upstream rule
+      source that can be converted into Saugra YAML, not a runtime syntax Saugra
+      must clone.
+- [x] Move the current public rules into CRS-style modular files under
+      `configs/rules/`.
+- [x] Support multiple configured rule files through `rules.files`.
+- [x] Compile and validate all rule regexes at startup.
+- [x] Support rule metadata: id, name, category, severity, targets,
+      paranoia level, OWASP category, transforms, and explanation.
+- [x] Add an initial `saugra rules convert-crs` command for supported CRS
+      `@rx` rules.
+- [ ] Support monitor-first rollout with CRS-style detection and blocking
+      paranoia levels.
+- [ ] Add anomaly scoring thresholds so multiple lower-severity findings can
+      combine into a block decision instead of relying only on first-match
+      blocking.
+- [ ] Add local tuning controls: disable rules by ID, disable categories, and
+      exclude specific rules by path, parameter, header, and rule ID.
+- [ ] Add rule-pack versioning and validation output so operators can see the
+      loaded files, rule counts, disabled rules, unsupported imports, and
+      warnings before starting traffic.
+- [ ] Treat transforms as first-class ordered pipelines with tests for
+      URL-decoding, plus-to-space handling, lowercasing, and future CRS
+      transform equivalents.
+- [ ] Expand CRS conversion coverage for chains, operators such as
+      `@pmFromFile`, data files, and engine-specific features such as
+      libinjection.
+- [ ] Add support for CRS-style data files and `@pmFromFile` matchers.
+- [ ] Add test fixtures for every imported CRS category, including SQLi, XSS,
+      LFI/path traversal, RCE/command injection, scanner detection, protocol
+      enforcement, and file upload rules.
+- [ ] Document unsupported CRS features clearly so operators understand which
+      converted rules are active, skipped, or partially represented.
+- [ ] Document the import flow as `OWASP CRS .conf -> saugra rules convert-crs
+      -> Saugra YAML rule packs -> Saugra rule engine`.
+- [x] Keep bad rule files as clear startup/config errors, not silent weak
+      protection.
 
 ## Phase 3 — Production-Ready Proxy Verification + Abuse Controls
 

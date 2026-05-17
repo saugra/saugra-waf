@@ -1,0 +1,32 @@
+metadata:
+  name: saugra-application-attack-xss
+  version: 0.1.0
+
+rules:
+  - id: SAUGRA-XSS-001
+    name: Basic Cross-Site Scripting Pattern
+    category: cross_site_scripting
+    severity: high
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(<script|javascript:|onerror\\s*=|onload\\s*=)"
+    explanation: Request data matched a common cross-site scripting pattern.
+    owasp_category: A03:2021-Injection
+
+  - id: SAUGRA-BODY-001
+    name: Suspicious Body Script Pattern
+    category: cross_site_scripting
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - body
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(<script|javascript:|onerror\\s*=|onload\\s*=)"
+    explanation: Request body matched a script injection pattern.
+    owasp_category: A03:2021-Injection

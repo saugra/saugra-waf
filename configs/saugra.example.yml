@@ -25,6 +25,13 @@ rate_limit:
 rules:
   owasp_crs: true
   paranoia_level: 1
+  files:
+    - configs/rules/REQUEST-913-SCANNER-DETECTION.yml
+    - configs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml
+    - configs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
+    - configs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
+    - configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
+    - configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
 
 ai:
   enabled: true

@@ -1,0 +1,109 @@
+metadata:
+  name: saugra-core-rules
+  version: 0.1.0
+
+rules:
+  - id: SAUGRA-SQLI-001
+    name: Basic SQL Injection Pattern
+    category: sql_injection
+    severity: high
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table|--|/\\*)"
+    explanation: Query data matched a common SQL injection pattern.
+    owasp_category: A03:2021-Injection
+
+  - id: SAUGRA-XSS-001
+    name: Basic Cross-Site Scripting Pattern
+    category: cross_site_scripting
+    severity: high
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(<script|javascript:|onerror\\s*=|onload\\s*=)"
+    explanation: Request data matched a common cross-site scripting pattern.
+    owasp_category: A03:2021-Injection
+
+  - id: SAUGRA-PATH-001
+    name: Path Traversal Pattern
+    category: path_traversal
+    severity: high
+    paranoia_level: 1
+    targets:
+      - path
+    transforms:
+      - url_decode
+    pattern: "(?i)(\\.\\./|\\.\\.\\\\|%2e%2e(?:%2f|/)|%252e%252e(?:%252f|/)|/etc/passwd|etc%2fpasswd)"
+    explanation: Request path matched a directory traversal pattern.
+    owasp_category: A01:2021-Broken Access Control
+
+  - id: SAUGRA-CMD-001
+    name: Command Injection Pattern
+    category: command_injection
+    severity: critical
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(;\\s*(cat|bash|sh|curl|wget)\\b|`[^`]+`|\\|\\s*(cat|bash|sh)\\b)"
+    explanation: Request data matched a command injection pattern.
+    owasp_category: A03:2021-Injection
+
+  - id: SAUGRA-PATH-002
+    name: Path Traversal Query Pattern
+    category: path_traversal
+    severity: high
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(\\.\\./|\\.\\.\\\\|%2e%2e(?:%2f|/)|%252e%252e(?:%252f|/)|/etc/passwd|etc%2fpasswd)"
+    explanation: Request query string matched a directory traversal pattern.
+    owasp_category: A01:2021-Broken Access Control
+
+  - id: SAUGRA-BOT-001
+    name: Suspicious Scanner User Agent
+    category: scanner_behavior
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - user_agent
+    pattern: "(?i)(sqlmap|nikto|nmap|masscan|acunetix|nessus|wpscan)"
+    explanation: User-Agent matched a known scanner or security testing tool.
+    owasp_category: A06:2021-Vulnerable and Outdated Components
+
+  - id: SAUGRA-CT-001
+    name: Suspicious Content Type
+    category: suspicious_content_type
+    severity: low
+    paranoia_level: 1
+    targets:
+      - headers
+    pattern: "(?i)(content-type:\\s*application/x-msdownload|content-type:\\s*application/x-sh)"
+    explanation: Request headers matched a suspicious executable content type.
+    owasp_category: A05:2021-Security Misconfiguration
+
+  - id: SAUGRA-BODY-001
+    name: Suspicious Body Script Pattern
+    category: cross_site_scripting
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - body
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(<script|javascript:|onerror\\s*=|onload\\s*=)"
+    explanation: Request body matched a script injection pattern.
+    owasp_category: A03:2021-Injection

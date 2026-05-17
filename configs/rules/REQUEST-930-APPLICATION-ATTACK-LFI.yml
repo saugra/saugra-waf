@@ -1,0 +1,31 @@
+metadata:
+  name: saugra-application-attack-lfi
+  version: 0.1.0
+
+rules:
+  - id: SAUGRA-PATH-001
+    name: Path Traversal Pattern
+    category: path_traversal
+    severity: high
+    paranoia_level: 1
+    targets:
+      - path
+    transforms:
+      - url_decode
+    pattern: "(?i)(\\.\\./|\\.\\.\\\\|%2e%2e(?:%2f|/)|%252e%252e(?:%252f|/)|/etc/passwd|etc%2fpasswd)"
+    explanation: Request path matched a directory traversal pattern.
+    owasp_category: A01:2021-Broken Access Control
+
+  - id: SAUGRA-PATH-002
+    name: Path Traversal Query Pattern
+    category: path_traversal
+    severity: high
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(\\.\\./|\\.\\.\\\\|%2e%2e(?:%2f|/)|%252e%252e(?:%252f|/)|/etc/passwd|etc%2fpasswd)"
+    explanation: Request query string matched a directory traversal pattern.
+    owasp_category: A01:2021-Broken Access Control

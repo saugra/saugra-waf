@@ -66,10 +66,27 @@ Validate the example config:
 cargo run -- test-config --config configs/saugra.example.yml
 ```
 
-List built-in rules:
+List configured rules:
 
 ```bash
-cargo run -- rules list
+cargo run -- rules list --config configs/saugra.example.yml
+```
+
+Convert supported OWASP CRS regex rules into Saugra YAML:
+
+```bash
+cargo run -- rules convert-crs --input /path/to/coreruleset/rules --output configs/rules/converted-crs.yml
+```
+
+Saugra uses native YAML rule packs as its product rule format. OWASP CRS is
+treated as an upstream source of maintained detection knowledge that can be
+converted into Saugra YAML; Saugra does not try to clone ModSecurity syntax.
+
+```txt
+OWASP CRS .conf files
+  -> saugra rules convert-crs
+  -> Saugra YAML rule packs
+  -> Saugra rule engine
 ```
 
 Start the service:
@@ -155,6 +172,17 @@ rate_limit:
     - path: /sensitive-action
       requests_per_minute: 10
       burst: 5
+
+rules:
+  owasp_crs: true
+  paranoia_level: 1
+  files:
+    - configs/rules/REQUEST-913-SCANNER-DETECTION.yml
+    - configs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml
+    - configs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
+    - configs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
+    - configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
+    - configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
 
 ai:
   enabled: true
