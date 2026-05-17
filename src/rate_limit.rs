@@ -101,7 +101,8 @@ pub struct RedisRateLimitStore {
 impl RedisRateLimitStore {
     pub async fn connect(redis_url: &str, redis_password: Option<&str>) -> anyhow::Result<Self> {
         let connection_info = redis_connection_info(redis_url, redis_password)?;
-        let client = redis::Client::open(connection_info).context("failed to create Redis client")?;
+        let client =
+            redis::Client::open(connection_info).context("failed to create Redis client")?;
         let manager = client
             .get_connection_manager()
             .await
@@ -119,7 +120,10 @@ fn redis_connection_info(
         .into_connection_info()
         .context("rate_limit.redis_url is not a valid Redis URL")?;
 
-    if let Some(password) = redis_password.map(str::trim).filter(|password| !password.is_empty()) {
+    if let Some(password) = redis_password
+        .map(str::trim)
+        .filter(|password| !password.is_empty())
+    {
         connection_info.redis.password = Some(password.to_string());
     }
 

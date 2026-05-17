@@ -11,6 +11,7 @@ async-trait = "0.1"
 axum = "0.7"
 clap = { version = "4.5", features = ["derive"] }
 hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
+percent-encoding = "2.3"
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 regex = "1.10"
 serde = { version = "1.0", features = ["derive"] }

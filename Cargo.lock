@@ -930,6 +930,7 @@ dependencies = [
  "axum",
  "clap",
  "hyper-util",
+ "percent-encoding",
  "redis",
  "regex",
  "serde",

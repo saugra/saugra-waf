@@ -1,3 +1,6 @@
+use std::borrow::Cow;
+
+use percent_encoding::percent_decode_str;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -97,6 +100,9 @@ pub struct RequestParts<'a> {
     pub user_agent: &'a str,
 }
 
+const PATH_TRAVERSAL_PATTERN: &str =
+    r"(?i)(\.\./|\.\.\\|%2e%2e(?:%2f|/)|%252e%252e(?:%252f|/)|/etc/passwd|etc%2fpasswd)";
+
 pub fn builtin_rules() -> Result<Vec<BuiltinRule>, RuleError> {
     let definitions = [
         RuleDefinition {
@@ -125,7 +131,7 @@ pub fn builtin_rules() -> Result<Vec<BuiltinRule>, RuleError> {
             category: "path_traversal",
             severity: RuleSeverity::High,
             target: RuleTarget::Path,
-            pattern: r"(?i)(\.\./|\.\.\\|%2e%2e%2f|%252e%252e%252f|/etc/passwd)",
+            pattern: PATH_TRAVERSAL_PATTERN,
             explanation: "Request path matched a directory traversal pattern.",
             owasp_category: Some("A01:2021-Broken Access Control"),
         },
@@ -138,6 +144,16 @@ pub fn builtin_rules() -> Result<Vec<BuiltinRule>, RuleError> {
             pattern: r"(?i)(;\s*(cat|bash|sh|curl|wget)\b|`[^`]+`|\|\s*(cat|bash|sh)\b)",
             explanation: "Request data matched a command injection pattern.",
             owasp_category: Some("A03:2021-Injection"),
+        },
+        RuleDefinition {
+            id: "SAUGRA-PATH-002",
+            name: "Path Traversal Query Pattern",
+            category: "path_traversal",
+            severity: RuleSeverity::High,
+            target: RuleTarget::Query,
+            pattern: PATH_TRAVERSAL_PATTERN,
+            explanation: "Request query string matched a directory traversal pattern.",
+            owasp_category: Some("A01:2021-Broken Access Control"),
         },
         RuleDefinition {
             id: "SAUGRA-BOT-001",
@@ -181,15 +197,16 @@ pub fn inspect(parts: &RequestParts<'_>) -> Result<Vec<RuleMatch>, RuleError> {
     let mut matches = Vec::new();
 
     for rule in builtin_rules()? {
-        let haystack = match rule.target {
+        let raw_haystack = match rule.target {
             RuleTarget::Path => parts.path,
             RuleTarget::Query => parts.query,
             RuleTarget::Headers => parts.headers,
             RuleTarget::Body => parts.body,
             RuleTarget::UserAgent => parts.user_agent,
         };
+        let haystack = normalize_rule_input(rule.target, raw_haystack);
 
-        if rule.pattern.is_match(haystack) {
+        if rule.pattern.is_match(&haystack) {
             matches.push(RuleMatch {
                 rule_id: rule.id.to_string(),
                 rule_name: rule.name.to_string(),
@@ -203,6 +220,16 @@ pub fn inspect(parts: &RequestParts<'_>) -> Result<Vec<RuleMatch>, RuleError> {
     }
 
     Ok(matches)
+}
+
+fn normalize_rule_input(target: RuleTarget, input: &str) -> Cow<'_, str> {
+    let decoded = percent_decode_str(input).decode_utf8_lossy();
+
+    if target == RuleTarget::Query && decoded.contains('+') {
+        Cow::Owned(decoded.replace('+', " "))
+    } else {
+        decoded
+    }
 }
 
 struct RuleDefinition {
@@ -254,6 +281,28 @@ mod tests {
     }
 
     #[test]
+    fn detects_percent_encoded_sql_injection() {
+        let matches = inspect(&RequestParts {
+            query: "id=1'%20OR%201=1",
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-SQLI-001");
+    }
+
+    #[test]
+    fn treats_plus_as_space_in_query_strings() {
+        let matches = inspect(&RequestParts {
+            query: "id=1'+OR+1=1",
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-SQLI-001");
+    }
+
+    #[test]
     fn detects_xss() {
         let matches = inspect(&RequestParts {
             query: "text=<script>alert(1)</script>",
@@ -273,6 +322,18 @@ mod tests {
         .unwrap();
 
         assert_eq!(matches[0].rule_id, "SAUGRA-PATH-001");
+    }
+
+    #[test]
+    fn detects_path_traversal_in_query_string() {
+        let matches = inspect(&RequestParts {
+            query: "file=../../../../etc/passwd",
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-PATH-002");
+        assert_eq!(matches[0].matched_target, RuleTarget::Query);
     }
 
     #[test]

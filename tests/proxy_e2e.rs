@@ -117,6 +117,72 @@ async fn block_mode_records_attack_and_does_not_forward() {
 }
 
 #[tokio::test]
+async fn block_mode_blocks_path_traversal_in_query_string() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let state = test_state_with_path(
+        WafMode::Block,
+        120,
+        fake_upstream.clone(),
+        event_log_path.clone(),
+        retention,
+    );
+    let request = Request::builder()
+        .uri("/?file=../../../../etc/passwd")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(recorded.is_empty());
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].path, "/");
+    assert_eq!(events[0].query, "file=../../../../etc/passwd");
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(
+        events[0].decision.matched_rules[0].rule_id,
+        "SAUGRA-PATH-002"
+    );
+}
+
+#[tokio::test]
+async fn block_mode_blocks_percent_encoded_sql_injection() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let state = test_state_with_path(
+        WafMode::Block,
+        120,
+        fake_upstream.clone(),
+        event_log_path.clone(),
+        retention,
+    );
+    let request = Request::builder()
+        .uri("/?id=1'%20OR%201=1")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(recorded.is_empty());
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].path, "/");
+    assert_eq!(events[0].query, "id=1'%20OR%201=1");
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(
+        events[0].decision.matched_rules[0].rule_id,
+        "SAUGRA-SQLI-001"
+    );
+}
+
+#[tokio::test]
 async fn block_mode_returns_safe_json_response_for_attack_request() {
     let state = test_state(WafMode::Block, 120);
     let request = Request::builder()
