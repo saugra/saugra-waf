@@ -116,6 +116,13 @@ Use these libraries unless there is a strong reason not to:
 - Prefer simple, readable code over clever abstractions.
 - Keep the WAF engine separate from proxy transport code.
 - Make decisions explainable.
+- Avoid hard-coding security rules, OWASP/category mappings, posture mappings,
+  thresholds, risky method lists, operator-facing policy choices, or other
+  configurable security behavior in Rust code. Put them in rule packs, standard
+  catalogs, YAML config, or documented data files, then load and validate them
+  through stable interfaces. Rust defaults may point to bundled config/catalog
+  files, but the behavior itself should remain data-driven and upgradeable
+  without code changes.
 - Prefer stable interfaces around storage, rate limiting, logging, and proxy
   transport so implementations can improve without rewriting call sites.
 - Never silently block traffic without producing a security event.
