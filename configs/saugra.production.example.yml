@@ -35,6 +35,16 @@ rules:
     - /etc/saugra/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
     - /etc/saugra/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
     - /etc/saugra/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
+  # Example false-positive tuning:
+  # exclusions:
+  #   - name: Allow article HTML previews
+  #     rule_ids:
+  #       - SAUGRA-XSS-001
+  #     path_prefixes:
+  #       - /api/articles
+  #     query_params:
+  #       - content
+  exclusions: []
 
 ai:
   enabled: true

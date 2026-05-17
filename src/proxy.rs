@@ -225,13 +225,16 @@ pub async fn proxy_request(
         .to_string();
     let body_for_rules = String::from_utf8_lossy(&body_bytes);
 
-    let matches = state.rule_set.inspect(&RequestParts {
+    let request_parts = RequestParts {
         path: &path,
         query: &query,
         headers: &headers,
         body: &body_for_rules,
         user_agent: &user_agent,
-    });
+    };
+    let matches = state
+        .rule_set
+        .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
     let decision = WafDecision::from_matches(
         request_id.clone(),
         state.config.server.mode,

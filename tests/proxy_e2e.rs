@@ -9,8 +9,8 @@ use axum::{
 };
 use saugra::{
     config::{
-        AiConfig, LoggingConfig, RateLimitBackend, RateLimitConfig, RuleSettings, SaugraConfig,
-        SecurityConfig, ServerConfig, UpstreamConfig, WafMode,
+        AiConfig, LoggingConfig, RateLimitBackend, RateLimitConfig, RuleExclusionConfig,
+        RuleSettings, SaugraConfig, SecurityConfig, ServerConfig, UpstreamConfig, WafMode,
     },
     decision::WafAction,
     event_store::{self, EventLogRetention},
@@ -264,6 +264,42 @@ async fn block_mode_blocks_combined_findings_at_anomaly_threshold() {
     assert_eq!(events[0].decision.action, WafAction::Block);
     assert_eq!(events[0].decision.anomaly_score, 6);
     assert_eq!(events[0].decision.matched_rules.len(), 2);
+}
+
+#[tokio::test]
+async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.rules.exclusions = vec![RuleExclusionConfig {
+        rule_ids: vec!["SAUGRA-XSS-001".to_string()],
+        path_prefixes: vec!["/api/articles".to_string()],
+        query_params: vec!["content".to_string()],
+        ..RuleExclusionConfig::default()
+    }];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/api/articles/preview?content=%3Cscript%3Ealert(1)%3C/script%3E")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Allow);
+    assert!(events[0].decision.matched_rules.is_empty());
+    assert_eq!(events[0].decision.anomaly_score, 0);
 }
 
 #[tokio::test]

@@ -444,10 +444,24 @@ are blocked when the accumulated score reaches `rules.inbound_anomaly_threshold`
 `monitor` mode still records findings without blocking, and `strict` mode blocks
 on any matched rule.
 
+Rule exclusions are applied before anomaly scoring. They are intended for
+false-positive tuning and can be scoped by rule ID, category, path prefix, query
+parameter, and header:
+
+```yaml
+rules:
+  exclusions:
+    - name: Allow article HTML previews
+      rule_ids:
+        - SAUGRA-XSS-001
+      path_prefixes:
+        - /api/articles
+      query_params:
+        - content
+```
+
 Next rule-engine milestones:
 
-- Add rule exclusions by path, parameter, header, category, and rule ID for
-  false-positive tuning.
 - Add rule-pack versioning and validation output that lists loaded files, rule
   counts, skipped imports, disabled rules, and warnings.
 - Treat transforms as first-class ordered pipelines with dedicated tests.

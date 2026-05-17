@@ -5,7 +5,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::config::RuleSettings;
+use crate::config::{RuleExclusionConfig, RuleSettings};
 
 #[derive(Debug, Error)]
 pub enum RuleError {
@@ -159,6 +159,17 @@ impl RuleSet {
 
         matches
     }
+
+    pub fn inspect_with_exclusions(
+        &self,
+        parts: &RequestParts<'_>,
+        exclusions: &[RuleExclusionConfig],
+    ) -> Vec<RuleMatch> {
+        self.inspect(parts)
+            .into_iter()
+            .filter(|rule_match| !is_excluded(rule_match, parts, exclusions))
+            .collect()
+    }
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -274,6 +285,77 @@ fn normalize_rule_input(target: RuleTarget, input: &str, transforms: &[RuleTrans
     value
 }
 
+fn is_excluded(
+    rule_match: &RuleMatch,
+    parts: &RequestParts<'_>,
+    exclusions: &[RuleExclusionConfig],
+) -> bool {
+    exclusions.iter().any(|exclusion| {
+        exclusion_matches_rule(exclusion, rule_match)
+            && exclusion_matches_path(exclusion, parts.path)
+            && exclusion_matches_query_params(exclusion, parts.query)
+            && exclusion_matches_headers(exclusion, parts.headers)
+    })
+}
+
+fn exclusion_matches_rule(exclusion: &RuleExclusionConfig, rule_match: &RuleMatch) -> bool {
+    exclusion
+        .rule_ids
+        .iter()
+        .any(|rule_id| rule_id == &rule_match.rule_id)
+        || exclusion
+            .categories
+            .iter()
+            .any(|category| category == &rule_match.category)
+}
+
+fn exclusion_matches_path(exclusion: &RuleExclusionConfig, path: &str) -> bool {
+    exclusion.path_prefixes.is_empty()
+        || exclusion
+            .path_prefixes
+            .iter()
+            .any(|prefix| path.starts_with(prefix))
+}
+
+fn exclusion_matches_query_params(exclusion: &RuleExclusionConfig, query: &str) -> bool {
+    exclusion.query_params.is_empty()
+        || query_param_names(query).any(|name| {
+            exclusion
+                .query_params
+                .iter()
+                .any(|excluded_name| excluded_name == &name)
+        })
+}
+
+fn exclusion_matches_headers(exclusion: &RuleExclusionConfig, headers: &str) -> bool {
+    exclusion.headers.is_empty()
+        || header_names(headers).any(|name| {
+            exclusion
+                .headers
+                .iter()
+                .any(|excluded_name| excluded_name.eq_ignore_ascii_case(&name))
+        })
+}
+
+fn query_param_names(query: &str) -> impl Iterator<Item = String> + '_ {
+    query.split('&').filter_map(|pair| {
+        let name = pair.split_once('=').map(|(name, _)| name).unwrap_or(pair);
+        if name.is_empty() {
+            None
+        } else {
+            Some(percent_decode_str(name).decode_utf8_lossy().into_owned())
+        }
+    })
+}
+
+fn header_names(headers: &str) -> impl Iterator<Item = String> + '_ {
+    headers.lines().filter_map(|line| {
+        line.split_once(':')
+            .map(|(name, _)| name.trim().to_ascii_lowercase())
+            .filter(|name| !name.is_empty())
+    })
+}
+
 struct RuleDefinition {
     id: String,
     name: String,
@@ -372,7 +454,7 @@ impl TryFrom<RuleDefinition> for BuiltinRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::RuleSettings;
+    use crate::config::{RuleExclusionConfig, RuleSettings};
 
     #[test]
     fn detects_sql_injection() {
@@ -484,6 +566,71 @@ rules:
 
         assert_eq!(rule_set.rules().len(), 1);
         assert_eq!(matches[0].rule_id, "LOCAL-HEADER-001");
+    }
+
+    #[test]
+    fn excludes_rule_by_id_path_and_query_param() {
+        let rule_set = RuleSet {
+            rules: builtin_rules().unwrap(),
+        };
+        let matches = rule_set.inspect_with_exclusions(
+            &RequestParts {
+                path: "/api/articles/preview",
+                query: "content=<script>alert(1)</script>",
+                ..RequestParts::default()
+            },
+            &[RuleExclusionConfig {
+                rule_ids: vec!["SAUGRA-XSS-001".to_string()],
+                path_prefixes: vec!["/api/articles".to_string()],
+                query_params: vec!["content".to_string()],
+                ..RuleExclusionConfig::default()
+            }],
+        );
+
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn does_not_exclude_rule_when_path_scope_does_not_match() {
+        let rule_set = RuleSet {
+            rules: builtin_rules().unwrap(),
+        };
+        let matches = rule_set.inspect_with_exclusions(
+            &RequestParts {
+                path: "/comments",
+                query: "content=<script>alert(1)</script>",
+                ..RequestParts::default()
+            },
+            &[RuleExclusionConfig {
+                rule_ids: vec!["SAUGRA-XSS-001".to_string()],
+                path_prefixes: vec!["/api/articles".to_string()],
+                query_params: vec!["content".to_string()],
+                ..RuleExclusionConfig::default()
+            }],
+        );
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-XSS-001");
+    }
+
+    #[test]
+    fn excludes_rule_by_category_and_header_scope() {
+        let rule_set = RuleSet {
+            rules: builtin_rules().unwrap(),
+        };
+        let matches = rule_set.inspect_with_exclusions(
+            &RequestParts {
+                query: "content=<script>alert(1)</script>",
+                headers: "x-trusted-editor: true",
+                ..RequestParts::default()
+            },
+            &[RuleExclusionConfig {
+                categories: vec!["cross_site_scripting".to_string()],
+                headers: vec!["X-Trusted-Editor".to_string()],
+                ..RuleExclusionConfig::default()
+            }],
+        );
+
+        assert!(matches.is_empty());
     }
 
     #[test]

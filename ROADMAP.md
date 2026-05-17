@@ -138,7 +138,7 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
 - [x] Add anomaly scoring thresholds so multiple lower-severity findings can
       combine into a block decision instead of relying only on first-match
       blocking.
-- [ ] Add local tuning controls: disable rules by ID, disable categories, and
+- [x] Add local tuning controls: disable rules by ID, disable categories, and
       exclude specific rules by path, parameter, header, and rule ID.
 - [ ] Add rule-pack versioning and validation output so operators can see the
       loaded files, rule counts, disabled rules, unsupported imports, and

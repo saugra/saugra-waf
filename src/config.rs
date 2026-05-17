@@ -33,6 +33,8 @@ pub enum ConfigError {
     InvalidAiMode,
     #[error("rules.inbound_anomaly_threshold must be greater than zero")]
     InvalidAnomalyThreshold,
+    #[error("rules.exclusions entries must include at least one rule_id or category")]
+    InvalidRuleExclusion,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -164,6 +166,8 @@ pub struct RuleSettings {
     pub inbound_anomaly_threshold: u16,
     #[serde(default = "default_rule_files")]
     pub files: Vec<PathBuf>,
+    #[serde(default)]
+    pub exclusions: Vec<RuleExclusionConfig>,
 }
 
 impl Default for RuleSettings {
@@ -173,8 +177,25 @@ impl Default for RuleSettings {
             paranoia_level: default_paranoia_level(),
             inbound_anomaly_threshold: default_inbound_anomaly_threshold(),
             files: default_rule_files(),
+            exclusions: Vec::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RuleExclusionConfig {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub rule_ids: Vec<String>,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub path_prefixes: Vec<String>,
+    #[serde(default)]
+    pub query_params: Vec<String>,
+    #[serde(default)]
+    pub headers: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -295,6 +316,25 @@ impl SaugraConfig {
 
         if self.rules.inbound_anomaly_threshold == 0 {
             return Err(ConfigError::InvalidAnomalyThreshold);
+        }
+
+        for exclusion in &self.rules.exclusions {
+            if exclusion.rule_ids.is_empty() && exclusion.categories.is_empty() {
+                return Err(ConfigError::InvalidRuleExclusion);
+            }
+
+            let has_blank = exclusion
+                .rule_ids
+                .iter()
+                .chain(exclusion.categories.iter())
+                .chain(exclusion.path_prefixes.iter())
+                .chain(exclusion.query_params.iter())
+                .chain(exclusion.headers.iter())
+                .any(|value| value.trim().is_empty());
+
+            if has_blank {
+                return Err(ConfigError::InvalidRuleExclusion);
+            }
         }
 
         Ok(())
@@ -639,6 +679,57 @@ rules:
             config.validate(),
             Err(ConfigError::InvalidAnomalyThreshold)
         ));
+    }
+
+    #[test]
+    fn rejects_rule_exclusion_without_rule_or_category_scope() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rules:
+  exclusions:
+    - name: Missing rule scope
+      path_prefixes:
+        - /api/articles
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidRuleExclusion)
+        ));
+    }
+
+    #[test]
+    fn accepts_rule_exclusion_with_rule_and_path_scope() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rules:
+  exclusions:
+    - name: Allow article HTML previews
+      rule_ids:
+        - SAUGRA-XSS-001
+      path_prefixes:
+        - /api/articles
+      query_params:
+        - content
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
     }
 
     #[test]

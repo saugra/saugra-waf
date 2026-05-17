@@ -33,6 +33,7 @@ rules:
     - configs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
     - configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
     - configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
+  exclusions: []
 
 ai:
   enabled: true

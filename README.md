@@ -184,6 +184,14 @@ rules:
     - configs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
     - configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
     - configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
+  exclusions:
+    - name: Allow article HTML previews
+      rule_ids:
+        - SAUGRA-XSS-001
+      path_prefixes:
+        - /api/articles
+      query_params:
+        - content
 
 ai:
   enabled: true
@@ -199,6 +207,38 @@ logging:
 
 Start in `monitor` mode. Switch to `block` only after reviewing real traffic
 with `logs tail` and `explain`.
+
+### Rule Exclusions
+
+Use exclusions to tune false positives after reviewing logs in monitor mode.
+Prefer narrow scoped exclusions:
+
+```yaml
+rules:
+  exclusions:
+    - name: Allow article HTML previews
+      rule_ids:
+        - SAUGRA-XSS-001
+        - SAUGRA-BODY-001
+      path_prefixes:
+        - /api/articles
+      query_params:
+        - content
+```
+
+If `path_prefixes`, `query_params`, and `headers` are omitted, the exclusion is
+global for the listed `rule_ids` or `categories`:
+
+```yaml
+rules:
+  exclusions:
+    - name: Disable noisy XSS rule globally
+      rule_ids:
+        - SAUGRA-XSS-001
+```
+
+Global exclusions reduce protection across the whole application. Use them only
+when the rule is intentionally disabled everywhere.
 
 ### Nginx Change
 
