@@ -231,10 +231,11 @@ Planned work:
 - [x] Add `saugra posture check` for local deterministic checks such as
       expected external scheme, allowed methods, response security headers,
       secure cookies, and upload/body policy.
-- [ ] Add normalized local report ingestion for SBOM and dependency scan
+- [x] Add normalized local report ingestion for SBOM and dependency scan
       outputs.
-- [ ] Show OWASP category coverage in logs, explanations, and the future
-      dashboard/log viewer.
+- [x] Show OWASP category coverage in structured logs, security events, block
+      responses, and explanations.
+- [ ] Show OWASP category coverage in the future dashboard/log viewer.
 - [x] Support future standard mappings, such as `owasp-top-10:2026`, through
       YAML metadata and coverage mappings rather than proxy rewrites.
 

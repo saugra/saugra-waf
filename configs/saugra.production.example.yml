@@ -77,5 +77,8 @@ posture:
     - DELETE
   dependency_report_path: null
 
+reports:
+  dependency_report_paths: []
+
 standards:
   owasp_catalog: /etc/saugra/standards/owasp-top-10-2025.yml

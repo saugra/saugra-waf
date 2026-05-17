@@ -85,6 +85,12 @@ Run local deployment posture checks:
 cargo run -- posture check --config configs/saugra.example.yml
 ```
 
+Summarize configured SBOM/dependency scan reports:
+
+```bash
+cargo run -- reports summary --config configs/saugra.example.yml
+```
+
 Convert supported OWASP CRS regex rules into Saugra YAML:
 
 ```bash
@@ -240,6 +246,9 @@ posture:
     - PATCH
     - DELETE
   dependency_report_path: null
+
+reports:
+  dependency_report_paths: []
 
 standards:
   owasp_catalog: /etc/saugra/standards/owasp-top-10-2025.yml

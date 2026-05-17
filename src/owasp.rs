@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     config::{RateLimitBackend, SaugraConfig},
+    reports::SecurityReportSummary,
     rules::RuleSet,
     standards::{render_template, StandardCatalog},
 };
@@ -44,6 +45,7 @@ pub fn coverage_report(
     config: &SaugraConfig,
     rule_set: &RuleSet,
     catalog: &StandardCatalog,
+    security_reports: Option<&SecurityReportSummary>,
 ) -> OwaspCoverageReport {
     let mut rule_counts = BTreeMap::<String, usize>::new();
 
@@ -66,7 +68,12 @@ pub fn coverage_report(
                 controls.push(category.baseline_control.clone());
             }
 
-            controls.extend(config_controls(config, &category.id, catalog));
+            controls.extend(config_controls(
+                config,
+                &category.id,
+                catalog,
+                security_reports,
+            ));
 
             let status = coverage_status(rule_count, &controls, &category.planned_controls);
 
@@ -91,6 +98,7 @@ fn config_controls(
     config: &SaugraConfig,
     category_id: &str,
     catalog: &StandardCatalog,
+    security_reports: Option<&SecurityReportSummary>,
 ) -> Vec<String> {
     let mut controls = Vec::new();
 
@@ -159,6 +167,15 @@ fn config_controls(
 
     if config.posture.enabled {
         controls.extend(posture_controls(config, category_id, catalog));
+    }
+
+    if let Some(security_reports) = security_reports {
+        let finding_count = security_reports.finding_count_for_category(category_id);
+        if finding_count > 0 {
+            controls.push(format!(
+                "{finding_count} normalized local security report finding(s)"
+            ));
+        }
     }
 
     controls
@@ -290,7 +307,7 @@ mod tests {
         ))
         .unwrap();
         let rule_set = rules::load_rule_set(&config.rules).unwrap();
-        let report = coverage_report(&config, &rule_set, &catalog);
+        let report = coverage_report(&config, &rule_set, &catalog, None);
 
         assert_eq!(report.standard, "owasp-top-10:2025");
         assert_eq!(report.categories.len(), catalog.categories.len());
@@ -308,7 +325,7 @@ mod tests {
         ))
         .unwrap();
         let rule_set = rules::load_rule_set(&config.rules).unwrap();
-        let report = coverage_report(&config, &rule_set, &catalog);
+        let report = coverage_report(&config, &rule_set, &catalog, None);
 
         let insecure_design = report
             .categories
@@ -369,6 +386,7 @@ mod tests {
                 ..LoggingConfig::default()
             },
             posture: Default::default(),
+            reports: Default::default(),
             standards: Default::default(),
         }
     }

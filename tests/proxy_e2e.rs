@@ -198,6 +198,8 @@ async fn block_mode_returns_safe_json_response_for_attack_request() {
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert_eq!(json["action"], "block");
     assert_eq!(json["risk_score"], 80);
+    assert_eq!(json["owasp_category"], "A05:2025-Injection");
+    assert_eq!(json["owasp_categories"][0], "A05:2025-Injection");
     assert_eq!(json["matched_rules"][0]["rule_id"], "SAUGRA-SQLI-001");
     assert!(json["request_id"].as_str().is_some());
 }
@@ -410,6 +412,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
         ai: AiConfig::default(),
         logging: LoggingConfig::default(),
         posture: Default::default(),
+        reports: Default::default(),
         standards: Default::default(),
     }
 }

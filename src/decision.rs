@@ -21,6 +21,7 @@ pub struct WafDecision {
     pub anomaly_threshold: u16,
     pub explanation: String,
     pub owasp_category: Option<String>,
+    pub owasp_categories: Vec<String>,
 }
 
 impl WafDecision {
@@ -41,6 +42,7 @@ impl WafDecision {
                 anomaly_threshold,
                 explanation: "No security rules matched this request.".to_string(),
                 owasp_category: None,
+                owasp_categories: Vec::new(),
             };
         }
 
@@ -61,6 +63,12 @@ impl WafDecision {
         let owasp_category = matches
             .iter()
             .find_map(|rule_match| rule_match.owasp_category.clone());
+        let mut owasp_categories = matches
+            .iter()
+            .filter_map(|rule_match| rule_match.owasp_category.clone())
+            .collect::<Vec<_>>();
+        owasp_categories.sort();
+        owasp_categories.dedup();
         let explanation = matches
             .first()
             .map(|rule_match| rule_match.explanation.clone())
@@ -82,6 +90,7 @@ impl WafDecision {
             anomaly_threshold,
             explanation,
             owasp_category,
+            owasp_categories,
         }
     }
 }
@@ -206,6 +215,7 @@ mod tests {
         assert_eq!(json["anomaly_threshold"], 5);
         assert_eq!(json["matched_rules"][0]["rule_id"], "SAUGRA-SQLI-001");
         assert_eq!(json["owasp_category"], "A05:2025-Injection");
+        assert_eq!(json["owasp_categories"][0], "A05:2025-Injection");
     }
 
     fn rule_match() -> RuleMatch {

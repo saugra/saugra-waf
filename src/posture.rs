@@ -1,5 +1,6 @@
 use crate::{
     config::SaugraConfig,
+    reports::SecurityReportSummary,
     standards::{render_template, StandardCatalog},
 };
 
@@ -37,6 +38,14 @@ impl std::fmt::Display for PostureStatus {
 }
 
 pub fn check(config: &SaugraConfig, catalog: &StandardCatalog) -> PostureReport {
+    check_with_reports(config, catalog, None)
+}
+
+pub fn check_with_reports(
+    config: &SaugraConfig,
+    catalog: &StandardCatalog,
+    security_reports: Option<&SecurityReportSummary>,
+) -> PostureReport {
     let mappings = &catalog.posture_checks;
 
     if !config.posture.enabled {
@@ -105,7 +114,7 @@ pub fn check(config: &SaugraConfig, catalog: &StandardCatalog) -> PostureReport 
         });
     }
     if let Some(mapping) = &mappings.dependency_report {
-        checks.push(dependency_report_check(config, mapping));
+        checks.push(dependency_report_check(config, mapping, security_reports));
     }
 
     PostureReport {
@@ -211,7 +220,24 @@ fn boolean_posture_check(
 fn dependency_report_check(
     config: &SaugraConfig,
     mapping: &crate::standards::DependencyReportMapping,
+    security_reports: Option<&SecurityReportSummary>,
 ) -> PostureCheck {
+    if let Some(security_reports) = security_reports {
+        if security_reports.finding_count() > 0 {
+            return PostureCheck {
+                id: mapping.check_id.clone(),
+                name: mapping.name.clone(),
+                status: PostureStatus::Pass,
+                owasp_category: mapping.category.clone(),
+                message: format!(
+                    "{} normalized finding(s) loaded from {} report(s)",
+                    security_reports.finding_count(),
+                    security_reports.reports.len()
+                ),
+            };
+        }
+    }
+
     match config.posture.dependency_report_path.as_deref() {
         Some(path) if path.exists() => PostureCheck {
             id: mapping.check_id.clone(),
@@ -327,6 +353,7 @@ mod tests {
             ai: AiConfig::default(),
             logging: LoggingConfig::default(),
             posture,
+            reports: Default::default(),
             standards: Default::default(),
         }
     }

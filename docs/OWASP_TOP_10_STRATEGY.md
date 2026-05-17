@@ -164,7 +164,7 @@ integrations can come later once the local report model is stable.
    Start with deterministic local checks: expected scheme, allowed methods,
    security headers, secure cookies, and upload/body policy.
 
-3. Add report ingestion.
+3. Add report ingestion. Initial local ingestion done.
    Start with local files such as SBOM or dependency scan reports. Normalize them
    into Saugra findings mapped to OWASP categories.
 

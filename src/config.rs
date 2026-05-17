@@ -45,6 +45,8 @@ pub enum ConfigError {
     InvalidPostureMethod,
     #[error("posture.dependency_report_path must not be blank when provided")]
     InvalidPostureDependencyReportPath,
+    #[error("reports.dependency_report_paths entries must not be blank")]
+    InvalidReportPath,
     #[error("standards.owasp_catalog must not be blank when provided")]
     InvalidOwaspCatalogPath,
 }
@@ -65,6 +67,8 @@ pub struct SaugraConfig {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub posture: PostureConfig,
+    #[serde(default)]
+    pub reports: ReportConfig,
     #[serde(default)]
     pub standards: StandardsConfig,
 }
@@ -300,6 +304,12 @@ impl Default for StandardsConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ReportConfig {
+    #[serde(default)]
+    pub dependency_report_paths: Vec<PathBuf>,
+}
+
 impl SaugraConfig {
     pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
         let contents = fs::read_to_string(path)?;
@@ -425,6 +435,15 @@ impl SaugraConfig {
             return Err(ConfigError::InvalidPostureDependencyReportPath);
         }
 
+        if self
+            .reports
+            .dependency_report_paths
+            .iter()
+            .any(|path| path.as_os_str().is_empty())
+        {
+            return Err(ConfigError::InvalidReportPath);
+        }
+
         if self.standards.owasp_catalog.as_os_str().is_empty() {
             return Err(ConfigError::InvalidOwaspCatalogPath);
         }
@@ -470,6 +489,16 @@ impl SaugraConfig {
             self.rules.owasp_crs,
             self.rules.paranoia_level
         )
+    }
+
+    pub fn dependency_report_paths(&self) -> Vec<PathBuf> {
+        let mut paths = self.reports.dependency_report_paths.clone();
+        if let Some(path) = &self.posture.dependency_report_path {
+            if !paths.iter().any(|existing| existing == path) {
+                paths.push(path.clone());
+            }
+        }
+        paths
     }
 }
 

@@ -8,5 +8,6 @@ pub mod owasp;
 pub mod posture;
 pub mod proxy;
 pub mod rate_limit;
+pub mod reports;
 pub mod rules;
 pub mod standards;

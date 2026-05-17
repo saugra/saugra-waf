@@ -4,7 +4,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use saugra::{
     ai, config::SaugraConfig, crs_convert, event_store, event_store::EventLogRetention, logging,
-    owasp, posture, proxy, rules, standards,
+    owasp, posture, proxy, reports, rules, standards,
 };
 
 #[derive(Debug, Parser)]
@@ -58,6 +58,11 @@ enum Commands {
         #[command(subcommand)]
         command: PostureCommand,
     },
+    /// Read local security reports such as SBOM or dependency scan outputs.
+    Reports {
+        #[command(subcommand)]
+        command: ReportsCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -108,6 +113,15 @@ enum OwaspCommand {
 enum PostureCommand {
     /// Run local deterministic posture checks.
     Check {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ReportsCommand {
+    /// Normalize and summarize configured local security reports.
+    Summary {
         #[arg(short, long, default_value = "configs/saugra.example.yml")]
         config: PathBuf,
     },
@@ -190,7 +204,9 @@ async fn main() -> anyhow::Result<()> {
                 let config = load_valid_config(&config)?;
                 let rule_set = rules::load_rule_set(&config.rules)?;
                 let catalog = standards::load_catalog_or_builtin(&config.standards.owasp_catalog)?;
-                let report = owasp::coverage_report(&config, &rule_set, &catalog);
+                let security_reports = reports::load_configured_reports(&config)?;
+                let report =
+                    owasp::coverage_report(&config, &rule_set, &catalog, Some(&security_reports));
                 print_owasp_coverage(&report);
                 Ok(())
             }
@@ -199,8 +215,18 @@ async fn main() -> anyhow::Result<()> {
             PostureCommand::Check { config } => {
                 let config = load_valid_config(&config)?;
                 let catalog = standards::load_catalog_or_builtin(&config.standards.owasp_catalog)?;
-                let report = posture::check(&config, &catalog);
+                let security_reports = reports::load_configured_reports(&config)?;
+                let report =
+                    posture::check_with_reports(&config, &catalog, Some(&security_reports));
                 print_posture_report(&report);
+                Ok(())
+            }
+        },
+        Commands::Reports { command } => match command {
+            ReportsCommand::Summary { config } => {
+                let config = load_valid_config(&config)?;
+                let summary = reports::load_configured_reports(&config)?;
+                print_security_report_summary(&summary);
                 Ok(())
             }
         },
@@ -310,6 +336,34 @@ fn print_posture_report(report: &posture::PostureReport) {
             "{}\t{}\t{}\t{}\t{}",
             check.status, check.id, check.owasp_category, check.name, check.message
         );
+    }
+}
+
+fn print_security_report_summary(summary: &reports::SecurityReportSummary) {
+    println!("security reports: {}", summary.reports.len());
+    println!("findings: {}", summary.finding_count());
+
+    for missing_path in &summary.missing_paths {
+        println!("missing\t{}", missing_path.display());
+    }
+
+    for report in &summary.reports {
+        println!(
+            "report\t{}\tformat={}\tfindings={}",
+            report.path.display(),
+            report.format,
+            report.findings.len()
+        );
+        for finding in &report.findings {
+            println!(
+                "finding\t{}\t{}\t{}\t{}\t{}",
+                finding.id,
+                finding.severity.as_deref().unwrap_or("unknown"),
+                finding.package.as_deref().unwrap_or("unknown"),
+                finding.owasp_category,
+                finding.summary
+            );
+        }
     }
 }
 

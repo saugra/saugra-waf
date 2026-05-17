@@ -252,7 +252,9 @@ pub async fn proxy_request(
                 "request_id": request_id,
                 "action": "block",
                 "risk_score": decision.risk_score,
-                "matched_rules": decision.matched_rules,
+                "owasp_category": &decision.owasp_category,
+                "owasp_categories": &decision.owasp_categories,
+                "matched_rules": &decision.matched_rules,
                 "explanation": ai::explain(&decision)
             }),
         ));
@@ -471,6 +473,8 @@ fn log_decision(method: &Method, path: &str, query: &str, decision: &WafDecision
         risk_score = decision.risk_score,
         severity = %decision.severity,
         matched_rules = decision.matched_rules.len(),
+        owasp_category = decision.owasp_category.as_deref().unwrap_or("none"),
+        owasp_categories = %decision.owasp_categories.join(","),
         %method,
         path,
         query,
@@ -630,6 +634,7 @@ mod tests {
             ai: Default::default(),
             logging: Default::default(),
             posture: Default::default(),
+            reports: Default::default(),
             standards: Default::default(),
         }
     }

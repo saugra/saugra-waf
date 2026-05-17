@@ -15,11 +15,14 @@ pub struct SecurityEvent {
     pub method: String,
     pub path: String,
     pub query: String,
+    pub owasp_categories: Vec<String>,
     pub decision: WafDecision,
 }
 
 impl SecurityEvent {
     pub fn new(method: &str, path: &str, query: &str, decision: WafDecision) -> Self {
+        let owasp_categories = decision.owasp_categories.clone();
+
         Self {
             timestamp_unix_seconds: SystemTime::now()
                 .duration_since(UNIX_EPOCH)
@@ -28,6 +31,7 @@ impl SecurityEvent {
             method: method.to_string(),
             path: path.to_string(),
             query: query.to_string(),
+            owasp_categories,
             decision,
         }
     }
@@ -210,6 +214,7 @@ mod tests {
             method: "GET".to_string(),
             path: "/search".to_string(),
             query: "q=test".to_string(),
+            owasp_categories: Vec::new(),
             decision: decision("request-1"),
         };
 
@@ -219,6 +224,7 @@ mod tests {
         assert_eq!(json["method"], "GET");
         assert_eq!(json["path"], "/search");
         assert_eq!(json["query"], "q=test");
+        assert!(json["owasp_categories"].as_array().unwrap().is_empty());
         assert_eq!(json["decision"]["request_id"], "request-1");
         assert_eq!(json["decision"]["action"], "allow");
         assert_eq!(json["decision"]["risk_score"], 0);
@@ -235,6 +241,7 @@ mod tests {
             anomaly_threshold: 5,
             explanation: "No security rules matched this request.".to_string(),
             owasp_category: None,
+            owasp_categories: Vec::new(),
         }
     }
 }
