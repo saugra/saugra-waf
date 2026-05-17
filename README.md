@@ -1,5 +1,9 @@
 # Saugra WAF
 
+![Saugra WAF Logo](docs/img/saugra-logo.jpeg)
+
+
+
 Saugra is a lightweight rule-based + AI-assisted Web Application Firewall for
 modern web applications and APIs.
 
