@@ -1,7 +1,7 @@
 # Saugra Public Roadmap
 
-This roadmap tracks public community-edition development for Saugra. The MVP is
-intended to become production-usable for real web applications, not just a demo.
+This roadmap tracks public community-edition development for Saugra. Saugra is
+developed as a production-oriented WAF for real web applications.
 
 Saugra is developed with an open-core direction: this public repository focuses
 on the self-hosted WAF engine, reverse proxy, rules, local logs, CLI, local
@@ -26,7 +26,7 @@ The repository has a working Rust foundation:
 - Structured logging setup
 - Catch-all reverse proxy service
 - Local JSONL security event store
-- Initial in-memory rate limiter for local/demo use
+- Initial in-memory rate limiter for local-only use
 - Example config at `configs/saugra.example.yml`
 
 ## Verified Commands
@@ -44,17 +44,17 @@ Current test status:
 22 passed; 0 failed
 ```
 
-## Production-Ready MVP Principle
+## Production-Ready Product Principle
 
 Saugra should avoid throwaway implementations for security-critical features.
-Each MVP feature should be built as a production-oriented foundation that can be
+Each feature should be built as a production-oriented foundation that can be
 improved without rewriting call sites or changing the operator workflow.
 
 Required implications:
 
 - Rate limiting must use a stable storage abstraction and support a
-  production-safe backend such as Redis before it is considered MVP-complete.
-  In-memory rate limiting is only a local/demo backend.
+  production-safe backend such as Redis before it is considered complete.
+  In-memory rate limiting is only a local-only backend.
 - Security events must be written to durable, queryable storage suitable for
   `logs tail`, `explain <request-id>`, and basic audit workflows.
 - Monitor-first rollout remains the default recommendation, but block mode must
@@ -74,7 +74,7 @@ The public edition should remain useful by itself:
 - Local CLI tools
 - Local dashboard or log viewer
 - Nginx and Apache integration examples
-- Docker/demo deployment examples
+- Docker and deployment examples
 - Basic explain-only AI summaries
 
 ## Open-Core Boundary
@@ -165,11 +165,11 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
 ## Phase 3 — Production-Ready Proxy Verification + Abuse Controls
 
 - [x] Add JSON decision output shape tests.
-- [x] Add initial in-memory per-client rate limiting for local/demo use.
+- [x] Add initial in-memory per-client rate limiting for local-only use.
 - [x] Introduce a `RateLimitStore` abstraction.
 - [x] Add Redis-backed distributed rate limiting for production use.
 - [x] Support configurable per-route limits with burst settings.
-- [x] Treat in-memory rate limiting as `backend: memory` for local/demo only.
+- [x] Treat in-memory rate limiting as `backend: memory` for local-only use.
 - [x] Add a Redis-backed production config example.
 - [x] Return safe `429` JSON responses for blocked rate-limit abuse.
 - [x] Add proxy handler tests for rule blocking and rate-limit blocking.
@@ -179,7 +179,7 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
 - [x] Add configurable external/durable event storage path and retention policy.
 - [x] Add forwarding tests with a fake upstream transport.
 - [x] Add structured JSON security event shape tests.
-- [ ] Add safer end-to-end demo scripts for local proxy smoke tests.
+- [ ] Add safer end-to-end scripts for local proxy smoke tests.
 
 ## Phase 4 — WebSocket and Upgrade-Aware Proxying
 

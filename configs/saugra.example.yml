@@ -52,6 +52,7 @@ logging:
   event_log_path: logs/saugra-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 10
+  timezone: UTC
 
 posture:
   enabled: true

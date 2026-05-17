@@ -21,6 +21,8 @@ pub enum ConfigError {
     InvalidEventLogMaxSize,
     #[error("logging.event_log_max_files must be greater than zero")]
     InvalidEventLogMaxFiles,
+    #[error("logging.timezone must be UTC, Africa/Nairobi, or a fixed offset such as +03:00")]
+    InvalidLoggingTimezone,
     #[error("rate_limit.requests_per_minute must be greater than zero")]
     InvalidRateLimit,
     #[error("rate_limit.routes entries must include a non-empty path")]
@@ -247,6 +249,8 @@ pub struct LoggingConfig {
     pub event_log_max_size: String,
     #[serde(default = "default_event_log_max_files")]
     pub event_log_max_files: usize,
+    #[serde(default = "default_logging_timezone")]
+    pub timezone: String,
 }
 
 impl Default for LoggingConfig {
@@ -257,6 +261,7 @@ impl Default for LoggingConfig {
             event_log_path: default_event_log_path(),
             event_log_max_size: default_event_log_max_size(),
             event_log_max_files: default_event_log_max_files(),
+            timezone: default_logging_timezone(),
         }
     }
 }
@@ -342,6 +347,10 @@ impl SaugraConfig {
 
         if self.logging.event_log_max_files == 0 {
             return Err(ConfigError::InvalidEventLogMaxFiles);
+        }
+
+        if !crate::event_store::is_supported_timestamp_timezone(&self.logging.timezone) {
+            return Err(ConfigError::InvalidLoggingTimezone);
         }
 
         if self.rate_limit.requests_per_minute == 0 {
@@ -582,6 +591,10 @@ fn default_event_log_max_size() -> String {
 
 fn default_event_log_max_files() -> usize {
     10
+}
+
+fn default_logging_timezone() -> String {
+    "UTC".to_string()
 }
 
 fn default_expected_external_scheme() -> String {
@@ -916,6 +929,48 @@ logging:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidEventLogMaxFiles)
+        ));
+    }
+
+    #[test]
+    fn accepts_logging_timezone() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+logging:
+  timezone: Africa/Nairobi
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.logging.timezone, "Africa/Nairobi");
+    }
+
+    #[test]
+    fn rejects_invalid_logging_timezone() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+logging:
+  timezone: Mars/Olympus
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidLoggingTimezone)
         ));
     }
 

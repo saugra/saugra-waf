@@ -10,34 +10,33 @@ The product direction is:
 Rules-first protection + rate limiting + behavior scoring + AI explanations
 ```
 
-AI must assist with explanations and tuning. It must not be the only blocking mechanism in the MVP.
+AI must assist with explanations and tuning. It must not be the only blocking mechanism.
 
-## Production-Ready MVP Rule
+## Production-Ready Product Rule
 
-Saugra is intended to be usable in production as soon as the MVP is complete.
-Agents must avoid throwaway implementations for security-critical features.
-Build each feature once as a production-oriented foundation, then improve it
-incrementally. Do not implement a temporary version that must be replaced later
-unless it is clearly isolated behind a stable interface and the follow-up work is
-tracked immediately.
+Saugra is a production-oriented security product. Agents must avoid throwaway
+implementations for security-critical features. Build each feature once as a
+production foundation, then improve it incrementally. Do not implement a
+temporary version that must be replaced later unless it is clearly isolated
+behind a stable interface and the follow-up work is tracked immediately.
 
 Security features must be designed for real deployment from the start:
 
 - Rate limiting must support a durable or distributed backend for production
-  deployments. In-memory rate limiting is acceptable only as a local/demo backend
+  deployments. In-memory rate limiting is acceptable only as a local-only backend
   behind a stable storage abstraction, not as the production endpoint.
 - Request logs and explanations must be retained in a queryable local store or
   explicitly configured external store. Do not rely only on stdout for production
   workflows.
 - Blocking behavior must be deterministic, configurable, observable, and tested.
-- Any feature marked done for MVP must have a clear path to production use
+- Any feature marked done must be usable in the documented production path
   without a rewrite.
 - Default guidance should be monitor-first for safe rollout, then block mode
   after tuning.
 
 ## Primary Goal
 
-Build a working capstone MVP that can:
+Build and maintain a production WAF that can:
 
 1. Run as a reverse proxy.
 2. Inspect HTTP requests.
@@ -71,7 +70,7 @@ saugra/
 │   └── express-nginx/
 ├── docs/
 │   ├── ARCHITECTURE.md
-│   └── CAPSTONE_SPEC.md
+│   └── PRODUCT_SPEC.md
 ├── ROADMAP.md
 ├── tests/
 │   ├── integration/
@@ -79,7 +78,8 @@ saugra/
 └── README.md
 ```
 
-For a smaller capstone repository, a simpler structure is acceptable:
+For a single-crate production repository, this structure is acceptable while the
+module boundaries remain clear:
 
 ```txt
 saugra/
@@ -105,7 +105,7 @@ Use these libraries unless there is a strong reason not to:
 - `axum` or `hyper` for HTTP server/proxy behavior
 - `tower` for middleware layering
 - `serde` and `serde_yaml` for config parsing
-- `regex` for MVP pattern rules
+- `regex` for pattern rules
 - `tracing` and `tracing-subscriber` for logs
 - `clap` for CLI
 - `uuid` for request IDs
@@ -149,7 +149,7 @@ Important rules:
   restart, cannot work across multiple Saugra instances, or cannot be observed
   and tuned from logs.
 
-## MVP Rule Categories
+## Rule Categories
 
 Implement built-in rules for:
 
@@ -241,6 +241,7 @@ logging:
   event_log_path: /var/log/saugra/saugra-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 30
+  timezone: Africa/Nairobi
 ```
 
 ## CLI Requirements
@@ -300,20 +301,20 @@ Example attack test cases:
 
 ## Documentation Requirements
 
-Keep documentation practical and demo-friendly:
+Keep documentation practical and production-focused:
 
 - README quick start
-- CAPSTONE_SPEC.md product specification
+- PRODUCT_SPEC.md product specification
 - ARCHITECTURE.md technical architecture
 - ROADMAP.md public implementation roadmap
 - deployment examples
-- demo commands
+- deployment and verification commands
 
-## Definition of Done for MVP
+## Production Readiness Definition
 
-The MVP is done when a user can:
+The product path is production-ready when a user can:
 
-1. Start a demo backend app.
+1. Start a backend app.
 2. Start Saugra with a YAML config.
 3. Place Nginx or Apache in front of Saugra.
 4. Send normal traffic successfully.

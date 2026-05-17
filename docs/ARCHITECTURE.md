@@ -16,7 +16,7 @@ or:
 Client → Saugra WAF → Backend Application
 ```
 
-The recommended production-style capstone setup is to keep Nginx or Apache as the public web server and run Saugra on a local/private port.
+The recommended production setup is to keep Nginx or Apache as the public web server and run Saugra on a local/private port.
 
 Production deployment examples live in:
 
@@ -42,7 +42,7 @@ The decision model is:
 Final decision = Rules + Rate Limiting + Behavior Score + Optional AI Explanation
 ```
 
-AI should explain and assist. It should not be the only reason a request is blocked in the MVP.
+AI should explain and assist. It should not be the only reason a request is blocked.
 
 OWASP Top 10 coverage should be modeled as layered controls, not only request
 regex rules. Request rules handle visible payloads, rate limits handle abuse
@@ -162,7 +162,7 @@ Normalization helps rules behave consistently.
 
 Responsible for detecting suspicious patterns.
 
-MVP rule targets:
+Rule targets:
 
 - path
 - query
@@ -172,7 +172,7 @@ MVP rule targets:
 - user-agent
 - file extension
 
-MVP rule categories:
+Rule categories:
 
 - SQL injection
 - XSS
@@ -199,7 +199,7 @@ RuleMatch {
 
 Responsible for abuse control.
 
-MVP behavior:
+Rate-limiting behavior:
 
 - per-IP limits
 - per-route limits
@@ -207,7 +207,7 @@ MVP behavior:
 - burst control
 - temporary blocking
 
-Initial implementation can use in-memory storage. Redis can be added later for distributed deployments.
+In-memory storage is only for local development. Production deployments should use Redis or another durable/distributed backend.
 
 ### 6. Decision Engine
 
@@ -250,7 +250,9 @@ Example:
 
 ```json
 {
+  "timestamp": "2026-05-14T19:00:00Z",
   "request_id": "req_12345",
+  "client_ip": "192.168.1.10",
   "method": "GET",
   "path": "/search?q=' OR 1=1",
   "rule_id": "SAUGRA-SQLI-001",
@@ -265,14 +267,14 @@ Example:
 
 Responsible for human-friendly explanations.
 
-MVP behavior:
+Explanation behavior:
 
 - explain why a request was blocked
 - summarize matched rules
 - suggest possible tuning direction
 - classify event type
 
-The MVP can use deterministic templates instead of a real LLM. This keeps the project simple and privacy-friendly while still demonstrating AI-assisted behavior.
+Saugra may use deterministic templates, an LLM integration, or both. Blocking remains deterministic and based on rules, rate limits, and explicit configuration.
 
 Example:
 
@@ -304,7 +306,7 @@ Recommended ports:
 
 - Apache: public `80/443`
 - Saugra: local `127.0.0.1:8787`
-- Laravel demo server: local `127.0.0.1:8000`
+- Laravel app server: local `127.0.0.1:8000`
 
 ### Node.js/Express + Nginx + Saugra
 
@@ -320,15 +322,15 @@ Recommended ports:
 
 ## Data Storage
 
-### MVP
+### Production Baseline
 
-Use local files or SQLite for:
+Use queryable local or external storage for:
 
 - security events
 - request explanations
 - recent blocked requests
 
-### Future
+### Scale-Out Options
 
 Use:
 
@@ -487,7 +489,7 @@ Next rule-engine milestones:
 
 ## API and Dashboard Architecture
 
-For the capstone, the dashboard can be simple.
+The dashboard should provide practical operational visibility.
 
 Possible endpoints:
 

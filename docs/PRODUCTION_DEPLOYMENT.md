@@ -115,6 +115,8 @@ Important production defaults:
   stricter limits.
 - `logging.event_log_path` should point to a durable local path.
 - `logging.event_log_max_size` and `logging.event_log_max_files` should be set.
+- `logging.timezone` should be set to the operator's preferred log timezone,
+  for example `Africa/Nairobi`.
 
 Do not use `backend: memory` for production rate limiting. It is only for local
 development and single-process demos.
@@ -231,6 +233,7 @@ logging:
   level: info
   event_log_max_size: 100mb
   event_log_max_files: 30
+  timezone: Africa/Nairobi
 ```
 
 ## Rollout Checklist

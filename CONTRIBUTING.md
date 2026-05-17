@@ -147,7 +147,7 @@ Please refer to `docs/OWASP_TOP_10_STRATEGY.md` for our layered coverage matrix.
 
 If you have questions about the codebase or design decisions, feel free to refer to:
 * [ARCHITECTURE.md](docs/ARCHITECTURE.md) for technical design details.
-* [CAPSTONE_SPEC.md](docs/CAPSTONE_SPEC.md) for product specification.
+* [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) for product specification.
 * [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for deployment insights.
 
 Alternatively, contact the core maintainers at [wanyonyi.d.emanuel@gmail.com](mailto:wanyonyi.d.emanuel@gmail.com) or open a Github Discussion!

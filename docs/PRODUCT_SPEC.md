@@ -1,4 +1,4 @@
-# CAPSTONE SPEC: Saugra WAF
+# PRODUCT SPEC: Saugra WAF
 
 ## Project Name
 
@@ -12,10 +12,10 @@ Saugra WAF is a lightweight, rule-based + AI-assisted Web Application Firewall d
 
 The goal is not to replace traditional WAF rules with AI, but to combine proven rule-based protection, behavioral scoring, rate limiting, and AI-assisted explanations to help developers and small teams secure their applications with less configuration complexity.
 
-The MVP goal is production-ready, not throwaway. Features should be built once
-as stable foundations that can be improved over time. A local/demo backend is
-acceptable only when it sits behind a stable abstraction and the production
-backend is part of the MVP plan.
+The product goal is production-ready, not throwaway. Features should be built
+once as stable foundations that can be improved over time. Local-only backends
+are acceptable only when they sit behind stable abstractions and production
+backends are available in the documented deployment path.
 
 ## Problem Statement
 
@@ -33,7 +33,7 @@ Saugra WAF addresses this by offering a developer-friendly, self-hosted, Rust-po
 
 Saugra should be positioned honestly against mature, established WAF platforms.
 Those tools are powerful, widely deployed, and battle-tested. Saugra should not
-claim broad parity with them, but the MVP should be designed for cautious
+claim broad parity with them, but Saugra should be designed for cautious
 production use on real applications after monitor-mode tuning.
 
 Saugra's differentiation is developer experience:
@@ -56,17 +56,17 @@ layer that combines deterministic rules, rate limiting, observability, and
 explainable security events. It should be evaluated and tuned in monitor mode
 before being used to block production traffic.
 
-## Production-Ready MVP Principle
+## Production-Ready Product Principle
 
 Saugra should avoid implementing the same security feature twice: once for a
-prototype and again for production. MVP implementations must use stable
+prototype and again for production. Implementations must use stable
 interfaces and production-oriented data models so they can be improved without
 rewriting the feature.
 
 Required principles:
 
-- Rate limiting must support durable or distributed state before production MVP
-  completion. In-memory counters are only a local/demo backend.
+- Rate limiting must support durable or distributed state before a feature is
+  marked complete. In-memory counters are only a local-only backend.
 - Security events must be retained in durable, queryable storage for audit,
   `logs tail`, and `explain <request-id>` workflows. Local JSONL storage must
   include bounded retention and rotation.
@@ -125,9 +125,9 @@ This mode is useful for teams already using Nginx or Apache.
 Client → Saugra WAF → Backend App
 ```
 
-This mode is useful for simpler deployments, demos, Docker Compose, and development environments.
+This mode is useful for simpler deployments, Docker Compose, and development environments.
 
-## Core MVP Features
+## Core Product Features
 
 ### 1. Rust Reverse Proxy
 
@@ -168,7 +168,7 @@ dependency, deployment, or operational controls outside a WAF:
 - Security logging and alerting abuse indicators
 - Mishandled exceptional-condition probes
 
-The MVP should start with practical detection rules for:
+Saugra should include practical detection rules for:
 
 - SQL injection
 - XSS
@@ -232,7 +232,7 @@ rules:
 
 Saugra should aim to become compatible with OWASP Core Rule Set concepts.
 
-MVP support may include:
+Supported CRS-compatible concepts should include:
 
 - CRS-inspired rule categories
 - Paranoia level concept
@@ -354,6 +354,7 @@ logging:
   event_log_path: /var/log/saugra/saugra-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 30
+  timezone: Africa/Nairobi
 ```
 
 Supported modes:
@@ -366,7 +367,7 @@ Supported modes:
 
 AI should assist, not fully control blocking decisions.
 
-Recommended MVP AI features:
+Recommended AI features:
 
 - Explain why a request was blocked
 - Summarize attack logs
@@ -380,7 +381,7 @@ Recommended decision model:
 Final decision = Rules + Rate Limiting + Behavior Score + Optional AI Risk Score
 ```
 
-AI should not be the only blocking mechanism in the MVP.
+AI should not be the only blocking mechanism.
 
 ## 9. Rate Limiting and Bot Defense
 
@@ -413,8 +414,8 @@ rate_limit:
       burst: 5
 ```
 
-The MVP may include `backend: memory` for local development and single-process
-demos, but production documentation must recommend `backend: redis` or another
+Saugra may include `backend: memory` for local development and single-process
+testing, but production documentation must recommend `backend: redis` or another
 durable/distributed backend. The rate-limiting engine should be abstracted so
 memory and Redis implementations share the same policy evaluation path.
 
@@ -430,7 +431,7 @@ Because many modern applications are API-first, Saugra should support:
 - GraphQL query depth limit in future versions
 - OpenAPI schema import in future versions
 
-MVP API protections:
+API protections:
 
 - Inspect JSON request bodies
 - Limit body size
@@ -487,7 +488,7 @@ Local event retention:
 
 The dashboard should help users understand what is happening.
 
-MVP dashboard features:
+Dashboard features:
 
 - Total requests
 - Blocked requests
@@ -534,7 +535,7 @@ saugra explain <request-id>
 
 Saugra should be easy to deploy in different environments.
 
-MVP deployment targets:
+Deployment targets:
 
 - Single binary
 - Docker image
@@ -612,11 +613,9 @@ exclusions:
       - SAUGRA-XSS-002
 ```
 
-## 17. Suggested MVP Scope
+## 17. Production Product Scope
 
-The first version should avoid being too large.
-
-Recommended MVP:
+Recommended production scope:
 
 1. Rust reverse proxy
 2. YAML configuration
@@ -676,7 +675,7 @@ Saugra should differentiate itself by being:
 
 ## 20. Success Criteria
 
-The capstone project is successful if it can:
+The product path is successful if Saugra can:
 
 - Run as a reverse proxy
 - Protect a sample backend app
@@ -689,11 +688,11 @@ The capstone project is successful if it can:
 - Support monitor and block modes
 - Be configured using a simple YAML file
 
-## 21. Example Demo Scenario
+## 21. Example Verification Scenario
 
-A demo can include:
+A verification scenario can include:
 
-1. Run a vulnerable demo backend app.
+1. Run a vulnerable backend app in an isolated test environment.
 2. Place Saugra WAF in front of it.
 3. Send normal requests and show they are allowed.
 4. Send SQL injection payloads and show they are blocked.
@@ -719,7 +718,7 @@ A demo can include:
 
 ### Storage
 
-MVP:
+Production baseline:
 
 - SQLite or local JSONL logs for single-node event retention
 - Redis for distributed rate limiting
@@ -739,7 +738,7 @@ Options:
 
 ### AI Layer
 
-MVP:
+Production baseline:
 
 - Local explain-only module
 - Optional LLM API integration

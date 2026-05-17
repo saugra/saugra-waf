@@ -7,7 +7,7 @@
 Saugra is a lightweight rule-based + AI-assisted Web Application Firewall for
 modern web applications and APIs.
 
-The MVP direction is:
+The product direction is:
 
 ```txt
 Rules-first protection + rate limiting + behavior scoring + AI explanations
@@ -37,7 +37,7 @@ Choose Saugra if you want:
 
 ## Current Status
 
-This repository now has a production-oriented MVP foundation:
+This repository now has a production-oriented foundation:
 
 - Rust CLI scaffold
 - YAML config loading and validation
@@ -54,7 +54,7 @@ See `ROADMAP.md` for the public development roadmap.
 Public docs:
 
 - `docs/ARCHITECTURE.md` — technical architecture
-- `docs/CAPSTONE_SPEC.md` — capstone product specification
+- `docs/PRODUCT_SPEC.md` — product specification
 - `docs/PRODUCTION_DEPLOYMENT.md` — Nginx/Apache production deployment guide
 - `docs/OWASP_TOP_10_STRATEGY.md` — layered OWASP Top 10 coverage strategy
 
@@ -237,6 +237,7 @@ logging:
   event_log_path: /var/log/saugra/saugra-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 30
+  timezone: Africa/Nairobi
 
 posture:
   enabled: true

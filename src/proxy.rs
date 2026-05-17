@@ -155,13 +155,13 @@ pub async fn proxy_request(
 ) -> Result<Response<Body>, Response<Body>> {
     let request_id = Uuid::new_v4().to_string();
     let (parts, body) = request.into_parts();
+    let client_ip = client_id_from_headers(&parts.headers);
 
     if state.config.security.enable_rate_limiting {
-        let client_id = client_id_from_headers(&parts.headers);
-        let rate_limit = select_rate_limit(&state.config, parts.uri.path(), &client_id);
+        let rate_limit = select_rate_limit(&state.config, parts.uri.path(), &client_ip);
         let rate_limit_result = state
             .rate_limit_store
-            .check(&rate_limit.key, &client_id, rate_limit.policy)
+            .check(&rate_limit.key, &client_ip, rate_limit.policy)
             .await
             .map_err(|error| {
                 error!(request_id, %error, "rate-limit backend failed");
@@ -185,6 +185,7 @@ pub async fn proxy_request(
                 &parts.method,
                 parts.uri.path(),
                 parts.uri.query().unwrap_or_default(),
+                &client_ip,
                 &decision,
             );
             record_event(
@@ -192,6 +193,7 @@ pub async fn proxy_request(
                 parts.method.as_str(),
                 parts.uri.path(),
                 parts.uri.query().unwrap_or_default(),
+                &client_ip,
                 &decision,
             );
 
@@ -242,8 +244,15 @@ pub async fn proxy_request(
         state.config.rules.inbound_anomaly_threshold,
     );
 
-    log_decision(&parts.method, &path, &query, &decision);
-    record_event(&state, parts.method.as_str(), &path, &query, &decision);
+    log_decision(&parts.method, &path, &query, &client_ip, &decision);
+    record_event(
+        &state,
+        parts.method.as_str(),
+        &path,
+        &query,
+        &client_ip,
+        &decision,
+    );
 
     if decision.action == WafAction::Block {
         return Err(json_response(
@@ -466,9 +475,10 @@ fn is_sensitive_header(name: &HeaderName) -> bool {
     )
 }
 
-fn log_decision(method: &Method, path: &str, query: &str, decision: &WafDecision) {
+fn log_decision(method: &Method, path: &str, query: &str, client_ip: &str, decision: &WafDecision) {
     info!(
         request_id = %decision.request_id,
+        client_ip,
         action = ?decision.action,
         risk_score = decision.risk_score,
         severity = %decision.severity,
@@ -483,8 +493,22 @@ fn log_decision(method: &Method, path: &str, query: &str, decision: &WafDecision
     );
 }
 
-fn record_event(state: &ProxyState, method: &str, path: &str, query: &str, decision: &WafDecision) {
-    let event = SecurityEvent::new(method, path, query, decision.clone());
+fn record_event(
+    state: &ProxyState,
+    method: &str,
+    path: &str,
+    query: &str,
+    client_ip: &str,
+    decision: &WafDecision,
+) {
+    let event = SecurityEvent::new_with_timezone(
+        method,
+        path,
+        query,
+        decision.clone(),
+        client_ip,
+        &state.config.logging.timezone,
+    );
 
     if let Err(error) =
         event_store::append(&state.event_log_path, state.event_log_retention, &event)

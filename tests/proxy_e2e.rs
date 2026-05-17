@@ -61,6 +61,7 @@ async fn monitor_mode_records_attack_and_still_forwards() {
     );
     let request = Request::builder()
         .uri("/search?q=--")
+        .header("x-forwarded-for", "203.0.113.10, 10.0.0.1")
         .body(Body::empty())
         .unwrap();
 
@@ -71,6 +72,7 @@ async fn monitor_mode_records_attack_and_still_forwards() {
     assert_eq!(response.status(), StatusCode::OK);
     assert_eq!(recorded.len(), 1);
     assert_eq!(events.len(), 1);
+    assert_eq!(events[0].client_ip, "203.0.113.10");
     assert_eq!(events[0].decision.action, WafAction::Monitor);
     assert_eq!(
         events[0].decision.matched_rules[0].rule_id,

@@ -63,6 +63,7 @@ logging:
   event_log_path: /var/log/saugra/saugra-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 30
+  timezone: Africa/Nairobi
 
 posture:
   enabled: true
