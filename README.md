@@ -1,6 +1,6 @@
 # Saugra WAF
 
-Saugra is a lightweight Rust-based, AI-assisted Web Application Firewall for
+Saugra is a lightweight rule-based + AI-assisted Web Application Firewall for
 modern web applications and APIs.
 
 The MVP direction is:
@@ -18,7 +18,7 @@ Saugra is not trying to replace mature, established WAF platforms today. Those
 tools are powerful and battle-tested, but they can be complex to configure,
 tune, and explain.
 
-Saugra focuses on a different developer experience: a lightweight Rust-based WAF
+Saugra focuses on a different developer experience: a lightweight rule-based + AI-assisted WAF
 that is simple to configure, easy to run locally, explainable by default, and
 friendly to modern API-first applications.
 
@@ -29,7 +29,7 @@ Choose Saugra if you want:
 - Clear JSON security logs
 - Explainable rule decisions
 - Nginx and Apache compatibility
-- A Rust-based self-hosted WAF
+- A rule-based + AI-assisted self-hosted WAF
 
 ## Current Status
 

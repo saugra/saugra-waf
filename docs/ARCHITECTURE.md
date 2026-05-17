@@ -2,7 +2,7 @@
 
 ## Overview
 
-Saugra WAF is a Rust-based reverse-proxy Web Application Firewall. It sits in front of a backend application, inspects HTTP requests, applies security rules and rate limits, logs security events, and either allows, monitors, or blocks traffic.
+Saugra WAF is a rule-based + AI-assisted reverse-proxy Web Application Firewall. It sits in front of a backend application, inspects HTTP requests, applies security rules and rate limits, logs security events, and either allows, monitors, or blocks traffic.
 
 Saugra is designed to work in two deployment modes:
 

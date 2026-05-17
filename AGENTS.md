@@ -2,7 +2,7 @@
 
 ## Project Context
 
-**Saugra WAF** is a Rust-based, AI-assisted Web Application Firewall for modern web applications and APIs. It should protect against OWASP Top 10-style attacks, work behind Nginx and Apache, and remain easy to configure through simple YAML files.
+**Saugra WAF** is a rule-based + AI-assisted Web Application Firewall for modern web applications and APIs. It should protect against OWASP Top 10-style attacks, work behind Nginx and Apache, and remain easy to configure through simple YAML files.
 
 The product direction is:
 

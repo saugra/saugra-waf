@@ -8,7 +8,7 @@
 
 ## Project Summary
 
-Saugra WAF is a lightweight, Rust-based, AI-assisted Web Application Firewall designed to protect web applications and APIs from common security threats, including OWASP Top 10 risks. It is built to be easy to deploy behind common reverse proxies such as Nginx and Apache, while also being capable of running as a standalone reverse proxy.
+Saugra WAF is a lightweight, rule-based + AI-assisted Web Application Firewall designed to protect web applications and APIs from common security threats, including OWASP Top 10 risks. It is built to be easy to deploy behind common reverse proxies such as Nginx and Apache, while also being capable of running as a standalone reverse proxy.
 
 The goal is not to replace traditional WAF rules with AI, but to combine proven rule-based protection, behavioral scoring, rate limiting, and AI-assisted explanations to help developers and small teams secure their applications with less configuration complexity.
 
@@ -754,7 +754,7 @@ Later:
 
 Saugra should be positioned as:
 
-> **A lightweight Rust-based, AI-assisted Web Application Firewall for modern web apps and APIs.**
+> **A lightweight rule-based + AI-assisted Web Application Firewall for modern web apps and APIs.**
 
 The strongest product direction is not pure AI blocking. The better and more trustworthy approach is:
 

@@ -2,7 +2,7 @@
 name = "saugra"
 version = "1.0.1"
 edition = "2021"
-description = "A lightweight Rust-based, AI-assisted Web Application Firewall."
+description = "A lightweight rule-based + AI-assisted Web Application Firewall."
 license = "AGPL-3.0-only"
 
 [dependencies]

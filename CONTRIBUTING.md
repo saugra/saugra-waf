@@ -1,6 +1,6 @@
 # Contributing to Saugra WAF
 
-Thank you for your interest in contributing to **Saugra WAF**! We are building a lightweight, Rust-based, AI-assisted Web Application Firewall that protects modern web apps and APIs against OWASP Top 10-style attacks.
+Thank you for your interest in contributing to **Saugra WAF**! We are building a lightweight, rule-based + AI-assisted Web Application Firewall that protects modern web apps and APIs against OWASP Top 10-style attacks.
 
 As an open-core project licensed under the [AGPL-3.0 License](LICENSE), we aim to make Saugra the easiest, most developer-friendly WAF to configure, inspect, and deploy.
 
