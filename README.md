@@ -128,6 +128,63 @@ Then check the health endpoint:
 curl http://127.0.0.1:8787/_saugra/health
 ```
 
+Run the local proxy smoke test:
+
+```bash
+scripts/smoke-local.sh
+```
+
+The smoke test starts a temporary local backend, starts Saugra with a temporary
+config and event log, verifies clean traffic is forwarded, verifies an SQL
+injection payload is blocked, checks the JSONL event shape, and then cleans up.
+
+Verify a remote staging or production deployment you own:
+
+```bash
+scripts/verify-remote-waf.sh https://staging.example.com --yes-i-am-authorized
+```
+
+For apps where `/` is not a useful route, choose a harmless GET path:
+
+```bash
+scripts/verify-remote-waf.sh https://staging.example.com \
+  --path /accounts/login/ \
+  --yes-i-am-authorized
+```
+
+The remote verifier sends safe GET-only probes mapped to OWASP Top 10-style
+risks plus extra WAF signals: SQL injection, XSS, path traversal, command
+injection, scanner user agents, secret-bearing URLs, method override headers,
+insecure forwarded protocol headers, suspicious content types, supply-chain
+install-script markers, prototype pollution, serialized object markers, log
+injection, and parser edge cases. It treats HTTP `403` rule blocks and HTTP
+`429` rate-limit blocks as protective by default, and reports broader coverage
+probes as advisory warnings unless you pass `--all-required`.
+
+Useful options:
+
+```bash
+scripts/verify-remote-waf.sh https://staging.example.com \
+  --path /accounts/login/ \
+  --block-statuses 403,429,406 \
+  --delay 1 \
+  --include-post \
+  --json-output /tmp/saugra-remote-report.json \
+  --yes-i-am-authorized
+```
+
+Use `--all-required` for strict staging checks where every advisory vector
+should also be blocked. If many probes return `429`, Saugra is protecting the
+target through rate limiting, but that can mask which rule would have matched;
+use `--delay` or temporarily raise the verifier route limit for rule-specific
+staging validation. POST body probes are opt-in with `--include-post` because
+POST routes can modify application state; prefer that option on staging.
+
+Forwarded-header probes, such as spoofing `X-Forwarded-Proto: http`, remain
+advisory even with `--all-required` because Nginx or Apache may normalize those
+headers before Saugra sees them. Use `--require-edge-header-probes` only when
+you intentionally want those edge-sensitive probes to fail the run.
+
 ## Production Setup Example
 
 Use case: an existing Nginx site already forwards traffic directly to an app.
@@ -385,10 +442,8 @@ Deployment order:
 
 The remaining useful production-readiness slice is operational polish:
 
-1. Add safe local smoke-test scripts.
-2. Add more deployment examples for common stacks.
-3. Add packaged binary release instructions.
-4. Add live Redis integration tests where Redis is available.
+1. Add packaged binary release instructions.
+2. Add live Redis integration tests where Redis is available.
 
 ## Licensing
 

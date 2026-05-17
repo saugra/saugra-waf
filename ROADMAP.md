@@ -179,7 +179,8 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
 - [x] Add configurable external/durable event storage path and retention policy.
 - [x] Add forwarding tests with a fake upstream transport.
 - [x] Add structured JSON security event shape tests.
-- [ ] Add safer end-to-end scripts for local proxy smoke tests.
+- [x] Add safer end-to-end scripts for local proxy smoke tests.
+- [x] Add comprehensive remote staging/production WAF verification script.
 
 ## Phase 4 — WebSocket and Upgrade-Aware Proxying
 
