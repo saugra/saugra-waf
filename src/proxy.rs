@@ -619,6 +619,7 @@ mod tests {
             rate_limit: crate::config::RateLimitConfig {
                 backend: crate::config::RateLimitBackend::Memory,
                 redis_url: None,
+                redis_password: None,
                 requests_per_minute,
                 burst: 0,
                 routes: Vec::new(),

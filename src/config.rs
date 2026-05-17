@@ -27,6 +27,8 @@ pub enum ConfigError {
     InvalidRateLimitRoute,
     #[error("rate_limit.redis_url is required when rate_limit.backend is redis")]
     MissingRedisUrl,
+    #[error("rate_limit.redis_password must not be blank when provided")]
+    InvalidRedisPassword,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
 }
@@ -105,6 +107,8 @@ pub struct RateLimitConfig {
     pub backend: RateLimitBackend,
     #[serde(default)]
     pub redis_url: Option<String>,
+    #[serde(default)]
+    pub redis_password: Option<String>,
     #[serde(default = "default_requests_per_minute")]
     pub requests_per_minute: u32,
     #[serde(default = "default_rate_limit_burst")]
@@ -118,6 +122,7 @@ impl Default for RateLimitConfig {
         Self {
             backend: RateLimitBackend::Memory,
             redis_url: None,
+            redis_password: None,
             requests_per_minute: default_requests_per_minute(),
             burst: default_rate_limit_burst(),
             routes: Vec::new(),
@@ -265,6 +270,15 @@ impl SaugraConfig {
                 .is_empty()
         {
             return Err(ConfigError::MissingRedisUrl);
+        }
+
+        if self
+            .rate_limit
+            .redis_password
+            .as_deref()
+            .is_some_and(|password| password.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidRedisPassword);
         }
 
         if self.ai.enabled && self.ai.mode != "explain_only" {
@@ -472,6 +486,57 @@ rate_limit:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::MissingRedisUrl)
+        ));
+    }
+
+    #[test]
+    fn accepts_redis_password_for_redis_rate_limit_backend() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rate_limit:
+  backend: redis
+  redis_url: redis://127.0.0.1:6379
+  redis_password: "secret-password"
+  requests_per_minute: 120
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(
+            config.rate_limit.redis_password.as_deref(),
+            Some("secret-password")
+        );
+    }
+
+    #[test]
+    fn rejects_blank_redis_password_when_provided() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rate_limit:
+  backend: redis
+  redis_url: redis://127.0.0.1:6379
+  redis_password: "   "
+  requests_per_minute: 120
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidRedisPassword)
         ));
     }
 

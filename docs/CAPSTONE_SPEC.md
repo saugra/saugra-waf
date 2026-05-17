@@ -382,6 +382,7 @@ Example:
 rate_limit:
   backend: redis
   redis_url: redis://127.0.0.1:6379
+  redis_password: null
 
   default:
     requests_per_minute: 120

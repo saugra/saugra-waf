@@ -136,7 +136,7 @@ server:
 
 upstreams:
   - name: jirani-rust
-    host: snf-6731.vlab.ac.ke
+    host: example.com
     target: http://127.0.0.1:8080
 
 security:
@@ -148,6 +148,7 @@ security:
 rate_limit:
   backend: redis
   redis_url: redis://127.0.0.1:6379
+  redis_password: null
   requests_per_minute: 120
   burst: 30
   routes:
@@ -212,7 +213,7 @@ The HTTPS server then looks like this, with the Certbot-managed lines preserved:
 
 ```nginx
 server {
-    server_name snf-6731.vlab.ac.ke;
+    server_name example.com;
 
     access_log off;
 
@@ -238,8 +239,8 @@ server {
 
     listen [::]:443 ssl ipv6only=on; # managed by Certbot
     listen 443 ssl; # managed by Certbot
-    ssl_certificate /etc/letsencrypt/live/snf-6731.vlab.ac.ke/fullchain.pem; # managed by Certbot
-    ssl_certificate_key /etc/letsencrypt/live/snf-6731.vlab.ac.ke/privkey.pem; # managed by Certbot
+    ssl_certificate /etc/letsencrypt/live/example.com/fullchain.pem; # managed by Certbot
+    ssl_certificate_key /etc/letsencrypt/live/example.com/privkey.pem; # managed by Certbot
     include /etc/letsencrypt/options-ssl-nginx.conf; # managed by Certbot
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem; # managed by Certbot
 }
@@ -278,5 +279,4 @@ We chose the AGPL-3.0 to ensure that Saugra remains open and collaborative. Spec
 ### Saugra Pro
 Saugra follows an **Open-Core** model. While the core engine and rules are open-source under AGPL-3.0, we offer an enterprise-grade **Saugra Pro** version with additional features (SSO, SIEM integration, multi-node management, etc.) under a separate commercial license.
 
-For more information on Saugra Pro, please visit our [official website](https://saugra.io) or check our private roadmap.
-
+For more information on Saugra Pro, please visit our [official website](https://saugra.io).

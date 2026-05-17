@@ -235,6 +235,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
         rate_limit: RateLimitConfig {
             backend: RateLimitBackend::Memory,
             redis_url: None,
+            redis_password: None,
             requests_per_minute,
             burst: 0,
             routes: Vec::new(),

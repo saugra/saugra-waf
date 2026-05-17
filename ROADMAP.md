@@ -132,6 +132,34 @@ Future Saugra Pro/cloud work may focus on:
 - [x] Add structured JSON security event shape tests.
 - [ ] Add safer end-to-end demo scripts for local proxy smoke tests.
 
+## Phase 4 — WebSocket and Upgrade-Aware Proxying
+
+Saugra currently protects normal HTTP request paths that are routed through the
+Saugra reverse proxy. WebSocket locations such as `/ws/` often remain proxied
+directly from Nginx to an ASGI server such as Daphne, which means those upgrade
+requests are not inspected by Saugra yet.
+
+- [ ] Detect HTTP upgrade requests for WebSocket handshakes.
+- [ ] Inspect the initial WebSocket handshake path, query string, headers,
+      origin, user-agent, cookies, and client identity before upgrade.
+- [ ] Apply existing allow, monitor, block, and rate-limit decisions to the
+      handshake request.
+- [ ] Preserve required upgrade semantics, including `Upgrade`,
+      `Connection`, `Sec-WebSocket-Key`, `Sec-WebSocket-Version`, and
+      `Sec-WebSocket-Protocol` headers.
+- [ ] Tunnel accepted upgraded connections between client and upstream without
+      breaking long-lived WebSocket sessions.
+- [ ] Add WebSocket-specific logging fields for upgrade decisions, upstream
+      target, close/error outcomes, and request ID correlation.
+- [ ] Add configurable origin and host validation guidance for WebSocket
+      deployments.
+- [ ] Add Nginx and Django Channels/Daphne deployment examples that route
+      `/ws/` through Saugra.
+- [ ] Add tests for allowed, monitored, blocked, and rate-limited WebSocket
+      handshake requests.
+- [ ] Document the temporary deployment posture: `/ws/` should be hardened at
+      Nginx and the application layer until Saugra supports upgrade tunneling.
+
 ## Production Readiness Gate
 
 Before Saugra is recommended for production use, complete:
@@ -145,6 +173,9 @@ Before Saugra is recommended for production use, complete:
       event persistence, and `explain <request-id>`.
 - [x] Safe defaults documented for first production rollout.
 - [x] Source install and systemd service documented.
+- [ ] WebSocket upgrade support, or clear production documentation that
+      WebSocket paths must bypass Saugra and be protected by Nginx and the
+      application layer until upgrade-aware proxying is enabled.
 
 ## Public Built-In Rules
 
