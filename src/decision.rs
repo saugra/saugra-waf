@@ -17,12 +17,19 @@ pub struct WafDecision {
     pub matched_rules: Vec<RuleMatch>,
     pub severity: String,
     pub risk_score: u8,
+    pub anomaly_score: u16,
+    pub anomaly_threshold: u16,
     pub explanation: String,
     pub owasp_category: Option<String>,
 }
 
 impl WafDecision {
-    pub fn from_matches(request_id: String, mode: WafMode, matches: Vec<RuleMatch>) -> Self {
+    pub fn from_matches(
+        request_id: String,
+        mode: WafMode,
+        matches: Vec<RuleMatch>,
+        anomaly_threshold: u16,
+    ) -> Self {
         if matches.is_empty() || mode == WafMode::Off {
             return Self {
                 request_id,
@@ -30,11 +37,17 @@ impl WafDecision {
                 matched_rules: Vec::new(),
                 severity: "none".to_string(),
                 risk_score: 0,
+                anomaly_score: 0,
+                anomaly_threshold,
                 explanation: "No security rules matched this request.".to_string(),
                 owasp_category: None,
             };
         }
 
+        let anomaly_score = matches
+            .iter()
+            .map(|rule_match| rule_match.severity.anomaly_points())
+            .sum();
         let risk_score = matches
             .iter()
             .map(|rule_match| rule_match.severity.risk_score())
@@ -57,12 +70,16 @@ impl WafDecision {
             request_id,
             action: match mode {
                 WafMode::Monitor => WafAction::Monitor,
-                WafMode::Block | WafMode::Strict => WafAction::Block,
+                WafMode::Block if anomaly_score >= anomaly_threshold => WafAction::Block,
+                WafMode::Block => WafAction::Monitor,
+                WafMode::Strict => WafAction::Block,
                 WafMode::Off => WafAction::Allow,
             },
             matched_rules: matches,
             severity,
             risk_score,
+            anomaly_score,
+            anomaly_threshold,
             explanation,
             owasp_category,
         }
@@ -80,6 +97,7 @@ mod tests {
             "request-1".to_string(),
             WafMode::Monitor,
             vec![rule_match()],
+            5,
         );
 
         assert_eq!(decision.action, WafAction::Monitor);
@@ -90,11 +108,17 @@ mod tests {
 
     #[test]
     fn block_mode_blocks_matched_requests() {
-        let decision =
-            WafDecision::from_matches("request-1".to_string(), WafMode::Block, vec![rule_match()]);
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Block,
+            vec![rule_match()],
+            5,
+        );
 
         assert_eq!(decision.action, WafAction::Block);
         assert_eq!(decision.risk_score, 80);
+        assert_eq!(decision.anomaly_score, 5);
+        assert_eq!(decision.anomaly_threshold, 5);
         assert_eq!(
             decision.owasp_category.as_deref(),
             Some("A03:2021-Injection")
@@ -102,26 +126,60 @@ mod tests {
     }
 
     #[test]
-    fn strict_mode_blocks_matched_requests() {
-        let decision =
-            WafDecision::from_matches("request-1".to_string(), WafMode::Strict, vec![rule_match()]);
+    fn block_mode_monitors_matches_below_anomaly_threshold() {
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Block,
+            vec![medium_rule_match()],
+            5,
+        );
+
+        assert_eq!(decision.action, WafAction::Monitor);
+        assert_eq!(decision.anomaly_score, 3);
+        assert_eq!(decision.anomaly_threshold, 5);
+    }
+
+    #[test]
+    fn block_mode_blocks_combined_matches_at_anomaly_threshold() {
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Block,
+            vec![medium_rule_match(), medium_rule_match()],
+            5,
+        );
 
         assert_eq!(decision.action, WafAction::Block);
+        assert_eq!(decision.anomaly_score, 6);
+    }
+
+    #[test]
+    fn strict_mode_blocks_matched_requests() {
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Strict,
+            vec![medium_rule_match()],
+            5,
+        );
+
+        assert_eq!(decision.action, WafAction::Block);
+        assert_eq!(decision.anomaly_score, 3);
     }
 
     #[test]
     fn off_mode_allows_even_when_rules_match() {
         let decision =
-            WafDecision::from_matches("request-1".to_string(), WafMode::Off, vec![rule_match()]);
+            WafDecision::from_matches("request-1".to_string(), WafMode::Off, vec![rule_match()], 5);
 
         assert_eq!(decision.action, WafAction::Allow);
         assert!(decision.matched_rules.is_empty());
         assert_eq!(decision.risk_score, 0);
+        assert_eq!(decision.anomaly_score, 0);
     }
 
     #[test]
     fn requests_without_matches_are_allowed() {
-        let decision = WafDecision::from_matches("request-1".to_string(), WafMode::Block, vec![]);
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Block, vec![], 5);
 
         assert_eq!(decision.action, WafAction::Allow);
         assert_eq!(
@@ -132,14 +190,20 @@ mod tests {
 
     #[test]
     fn serializes_decision_with_expected_json_shape() {
-        let decision =
-            WafDecision::from_matches("request-1".to_string(), WafMode::Block, vec![rule_match()]);
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Block,
+            vec![rule_match()],
+            5,
+        );
         let json = serde_json::to_value(decision).unwrap();
 
         assert_eq!(json["request_id"], "request-1");
         assert_eq!(json["action"], "block");
         assert_eq!(json["severity"], "high");
         assert_eq!(json["risk_score"], 80);
+        assert_eq!(json["anomaly_score"], 5);
+        assert_eq!(json["anomaly_threshold"], 5);
         assert_eq!(json["matched_rules"][0]["rule_id"], "SAUGRA-SQLI-001");
         assert_eq!(json["owasp_category"], "A03:2021-Injection");
     }
@@ -153,6 +217,13 @@ mod tests {
             matched_target: RuleTarget::Query,
             explanation: "Query data matched a common SQL injection pattern.".to_string(),
             owasp_category: Some("A03:2021-Injection".to_string()),
+        }
+    }
+
+    fn medium_rule_match() -> RuleMatch {
+        RuleMatch {
+            severity: RuleSeverity::Medium,
+            ..rule_match()
         }
     }
 }

@@ -176,6 +176,7 @@ rate_limit:
 rules:
   owasp_crs: true
   paranoia_level: 1
+  inbound_anomaly_threshold: 5
   files:
     - configs/rules/REQUEST-913-SCANNER-DETECTION.yml
     - configs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml

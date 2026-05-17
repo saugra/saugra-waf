@@ -23,7 +23,7 @@ use uuid::Uuid;
 
 use crate::{
     ai,
-    config::{RouteRateLimitConfig, SaugraConfig, UpstreamConfig},
+    config::{RouteRateLimitConfig, SaugraConfig, UpstreamConfig, WafMode},
     decision::{WafAction, WafDecision},
     event_store::{self, EventLogRetention, SecurityEvent},
     rate_limit::{self, RateLimitExceeded, RateLimitPolicy, RateLimitStore},
@@ -177,8 +177,9 @@ pub async fn proxy_request(
         if let Some(exceeded) = rate_limit_result {
             let decision = WafDecision::from_matches(
                 request_id.clone(),
-                state.config.server.mode,
+                WafMode::Strict,
                 vec![rate_limit_match(&exceeded)],
+                state.config.rules.inbound_anomaly_threshold,
             );
             log_decision(
                 &parts.method,
@@ -231,7 +232,12 @@ pub async fn proxy_request(
         body: &body_for_rules,
         user_agent: &user_agent,
     });
-    let decision = WafDecision::from_matches(request_id.clone(), state.config.server.mode, matches);
+    let decision = WafDecision::from_matches(
+        request_id.clone(),
+        state.config.server.mode,
+        matches,
+        state.config.rules.inbound_anomaly_threshold,
+    );
 
     log_decision(&parts.method, &path, &query, &decision);
     record_event(&state, parts.method.as_str(), &path, &query, &decision);

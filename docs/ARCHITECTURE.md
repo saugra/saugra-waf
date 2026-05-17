@@ -438,10 +438,14 @@ OWASP CRS .conf files
   -> Saugra rule engine
 ```
 
+In `block` mode, Saugra uses inbound anomaly scoring. Each matched rule adds
+points based on severity: low = 2, medium = 3, high = 5, critical = 5. Requests
+are blocked when the accumulated score reaches `rules.inbound_anomaly_threshold`.
+`monitor` mode still records findings without blocking, and `strict` mode blocks
+on any matched rule.
+
 Next rule-engine milestones:
 
-- Add anomaly scoring thresholds so several findings can combine into a block
-  decision instead of relying only on first-match blocking.
 - Add rule exclusions by path, parameter, header, category, and rule ID for
   false-positive tuning.
 - Add rule-pack versioning and validation output that lists loaded files, rule

@@ -31,6 +31,8 @@ pub enum ConfigError {
     InvalidRedisPassword,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
+    #[error("rules.inbound_anomaly_threshold must be greater than zero")]
+    InvalidAnomalyThreshold,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -158,6 +160,8 @@ pub struct RuleSettings {
     pub owasp_crs: bool,
     #[serde(default = "default_paranoia_level")]
     pub paranoia_level: u8,
+    #[serde(default = "default_inbound_anomaly_threshold")]
+    pub inbound_anomaly_threshold: u16,
     #[serde(default = "default_rule_files")]
     pub files: Vec<PathBuf>,
 }
@@ -167,6 +171,7 @@ impl Default for RuleSettings {
         Self {
             owasp_crs: true,
             paranoia_level: default_paranoia_level(),
+            inbound_anomaly_threshold: default_inbound_anomaly_threshold(),
             files: default_rule_files(),
         }
     }
@@ -288,6 +293,10 @@ impl SaugraConfig {
             return Err(ConfigError::InvalidAiMode);
         }
 
+        if self.rules.inbound_anomaly_threshold == 0 {
+            return Err(ConfigError::InvalidAnomalyThreshold);
+        }
+
         Ok(())
     }
 
@@ -358,6 +367,10 @@ fn default_max_body_size() -> String {
 
 fn default_paranoia_level() -> u8 {
     1
+}
+
+fn default_inbound_anomaly_threshold() -> u16 {
+    5
 }
 
 fn default_rule_files() -> Vec<PathBuf> {
@@ -603,6 +616,28 @@ rate_limit:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidRateLimit)
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_inbound_anomaly_threshold() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rules:
+  inbound_anomaly_threshold: 0
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidAnomalyThreshold)
         ));
     }
 

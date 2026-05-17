@@ -50,6 +50,15 @@ impl RuleSeverity {
             Self::Critical => 95,
         }
     }
+
+    pub fn anomaly_points(self) -> u16 {
+        match self {
+            Self::Low => 2,
+            Self::Medium => 3,
+            Self::High => 5,
+            Self::Critical => 5,
+        }
+    }
 }
 
 impl std::fmt::Display for RuleSeverity {

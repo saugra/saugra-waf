@@ -135,7 +135,7 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
       `@rx` rules.
 - [ ] Support monitor-first rollout with CRS-style detection and blocking
       paranoia levels.
-- [ ] Add anomaly scoring thresholds so multiple lower-severity findings can
+- [x] Add anomaly scoring thresholds so multiple lower-severity findings can
       combine into a block decision instead of relying only on first-match
       blocking.
 - [ ] Add local tuning controls: disable rules by ID, disable categories, and

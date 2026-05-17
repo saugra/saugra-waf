@@ -203,6 +203,70 @@ async fn block_mode_returns_safe_json_response_for_attack_request() {
 }
 
 #[tokio::test]
+async fn block_mode_monitors_findings_below_anomaly_threshold() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.rules.inbound_anomaly_threshold = 5;
+    config.rules.files = vec![single_low_rule_file()];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/?signal=low-risk")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    assert_eq!(events[0].decision.anomaly_score, 2);
+    assert_eq!(events[0].decision.anomaly_threshold, 5);
+}
+
+#[tokio::test]
+async fn block_mode_blocks_combined_findings_at_anomaly_threshold() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.rules.inbound_anomaly_threshold = 5;
+    config.rules.files = vec![two_medium_rules_file()];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/?first=medium-one&second=medium-two")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(recorded.is_empty());
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(events[0].decision.anomaly_score, 6);
+    assert_eq!(events[0].decision.matched_rules.len(), 2);
+}
+
+#[tokio::test]
 async fn rate_limit_blocks_and_persists_event_before_forwarding() {
     let fake_upstream = Arc::new(FakeUpstreamTransport::new());
     let event_log_path = test_event_log_path();
@@ -321,6 +385,54 @@ fn test_retention() -> EventLogRetention {
         max_size_bytes: 1024 * 1024,
         max_files: 3,
     }
+}
+
+fn single_low_rule_file() -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("saugra-low-rule-{}.yml", Uuid::new_v4()));
+    std::fs::write(
+        &path,
+        r#"
+rules:
+  - id: TEST-LOW-001
+    name: Test Low Rule
+    category: test
+    severity: low
+    targets:
+      - query
+    pattern: "low-risk"
+    explanation: Low-risk test signal matched.
+"#,
+    )
+    .unwrap();
+    path
+}
+
+fn two_medium_rules_file() -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("saugra-medium-rules-{}.yml", Uuid::new_v4()));
+    std::fs::write(
+        &path,
+        r#"
+rules:
+  - id: TEST-MEDIUM-001
+    name: Test Medium Rule One
+    category: test
+    severity: medium
+    targets:
+      - query
+    pattern: "medium-one"
+    explanation: First medium-risk test signal matched.
+  - id: TEST-MEDIUM-002
+    name: Test Medium Rule Two
+    category: test
+    severity: medium
+    targets:
+      - query
+    pattern: "medium-two"
+    explanation: Second medium-risk test signal matched.
+"#,
+    )
+    .unwrap();
+    path
 }
 
 #[derive(Debug)]

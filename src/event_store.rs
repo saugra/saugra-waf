@@ -231,6 +231,8 @@ mod tests {
             matched_rules: Vec::new(),
             severity: "none".to_string(),
             risk_score: 0,
+            anomaly_score: 0,
+            anomaly_threshold: 5,
             explanation: "No security rules matched this request.".to_string(),
             owasp_category: None,
         }
