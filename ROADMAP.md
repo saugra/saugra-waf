@@ -140,9 +140,11 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
       blocking.
 - [x] Add local tuning controls: disable rules by ID, disable categories, and
       exclude specific rules by path, parameter, header, and rule ID.
-- [ ] Add rule-pack versioning and validation output so operators can see the
-      loaded files, rule counts, disabled rules, unsupported imports, and
-      warnings before starting traffic.
+- [x] Add rule-pack validation output so operators can see loaded files, rule
+      counts, disabled rules, configured exclusions, and warnings before
+      starting traffic.
+- [ ] Add rule-pack versioning and unsupported-import reporting to validation
+      output.
 - [ ] Treat transforms as first-class ordered pipelines with tests for
       URL-decoding, plus-to-space handling, lowercasing, and future CRS
       transform equivalents.
@@ -207,6 +209,35 @@ requests are not inspected by Saugra yet.
 - [ ] Document the temporary deployment posture: `/ws/` should be hardened at
       Nginx and the application layer until Saugra supports upgrade tunneling.
 
+## Phase 4.5 — OWASP Top 10 Layered Coverage
+
+Default request rules provide starter signals for every OWASP Top 10:2025
+category, but Saugra should not claim that regex inspection alone solves
+deployment, supply chain, cryptographic, authentication, design, or operational
+risks. The implementation target is layered OWASP coverage:
+
+- request rules for visible payloads
+- rate limits and anomaly scoring for abusive behavior
+- deployment posture checks for configuration and transport assumptions
+- external report ingestion for SBOM, dependency, CI, and integrity evidence
+- durable events, explanations, and coverage reporting for operators
+
+Planned work:
+
+- [x] Document the layered OWASP Top 10 strategy.
+- [x] Add `saugra owasp coverage` to report active controls and gaps by OWASP
+      category.
+- [x] Add a `posture` config section for deployment assumptions.
+- [x] Add `saugra posture check` for local deterministic checks such as
+      expected external scheme, allowed methods, response security headers,
+      secure cookies, and upload/body policy.
+- [ ] Add normalized local report ingestion for SBOM and dependency scan
+      outputs.
+- [ ] Show OWASP category coverage in logs, explanations, and the future
+      dashboard/log viewer.
+- [x] Support future standard mappings, such as `owasp-top-10:2026`, through
+      YAML metadata and coverage mappings rather than proxy rewrites.
+
 ## Production Readiness Gate
 
 Before Saugra is recommended for production use, complete:
@@ -231,6 +262,14 @@ Before Saugra is recommended for production use, complete:
 - `SAUGRA-PATH-001` — path traversal pattern
 - `SAUGRA-CMD-001` — command injection pattern
 - `SAUGRA-BOT-001` — suspicious scanner user agent
+- `SAUGRA-AUTH-001` — credential stuffing tool user agent
+- `SAUGRA-AUTH-002` — credential exposure in URL
+- `SAUGRA-DESIGN-001` — dangerous method override header
 - `SAUGRA-CT-001` — suspicious content type
+- `SAUGRA-CRYPTO-001` — insecure forwarded protocol
 - `SAUGRA-BODY-001` — suspicious body script pattern
+- `SAUGRA-SC-001` — package install script injection
+- `SAUGRA-INTEGRITY-001` — unsafe serialized object marker
+- `SAUGRA-LOG-001` — log injection sequence
+- `SAUGRA-EXC-001` — exceptional parser stress sequence
 - `SAUGRA-RATE-001` — per-client request rate limit

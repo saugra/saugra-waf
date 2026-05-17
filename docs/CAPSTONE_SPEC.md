@@ -151,22 +151,22 @@ Recommended Rust libraries:
 - `serde_yaml`
 - `tracing`
 
-## 2. OWASP Top 10 Protection
+## 2. OWASP Top 10:2025 Protection
 
-Saugra should provide protection for common OWASP Top 10-style risks, including:
+Saugra should provide protection signals for common OWASP Top 10:2025-style
+risks, while remaining clear that some categories require application,
+dependency, deployment, or operational controls outside a WAF:
 
 - Broken access control patterns
-- SQL injection
-- Cross-site scripting
-- Command injection
-- Path traversal
-- Server-side request forgery patterns
-- Insecure file upload patterns
-- Authentication abuse
-- API abuse
 - Security misconfiguration exposure
-- Suspicious vulnerable component fingerprints
+- Software supply chain attack indicators
 - Cryptographic misconfiguration hints
+- Injection, including SQL injection, XSS, and command injection
+- Insecure design and API abuse indicators
+- Authentication abuse
+- Software or data integrity failure indicators
+- Security logging and alerting abuse indicators
+- Mishandled exceptional-condition probes
 
 The MVP should start with practical detection rules for:
 
@@ -176,8 +176,27 @@ The MVP should start with practical detection rules for:
 - Command injection
 - Suspicious user agents
 - Scanner/bot behavior
+- Credential exposure in URLs
+- Insecure forwarded protocol headers
+- Dangerous method override headers
+- Supply-chain install script payloads
+- Unsafe serialized object markers
+- Log injection markers
+- Parser edge-case payloads
 - Oversized request bodies
 - Suspicious file upload extensions
+
+Saugra should describe OWASP coverage as a layered control model rather than a
+claim that request rules alone solve every category:
+
+- request rules for visible payloads
+- rate limits and anomaly scoring for abusive behavior
+- posture checks for deployment and response hardening
+- external report ingestion for supply chain and integrity evidence
+- durable events and explanations for audit and tuning workflows
+
+See `docs/OWASP_TOP_10_STRATEGY.md` for the detailed coverage strategy and
+implementation phases.
 
 ## 3. Rule Engine
 

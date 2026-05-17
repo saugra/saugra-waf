@@ -1,6 +1,8 @@
 metadata:
   name: saugra-core-rules
   version: 0.1.0
+  standards:
+    - owasp-top-10:2025
 
 rules:
   - id: SAUGRA-SQLI-001
@@ -15,7 +17,7 @@ rules:
       - plus_to_space
     pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table|--|/\\*)"
     explanation: Query data matched a common SQL injection pattern.
-    owasp_category: A03:2021-Injection
+    owasp_category: A05:2025-Injection
 
   - id: SAUGRA-XSS-001
     name: Basic Cross-Site Scripting Pattern
@@ -29,7 +31,7 @@ rules:
       - plus_to_space
     pattern: "(?i)(<script|javascript:|onerror\\s*=|onload\\s*=)"
     explanation: Request data matched a common cross-site scripting pattern.
-    owasp_category: A03:2021-Injection
+    owasp_category: A05:2025-Injection
 
   - id: SAUGRA-PATH-001
     name: Path Traversal Pattern
@@ -42,7 +44,7 @@ rules:
       - url_decode
     pattern: "(?i)(\\.\\./|\\.\\.\\\\|%2e%2e(?:%2f|/)|%252e%252e(?:%252f|/)|/etc/passwd|etc%2fpasswd)"
     explanation: Request path matched a directory traversal pattern.
-    owasp_category: A01:2021-Broken Access Control
+    owasp_category: A01:2025-Broken Access Control
 
   - id: SAUGRA-CMD-001
     name: Command Injection Pattern
@@ -56,7 +58,7 @@ rules:
       - plus_to_space
     pattern: "(?i)(;\\s*(cat|bash|sh|curl|wget)\\b|`[^`]+`|\\|\\s*(cat|bash|sh)\\b)"
     explanation: Request data matched a command injection pattern.
-    owasp_category: A03:2021-Injection
+    owasp_category: A05:2025-Injection
 
   - id: SAUGRA-PATH-002
     name: Path Traversal Query Pattern
@@ -70,7 +72,7 @@ rules:
       - plus_to_space
     pattern: "(?i)(\\.\\./|\\.\\.\\\\|%2e%2e(?:%2f|/)|%252e%252e(?:%252f|/)|/etc/passwd|etc%2fpasswd)"
     explanation: Request query string matched a directory traversal pattern.
-    owasp_category: A01:2021-Broken Access Control
+    owasp_category: A01:2025-Broken Access Control
 
   - id: SAUGRA-BOT-001
     name: Suspicious Scanner User Agent
@@ -81,7 +83,44 @@ rules:
       - user_agent
     pattern: "(?i)(sqlmap|nikto|nmap|masscan|acunetix|nessus|wpscan)"
     explanation: User-Agent matched a known scanner or security testing tool.
-    owasp_category: A06:2021-Vulnerable and Outdated Components
+    owasp_category: A07:2025-Authentication Failures
+
+  - id: SAUGRA-AUTH-001
+    name: Credential Stuffing Tool User Agent
+    category: authentication_abuse
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - user_agent
+    pattern: "(?i)(hydra|medusa|patator|ncrack|brutus|sentry mba|openbullet)"
+    explanation: User-Agent matched a tool commonly used for password guessing or credential stuffing.
+    owasp_category: A07:2025-Authentication Failures
+
+  - id: SAUGRA-AUTH-002
+    name: Credential Exposure In URL
+    category: authentication_abuse
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "(^|&)(password|passwd|pwd|access_token|refresh_token|api_key|secret)="
+    explanation: Request query string contains credential-like parameters that should not be sent in URLs.
+    owasp_category: A07:2025-Authentication Failures
+
+  - id: SAUGRA-DESIGN-001
+    name: Dangerous Method Override Header
+    category: insecure_design
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - headers
+    pattern: "(?i)(x-http-method-override|x-method-override|x-http-method):\\s*(delete|put|patch)"
+    explanation: Request uses a method override header that can bypass route design assumptions when applications trust it implicitly.
+    owasp_category: A06:2025-Insecure Design
 
   - id: SAUGRA-CT-001
     name: Suspicious Content Type
@@ -92,7 +131,18 @@ rules:
       - headers
     pattern: "(?i)(content-type:\\s*application/x-msdownload|content-type:\\s*application/x-sh)"
     explanation: Request headers matched a suspicious executable content type.
-    owasp_category: A05:2021-Security Misconfiguration
+    owasp_category: A02:2025-Security Misconfiguration
+
+  - id: SAUGRA-CRYPTO-001
+    name: Insecure Forwarded Protocol
+    category: cryptographic_failures
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - headers
+    pattern: "(?i)(x-forwarded-proto:\\s*http\\b|forwarded:\\s*[^\\n]*proto=http\\b)"
+    explanation: Forwarded protocol headers indicate that the original request may have used cleartext HTTP.
+    owasp_category: A04:2025-Cryptographic Failures
 
   - id: SAUGRA-BODY-001
     name: Suspicious Body Script Pattern
@@ -106,4 +156,68 @@ rules:
       - plus_to_space
     pattern: "(?i)(<script|javascript:|onerror\\s*=|onload\\s*=)"
     explanation: Request body matched a script injection pattern.
-    owasp_category: A03:2021-Injection
+    owasp_category: A05:2025-Injection
+
+  - id: SAUGRA-SC-001
+    name: Package Install Script Injection
+    category: software_supply_chain
+    severity: high
+    paranoia_level: 1
+    targets:
+      - body
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "(postinstall|preinstall|install-script|setup\\.py|package\\.json|requirements\\.txt).{0,160}(curl|wget|bash|sh|powershell|invoke-webrequest)"
+    explanation: Request data resembles a package or dependency manifest containing a remote command execution pattern.
+    owasp_category: A03:2025-Software Supply Chain Failures
+
+  - id: SAUGRA-INTEGRITY-001
+    name: Unsafe Serialized Object Marker
+    category: integrity_failure
+    severity: high
+    paranoia_level: 1
+    targets:
+      - body
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(rO0AB|O:\\d+:\\\"[A-Za-z0-9_\\\\]+\\\"|__proto__|constructor\\s*\\[\\s*prototype\\s*\\])"
+    explanation: Request data contains markers associated with unsafe deserialization or prototype pollution attacks.
+    owasp_category: A08:2025-Software or Data Integrity Failures
+
+  - id: SAUGRA-LOG-001
+    name: Log Injection Sequence
+    category: logging_alerting_failure
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - query
+      - body
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "(%0d|%0a|\\r|\\n).{0,80}(error|warn|info|debug|trace|critical|request_id|status=)"
+    explanation: Request data contains newline-style log injection markers that can undermine security logging and alerting.
+    owasp_category: A09:2025-Security Logging and Alerting Failures
+
+  - id: SAUGRA-EXC-001
+    name: Exceptional Parser Stress Sequence
+    category: exceptional_condition_abuse
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - path
+      - query
+      - body
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "(%00|\\x00|%u[0-9a-f]{4}|%c0%ae|%c1%9c|\\.{2048,}|[a-z0-9_]{2048,}=)"
+    explanation: Request data contains parser edge-case input that may trigger mishandled exceptional conditions.
+    owasp_category: A10:2025-Mishandling of Exceptional Conditions

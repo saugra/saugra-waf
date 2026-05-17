@@ -28,11 +28,18 @@ rules:
   inbound_anomaly_threshold: 5
   files:
     - configs/rules/REQUEST-913-SCANNER-DETECTION.yml
+    - configs/rules/REQUEST-914-AUTHENTICATION-ABUSE.yml
+    - configs/rules/REQUEST-916-INSECURE-DESIGN.yml
     - configs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml
+    - configs/rules/REQUEST-921-CRYPTO-TRANSPORT.yml
     - configs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
     - configs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
     - configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
     - configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
+    - configs/rules/REQUEST-944-SUPPLY-CHAIN.yml
+    - configs/rules/REQUEST-945-INTEGRITY.yml
+    - configs/rules/REQUEST-949-LOGGING-ALERTING.yml
+    - configs/rules/REQUEST-950-EXCEPTIONAL-CONDITIONS.yml
   exclusions: []
 
 ai:
@@ -45,3 +52,19 @@ logging:
   event_log_path: logs/saugra-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 10
+
+posture:
+  enabled: true
+  expected_external_scheme: https
+  require_secure_cookies: true
+  require_security_headers: true
+  allowed_methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+  dependency_report_path: null
+
+standards:
+  owasp_catalog: configs/standards/owasp-top-10-2025.yml

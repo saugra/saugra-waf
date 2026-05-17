@@ -1,0 +1,22 @@
+metadata:
+  name: saugra-supply-chain
+  version: 0.1.0
+  standards:
+    - owasp-top-10:2025
+
+rules:
+  - id: SAUGRA-SC-001
+    name: Package Install Script Injection
+    category: software_supply_chain
+    severity: high
+    paranoia_level: 1
+    targets:
+      - body
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "(postinstall|preinstall|install-script|setup\\.py|package\\.json|requirements\\.txt).{0,160}(curl|wget|bash|sh|powershell|invoke-webrequest)"
+    explanation: Request data resembles a package or dependency manifest containing a remote command execution pattern.
+    owasp_category: A03:2025-Software Supply Chain Failures

@@ -1,0 +1,17 @@
+metadata:
+  name: saugra-crypto-transport
+  version: 0.1.0
+  standards:
+    - owasp-top-10:2025
+
+rules:
+  - id: SAUGRA-CRYPTO-001
+    name: Insecure Forwarded Protocol
+    category: cryptographic_failures
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - headers
+    pattern: "(?i)(x-forwarded-proto:\\s*http\\b|forwarded:\\s*[^\\n]*proto=http\\b)"
+    explanation: Forwarded protocol headers indicate that the original request may have used cleartext HTTP.
+    owasp_category: A04:2025-Cryptographic Failures

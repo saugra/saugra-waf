@@ -1,0 +1,21 @@
+metadata:
+  name: saugra-authentication-abuse
+  version: 0.1.0
+  standards:
+    - owasp-top-10:2025
+
+rules:
+  - id: SAUGRA-AUTH-002
+    name: Credential Exposure In URL
+    category: authentication_abuse
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "(^|&)(password|passwd|pwd|access_token|refresh_token|api_key|secret)="
+    explanation: Request query string contains credential-like parameters that should not be sent in URLs.
+    owasp_category: A07:2025-Authentication Failures

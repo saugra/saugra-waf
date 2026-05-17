@@ -409,6 +409,8 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
         rules: RuleSettings::default(),
         ai: AiConfig::default(),
         logging: LoggingConfig::default(),
+        posture: Default::default(),
+        standards: Default::default(),
     }
 }
 

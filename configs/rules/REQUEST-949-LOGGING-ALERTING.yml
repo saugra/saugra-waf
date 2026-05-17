@@ -1,0 +1,22 @@
+metadata:
+  name: saugra-logging-alerting-abuse
+  version: 0.1.0
+  standards:
+    - owasp-top-10:2025
+
+rules:
+  - id: SAUGRA-LOG-001
+    name: Log Injection Sequence
+    category: logging_alerting_failure
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - query
+      - body
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "(%0d|%0a|\\r|\\n).{0,80}(error|warn|info|debug|trace|critical|request_id|status=)"
+    explanation: Request data contains newline-style log injection markers that can undermine security logging and alerting.
+    owasp_category: A09:2025-Security Logging and Alerting Failures

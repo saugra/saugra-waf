@@ -1,6 +1,8 @@
 metadata:
   name: saugra-protocol-enforcement
   version: 0.1.0
+  standards:
+    - owasp-top-10:2025
 
 rules:
   - id: SAUGRA-CT-001
@@ -12,4 +14,4 @@ rules:
       - headers
     pattern: "(?i)(content-type:\\s*application/x-msdownload|content-type:\\s*application/x-sh)"
     explanation: Request headers matched a suspicious executable content type.
-    owasp_category: A05:2021-Security Misconfiguration
+    owasp_category: A02:2025-Security Misconfiguration

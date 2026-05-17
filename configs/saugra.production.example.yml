@@ -30,11 +30,18 @@ rules:
   inbound_anomaly_threshold: 5
   files:
     - /etc/saugra/rules/REQUEST-913-SCANNER-DETECTION.yml
+    - /etc/saugra/rules/REQUEST-914-AUTHENTICATION-ABUSE.yml
+    - /etc/saugra/rules/REQUEST-916-INSECURE-DESIGN.yml
     - /etc/saugra/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml
+    - /etc/saugra/rules/REQUEST-921-CRYPTO-TRANSPORT.yml
     - /etc/saugra/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
     - /etc/saugra/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
     - /etc/saugra/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
     - /etc/saugra/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
+    - /etc/saugra/rules/REQUEST-944-SUPPLY-CHAIN.yml
+    - /etc/saugra/rules/REQUEST-945-INTEGRITY.yml
+    - /etc/saugra/rules/REQUEST-949-LOGGING-ALERTING.yml
+    - /etc/saugra/rules/REQUEST-950-EXCEPTIONAL-CONDITIONS.yml
   # Example false-positive tuning:
   # exclusions:
   #   - name: Allow article HTML previews
@@ -56,3 +63,19 @@ logging:
   event_log_path: /var/log/saugra/saugra-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 30
+
+posture:
+  enabled: true
+  expected_external_scheme: https
+  require_secure_cookies: true
+  require_security_headers: true
+  allowed_methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+  dependency_report_path: null
+
+standards:
+  owasp_catalog: /etc/saugra/standards/owasp-top-10-2025.yml

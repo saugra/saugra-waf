@@ -1,0 +1,23 @@
+metadata:
+  name: saugra-exceptional-conditions
+  version: 0.1.0
+  standards:
+    - owasp-top-10:2025
+
+rules:
+  - id: SAUGRA-EXC-001
+    name: Exceptional Parser Stress Sequence
+    category: exceptional_condition_abuse
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - path
+      - query
+      - body
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "(%00|\\x00|%u[0-9a-f]{4}|%c0%ae|%c1%9c|\\.{2048,}|[a-z0-9_]{2048,}=)"
+    explanation: Request data contains parser edge-case input that may trigger mishandled exceptional conditions.
+    owasp_category: A10:2025-Mishandling of Exceptional Conditions

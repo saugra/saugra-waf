@@ -1,6 +1,8 @@
 metadata:
   name: saugra-application-attack-rce
   version: 0.1.0
+  standards:
+    - owasp-top-10:2025
 
 rules:
   - id: SAUGRA-CMD-001
@@ -15,4 +17,4 @@ rules:
       - plus_to_space
     pattern: "(?i)(;\\s*(cat|bash|sh|curl|wget)\\b|`[^`]+`|\\|\\s*(cat|bash|sh)\\b)"
     explanation: Request data matched a command injection pattern.
-    owasp_category: A03:2021-Injection
+    owasp_category: A05:2025-Injection

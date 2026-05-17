@@ -1,6 +1,8 @@
 metadata:
   name: saugra-application-attack-sqli
   version: 0.1.0
+  standards:
+    - owasp-top-10:2025
 
 rules:
   - id: SAUGRA-SQLI-001
@@ -15,4 +17,4 @@ rules:
       - plus_to_space
     pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table|--|/\\*)"
     explanation: Query data matched a common SQL injection pattern.
-    owasp_category: A03:2021-Injection
+    owasp_category: A05:2025-Injection

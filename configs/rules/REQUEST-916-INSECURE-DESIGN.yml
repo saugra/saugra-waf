@@ -1,0 +1,17 @@
+metadata:
+  name: saugra-insecure-design
+  version: 0.1.0
+  standards:
+    - owasp-top-10:2025
+
+rules:
+  - id: SAUGRA-DESIGN-001
+    name: Dangerous Method Override Header
+    category: insecure_design
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - headers
+    pattern: "(?i)(x-http-method-override|x-method-override|x-http-method):\\s*(delete|put|patch)"
+    explanation: Request uses a method override header that can bypass route design assumptions when applications trust it implicitly.
+    owasp_category: A06:2025-Insecure Design

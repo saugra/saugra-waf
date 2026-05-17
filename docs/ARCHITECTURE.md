@@ -44,6 +44,13 @@ Final decision = Rules + Rate Limiting + Behavior Score + Optional AI Explanatio
 
 AI should explain and assist. It should not be the only reason a request is blocked in the MVP.
 
+OWASP Top 10 coverage should be modeled as layered controls, not only request
+regex rules. Request rules handle visible payloads, rate limits handle abuse
+over time, posture checks validate deployment assumptions, external report
+ingestion captures supply chain evidence, and durable logs provide audit and
+tuning evidence. The detailed strategy lives in
+`docs/OWASP_TOP_10_STRATEGY.md`.
+
 ## Main Components
 
 ```txt
@@ -396,6 +403,8 @@ Example:
 metadata:
   name: saugra-application-attack-sqli
   version: 0.1.0
+  standards:
+    - owasp-top-10:2025
 
 rules:
   - id: SAUGRA-SQLI-001
@@ -410,7 +419,7 @@ rules:
       - plus_to_space
     pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table)"
     explanation: Query data matched a common SQL injection pattern.
-    owasp_category: A03:2021-Injection
+    owasp_category: A05:2025-Injection
 ```
 
 Native rule packs are split into CRS-style files such as
@@ -437,6 +446,12 @@ OWASP CRS .conf files
   -> Saugra YAML rule packs
   -> Saugra rule engine
 ```
+
+Rule-pack metadata declares the standard release a file maps to, for example
+`owasp-top-10:2025`. Future OWASP releases, such as a later `owasp-top-10:2026`
+mapping, should be shipped as new or updated YAML rule packs and enabled through
+`rules.files`; the proxy and decision model do not need a rewrite for a new
+standard label.
 
 In `block` mode, Saugra uses inbound anomaly scoring. Each matched rule adds
 points based on severity: low = 2, medium = 3, high = 5, critical = 5. Requests

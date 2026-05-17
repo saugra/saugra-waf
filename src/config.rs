@@ -35,6 +35,18 @@ pub enum ConfigError {
     InvalidAnomalyThreshold,
     #[error("rules.exclusions entries must include at least one rule_id or category")]
     InvalidRuleExclusion,
+    #[error("posture.expected_external_scheme must be http or https")]
+    InvalidPostureScheme,
+    #[error(
+        "posture.allowed_methods must include at least one method when posture checks are enabled"
+    )]
+    InvalidPostureAllowedMethods,
+    #[error("posture.allowed_methods entries must not be blank")]
+    InvalidPostureMethod,
+    #[error("posture.dependency_report_path must not be blank when provided")]
+    InvalidPostureDependencyReportPath,
+    #[error("standards.owasp_catalog must not be blank when provided")]
+    InvalidOwaspCatalogPath,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -51,6 +63,10 @@ pub struct SaugraConfig {
     pub ai: AiConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub posture: PostureConfig,
+    #[serde(default)]
+    pub standards: StandardsConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -241,6 +257,49 @@ impl Default for LoggingConfig {
     }
 }
 
+#[derive(Debug, Clone, Deserialize)]
+pub struct PostureConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_expected_external_scheme")]
+    pub expected_external_scheme: String,
+    #[serde(default = "default_true")]
+    pub require_secure_cookies: bool,
+    #[serde(default = "default_true")]
+    pub require_security_headers: bool,
+    #[serde(default = "default_allowed_methods")]
+    pub allowed_methods: Vec<String>,
+    #[serde(default)]
+    pub dependency_report_path: Option<PathBuf>,
+}
+
+impl Default for PostureConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            expected_external_scheme: default_expected_external_scheme(),
+            require_secure_cookies: true,
+            require_security_headers: true,
+            allowed_methods: default_allowed_methods(),
+            dependency_report_path: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StandardsConfig {
+    #[serde(default = "default_owasp_catalog")]
+    pub owasp_catalog: PathBuf,
+}
+
+impl Default for StandardsConfig {
+    fn default() -> Self {
+        Self {
+            owasp_catalog: default_owasp_catalog(),
+        }
+    }
+}
+
 impl SaugraConfig {
     pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
         let contents = fs::read_to_string(path)?;
@@ -337,6 +396,39 @@ impl SaugraConfig {
             }
         }
 
+        if self.posture.enabled {
+            let scheme = self.posture.expected_external_scheme.trim();
+            if !matches!(scheme, "http" | "https") {
+                return Err(ConfigError::InvalidPostureScheme);
+            }
+
+            if self.posture.allowed_methods.is_empty() {
+                return Err(ConfigError::InvalidPostureAllowedMethods);
+            }
+        }
+
+        if self
+            .posture
+            .allowed_methods
+            .iter()
+            .any(|method| method.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidPostureMethod);
+        }
+
+        if self
+            .posture
+            .dependency_report_path
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(ConfigError::InvalidPostureDependencyReportPath);
+        }
+
+        if self.standards.owasp_catalog.as_os_str().is_empty() {
+            return Err(ConfigError::InvalidOwaspCatalogPath);
+        }
+
         Ok(())
     }
 
@@ -416,11 +508,18 @@ fn default_inbound_anomaly_threshold() -> u16 {
 fn default_rule_files() -> Vec<PathBuf> {
     vec![
         PathBuf::from("configs/rules/REQUEST-913-SCANNER-DETECTION.yml"),
+        PathBuf::from("configs/rules/REQUEST-914-AUTHENTICATION-ABUSE.yml"),
+        PathBuf::from("configs/rules/REQUEST-916-INSECURE-DESIGN.yml"),
         PathBuf::from("configs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml"),
+        PathBuf::from("configs/rules/REQUEST-921-CRYPTO-TRANSPORT.yml"),
         PathBuf::from("configs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml"),
         PathBuf::from("configs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml"),
         PathBuf::from("configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml"),
         PathBuf::from("configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml"),
+        PathBuf::from("configs/rules/REQUEST-944-SUPPLY-CHAIN.yml"),
+        PathBuf::from("configs/rules/REQUEST-945-INTEGRITY.yml"),
+        PathBuf::from("configs/rules/REQUEST-949-LOGGING-ALERTING.yml"),
+        PathBuf::from("configs/rules/REQUEST-950-EXCEPTIONAL-CONDITIONS.yml"),
     ]
 }
 
@@ -454,6 +553,21 @@ fn default_event_log_max_size() -> String {
 
 fn default_event_log_max_files() -> usize {
     10
+}
+
+fn default_expected_external_scheme() -> String {
+    "https".to_string()
+}
+
+fn default_allowed_methods() -> Vec<String> {
+    ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        .into_iter()
+        .map(str::to_string)
+        .collect()
+}
+
+fn default_owasp_catalog() -> PathBuf {
+    PathBuf::from("configs/standards/owasp-top-10-2025.yml")
 }
 
 #[cfg(test)]
@@ -773,6 +887,51 @@ logging:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidEventLogMaxFiles)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_posture_external_scheme() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+posture:
+  expected_external_scheme: ftp
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidPostureScheme)
+        ));
+    }
+
+    #[test]
+    fn rejects_empty_enabled_posture_allowed_methods() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+posture:
+  enabled: true
+  allowed_methods: []
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidPostureAllowedMethods)
         ));
     }
 }

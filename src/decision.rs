@@ -121,7 +121,7 @@ mod tests {
         assert_eq!(decision.anomaly_threshold, 5);
         assert_eq!(
             decision.owasp_category.as_deref(),
-            Some("A03:2021-Injection")
+            Some("A05:2025-Injection")
         );
     }
 
@@ -205,7 +205,7 @@ mod tests {
         assert_eq!(json["anomaly_score"], 5);
         assert_eq!(json["anomaly_threshold"], 5);
         assert_eq!(json["matched_rules"][0]["rule_id"], "SAUGRA-SQLI-001");
-        assert_eq!(json["owasp_category"], "A03:2021-Injection");
+        assert_eq!(json["owasp_category"], "A05:2025-Injection");
     }
 
     fn rule_match() -> RuleMatch {
@@ -216,7 +216,7 @@ mod tests {
             severity: RuleSeverity::High,
             matched_target: RuleTarget::Query,
             explanation: "Query data matched a common SQL injection pattern.".to_string(),
-            owasp_category: Some("A03:2021-Injection".to_string()),
+            owasp_category: Some("A05:2025-Injection".to_string()),
         }
     }
 

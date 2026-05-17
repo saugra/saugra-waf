@@ -1,0 +1,131 @@
+standard: owasp-top-10:2025
+categories:
+  - id: A01:2025
+    name: Broken Access Control
+    baseline_control: request rules for path traversal and access-control bypass indicators
+    planned_controls:
+      - path policy checks
+      - route authorization assumptions
+  - id: A02:2025
+    name: Security Misconfiguration
+    baseline_control: request rules for suspicious protocol and content-type indicators
+    planned_controls:
+      - response security header posture checks
+      - forwarded header validation
+  - id: A03:2025
+    name: Software Supply Chain Failures
+    baseline_control: request rules for supply-chain attack payloads
+    planned_controls:
+      - SBOM ingestion
+      - dependency scan report ingestion
+  - id: A04:2025
+    name: Cryptographic Failures
+    baseline_control: request rules for insecure forwarded protocol indicators
+    planned_controls:
+      - HTTPS expectation checks
+      - secure cookie checks
+      - HSTS checks
+  - id: A05:2025
+    name: Injection
+    baseline_control: request rules for SQLi, XSS, command injection, and related payloads
+    planned_controls:
+      - expanded CRS-derived injection rules
+      - JSON field-aware inspection
+  - id: A06:2025
+    name: Insecure Design
+    baseline_control: request rules for dangerous method override patterns
+    planned_controls:
+      - allowed method policy
+      - sensitive action controls
+  - id: A07:2025
+    name: Authentication Failures
+    baseline_control: request rules for credential exposure and credential stuffing tools
+    planned_controls:
+      - login route policy checks
+      - credential stuffing behavior scoring
+  - id: A08:2025
+    name: Software or Data Integrity Failures
+    baseline_control: request rules for unsafe serialization and prototype pollution markers
+    planned_controls:
+      - CI artifact integrity report ingestion
+  - id: A09:2025
+    name: Security Logging and Alerting Failures
+    baseline_control: request rules for log injection markers
+    planned_controls:
+      - dashboard coverage views
+      - alerting integrations
+  - id: A10:2025
+    name: Mishandling of Exceptional Conditions
+    baseline_control: request rules for parser edge-case and exceptional-condition probes
+    planned_controls:
+      - timeout posture checks
+      - upstream error outcome reporting
+
+runtime_controls:
+  rate_limiting:
+    categories:
+      - A06:2025
+      - A07:2025
+    memory_template: local/demo rate limiting enabled at {requests_per_minute}/minute with burst {burst}
+    redis_template: distributed Redis rate limiting enabled at {requests_per_minute}/minute with burst {burst}
+    route_template: "{route_count} route-specific rate limit policy entries"
+  event_log:
+    categories:
+      - A09:2025
+    template: durable local security event log at {event_log_path} with {event_log_max_files} retained files
+  body_limit:
+    categories:
+      - A10:2025
+    template: request body inspection limit set to {max_body_size}
+
+posture_checks:
+  disabled:
+    check_id: POSTURE-ENABLED-001
+    name: Posture Checks Enabled
+    category: A02:2025-Security Misconfiguration
+    disabled_message: posture checks are disabled in configuration
+  expected_external_scheme:
+    check_id: POSTURE-CRYPTO-001
+    name: Expected External Scheme
+    category: A04:2025-Cryptographic Failures
+    control_template: posture check expects external scheme {expected_external_scheme}
+    pass_message: expected external scheme is configured as {expected_external_scheme}
+    warn_message: expected external scheme is configured as {expected_external_scheme}
+  allowed_methods:
+    check_id: POSTURE-DESIGN-001
+    name: Allowed Methods
+    category: A06:2025-Insecure Design
+    control_template: posture check limits methods to {allowed_methods}
+    pass_message: "allowed methods are explicitly configured: {allowed_methods}"
+    fail_message: "allowed methods include risky method(s): {risky_methods}"
+    risky_methods:
+      - TRACE
+      - TRACK
+      - CONNECT
+  security_headers:
+    check_id: POSTURE-MISCONFIG-001
+    name: Security Headers Required
+    category: A02:2025-Security Misconfiguration
+    control_template: posture check requires response security headers
+    pass_message: response security header requirement is enabled for future live checks
+    warn_message: response security header requirement is disabled
+  secure_cookies:
+    check_id: POSTURE-CRYPTO-002
+    name: Secure Cookies Required
+    category: A04:2025-Cryptographic Failures
+    control_template: posture check requires secure cookies
+    pass_message: secure cookie requirement is enabled for future live checks
+    warn_message: secure cookie requirement is disabled
+  body_limit:
+    check_id: POSTURE-EXCEPTION-001
+    name: Request Body Limit
+    category: A10:2025-Mishandling of Exceptional Conditions
+    pass_message: request body limit is configured as {max_body_size}
+  dependency_report:
+    check_id: POSTURE-SUPPLY-CHAIN-001
+    name: Dependency Report
+    category: A03:2025-Software Supply Chain Failures
+    control_template: posture check has dependency report path configured
+    pass_message: dependency report exists at {dependency_report_path}
+    missing_message: "dependency report path is configured but missing: {dependency_report_path}"
+    not_configured_message: no dependency report path is configured yet

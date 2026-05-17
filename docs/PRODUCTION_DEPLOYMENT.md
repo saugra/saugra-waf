@@ -48,7 +48,7 @@ Create the service user and directories:
 
 ```bash
 useradd --system --home /var/lib/saugra --shell /usr/sbin/nologin saugra
-mkdir -p /etc/saugra/rules /var/log/saugra /var/lib/saugra
+mkdir -p /etc/saugra/rules /etc/saugra/standards /var/log/saugra /var/lib/saugra
 chown -R saugra:saugra /var/log/saugra /var/lib/saugra
 ```
 
@@ -57,6 +57,7 @@ Install the config:
 ```bash
 cp configs/saugra.production.example.yml /etc/saugra/saugra.yml
 cp configs/rules/REQUEST-*.yml /etc/saugra/rules/
+cp configs/standards/*.yml /etc/saugra/standards/
 editor /etc/saugra/saugra.yml
 ```
 

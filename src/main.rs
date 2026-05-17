@@ -4,7 +4,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use saugra::{
     ai, config::SaugraConfig, crs_convert, event_store, event_store::EventLogRetention, logging,
-    proxy, rules,
+    owasp, posture, proxy, rules, standards,
 };
 
 #[derive(Debug, Parser)]
@@ -48,6 +48,16 @@ enum Commands {
         #[arg(short, long, default_value = "configs/saugra.example.yml")]
         config: PathBuf,
     },
+    /// Inspect OWASP Top 10 coverage.
+    Owasp {
+        #[command(subcommand)]
+        command: OwaspCommand,
+    },
+    /// Inspect deployment posture assumptions.
+    Posture {
+        #[command(subcommand)]
+        command: PostureCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -85,6 +95,24 @@ enum LogsCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum OwaspCommand {
+    /// Print current OWASP Top 10 coverage from loaded rules and config controls.
+    Coverage {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum PostureCommand {
+    /// Run local deterministic posture checks.
+    Check {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -95,9 +123,9 @@ async fn main() -> anyhow::Result<()> {
             let config = SaugraConfig::from_file(&config)
                 .with_context(|| format!("failed to load config {}", config.display()))?;
             config.validate()?;
-            let rule_set = rules::load_rule_set(&config.rules)?;
+            let (_rule_set, report) = rules::load_rule_set_with_report(&config.rules)?;
             println!("config OK: {}", config.summary());
-            println!("loaded rules: {}", rule_set.rules().len());
+            print_rule_load_report(&report);
             Ok(())
         }
         Commands::Run { config } => {
@@ -157,6 +185,25 @@ async fn main() -> anyhow::Result<()> {
             println!("{}", serde_json::to_string_pretty(&event.decision)?);
             Ok(())
         }
+        Commands::Owasp { command } => match command {
+            OwaspCommand::Coverage { config } => {
+                let config = load_valid_config(&config)?;
+                let rule_set = rules::load_rule_set(&config.rules)?;
+                let catalog = standards::load_catalog_or_builtin(&config.standards.owasp_catalog)?;
+                let report = owasp::coverage_report(&config, &rule_set, &catalog);
+                print_owasp_coverage(&report);
+                Ok(())
+            }
+        },
+        Commands::Posture { command } => match command {
+            PostureCommand::Check { config } => {
+                let config = load_valid_config(&config)?;
+                let catalog = standards::load_catalog_or_builtin(&config.standards.owasp_catalog)?;
+                let report = posture::check(&config, &catalog);
+                print_posture_report(&report);
+                Ok(())
+            }
+        },
     }
 }
 
@@ -172,6 +219,98 @@ fn event_log_retention(config: &SaugraConfig) -> anyhow::Result<EventLogRetentio
         max_size_bytes: config.event_log_max_size_bytes()?,
         max_files: config.logging.event_log_max_files,
     })
+}
+
+fn print_rule_load_report(report: &rules::RuleLoadReport) {
+    if !report.standards.is_empty() {
+        println!("rule standards: {}", report.standards.join(","));
+    }
+    println!("rule files: {}", report.files.len());
+    for file in &report.files {
+        println!(
+            "  {}: name={}, version={}, standards={}, entries={}, enabled={}, disabled={}, active_rules={}, filtered_by_paranoia={}",
+            file.path,
+            file.name.as_deref().unwrap_or("unknown"),
+            file.version.as_deref().unwrap_or("unknown"),
+            if file.standards.is_empty() {
+                "none".to_string()
+            } else {
+                file.standards.join(",")
+            },
+            file.entries,
+            file.enabled_entries,
+            file.disabled_entries,
+            file.active_rules,
+            file.filtered_by_paranoia
+        );
+    }
+    println!(
+        "rules: entries={}, enabled={}, disabled={}, compiled={}, active={}, filtered_by_paranoia={}",
+        report.total_entries,
+        report.enabled_entries,
+        report.disabled_entries,
+        report.compiled_rules,
+        report.active_rules,
+        report.filtered_by_paranoia
+    );
+    println!(
+        "rule exclusions: configured={}, scoped={}, global={}",
+        report.exclusions.configured, report.exclusions.scoped, report.exclusions.global
+    );
+
+    if !report.exclusions.disabled_rule_ids.is_empty() {
+        println!(
+            "disabled rule IDs: {}",
+            report.exclusions.disabled_rule_ids.join(",")
+        );
+    }
+
+    if !report.exclusions.disabled_categories.is_empty() {
+        println!(
+            "disabled categories: {}",
+            report.exclusions.disabled_categories.join(",")
+        );
+    }
+
+    for warning in &report.warnings {
+        println!("warning: {warning}");
+    }
+}
+
+fn print_owasp_coverage(report: &owasp::OwaspCoverageReport) {
+    println!("OWASP coverage standard: {}", report.standard);
+    for category in &report.categories {
+        println!(
+            "{} {}: status={}, request_rules={}",
+            category.id, category.name, category.status, category.rule_count
+        );
+
+        if category.controls.is_empty() {
+            println!("  active controls: none");
+        } else {
+            println!("  active controls:");
+            for control in &category.controls {
+                println!("    - {control}");
+            }
+        }
+
+        if !category.planned_controls.is_empty() {
+            println!("  planned controls:");
+            for control in &category.planned_controls {
+                println!("    - {control}");
+            }
+        }
+    }
+}
+
+fn print_posture_report(report: &posture::PostureReport) {
+    println!("posture checks enabled: {}", report.enabled);
+    for check in &report.checks {
+        println!(
+            "{}\t{}\t{}\t{}\t{}",
+            check.status, check.id, check.owasp_category, check.name, check.message
+        );
+    }
 }
 
 fn print_init(target: Option<InitTarget>) -> anyhow::Result<()> {

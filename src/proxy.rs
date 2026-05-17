@@ -424,7 +424,7 @@ fn rate_limit_match(exceeded: &RateLimitExceeded) -> RuleMatch {
             "Client exceeded the configured rate limit of {} requests per minute with a burst of {}.",
             exceeded.limit, exceeded.burst
         ),
-        owasp_category: Some("A04:2021-Insecure Design".to_string()),
+        owasp_category: Some("A06:2025-Insecure Design".to_string()),
     }
 }
 
@@ -629,6 +629,8 @@ mod tests {
             rules: Default::default(),
             ai: Default::default(),
             logging: Default::default(),
+            posture: Default::default(),
+            standards: Default::default(),
         }
     }
 }

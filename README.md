@@ -52,6 +52,7 @@ Public docs:
 - `docs/ARCHITECTURE.md` — technical architecture
 - `docs/CAPSTONE_SPEC.md` — capstone product specification
 - `docs/PRODUCTION_DEPLOYMENT.md` — Nginx/Apache production deployment guide
+- `docs/OWASP_TOP_10_STRATEGY.md` — layered OWASP Top 10 coverage strategy
 
 Install status:
 
@@ -72,6 +73,18 @@ List configured rules:
 cargo run -- rules list --config configs/saugra.example.yml
 ```
 
+Review OWASP Top 10:2025 mapped coverage:
+
+```bash
+cargo run -- owasp coverage --config configs/saugra.example.yml
+```
+
+Run local deployment posture checks:
+
+```bash
+cargo run -- posture check --config configs/saugra.example.yml
+```
+
 Convert supported OWASP CRS regex rules into Saugra YAML:
 
 ```bash
@@ -81,6 +94,10 @@ cargo run -- rules convert-crs --input /path/to/coreruleset/rules --output confi
 Saugra uses native YAML rule packs as its product rule format. OWASP CRS is
 treated as an upstream source of maintained detection knowledge that can be
 converted into Saugra YAML; Saugra does not try to clone ModSecurity syntax.
+The shipped default rule packs declare `owasp-top-10:2025` metadata and include
+starter WAF signals for every OWASP Top 10:2025 category. Future Top 10
+releases can be adopted by shipping updated YAML packs and changing
+`rules.files`, without rewriting the proxy.
 
 ```txt
 OWASP CRS .conf files
@@ -179,11 +196,18 @@ rules:
   inbound_anomaly_threshold: 5
   files:
     - configs/rules/REQUEST-913-SCANNER-DETECTION.yml
+    - configs/rules/REQUEST-914-AUTHENTICATION-ABUSE.yml
+    - configs/rules/REQUEST-916-INSECURE-DESIGN.yml
     - configs/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml
+    - configs/rules/REQUEST-921-CRYPTO-TRANSPORT.yml
     - configs/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
     - configs/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
     - configs/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
     - configs/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
+    - configs/rules/REQUEST-944-SUPPLY-CHAIN.yml
+    - configs/rules/REQUEST-945-INTEGRITY.yml
+    - configs/rules/REQUEST-949-LOGGING-ALERTING.yml
+    - configs/rules/REQUEST-950-EXCEPTIONAL-CONDITIONS.yml
   exclusions:
     - name: Allow article HTML previews
       rule_ids:
@@ -203,10 +227,26 @@ logging:
   event_log_path: /var/log/saugra/saugra-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 30
+
+posture:
+  enabled: true
+  expected_external_scheme: https
+  require_secure_cookies: true
+  require_security_headers: true
+  allowed_methods:
+    - GET
+    - POST
+    - PUT
+    - PATCH
+    - DELETE
+  dependency_report_path: null
+
+standards:
+  owasp_catalog: /etc/saugra/standards/owasp-top-10-2025.yml
 ```
 
 Start in `monitor` mode. Switch to `block` only after reviewing real traffic
-with `logs tail` and `explain`.
+with `logs tail`, `explain`, and `posture check`.
 
 ### Rule Exclusions
 

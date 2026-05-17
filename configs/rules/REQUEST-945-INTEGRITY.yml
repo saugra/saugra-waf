@@ -1,0 +1,21 @@
+metadata:
+  name: saugra-integrity-abuse
+  version: 0.1.0
+  standards:
+    - owasp-top-10:2025
+
+rules:
+  - id: SAUGRA-INTEGRITY-001
+    name: Unsafe Serialized Object Marker
+    category: integrity_failure
+    severity: high
+    paranoia_level: 1
+    targets:
+      - body
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+    pattern: "(?i)(rO0AB|O:\\d+:\\\"[A-Za-z0-9_\\\\]+\\\"|__proto__|constructor\\s*\\[\\s*prototype\\s*\\])"
+    explanation: Request data contains markers associated with unsafe deserialization or prototype pollution attacks.
+    owasp_category: A08:2025-Software or Data Integrity Failures

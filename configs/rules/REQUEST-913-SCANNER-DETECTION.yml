@@ -1,6 +1,8 @@
 metadata:
   name: saugra-scanner-detection
   version: 0.1.0
+  standards:
+    - owasp-top-10:2025
 
 rules:
   - id: SAUGRA-BOT-001
@@ -12,4 +14,15 @@ rules:
       - user_agent
     pattern: "(?i)(sqlmap|nikto|nmap|masscan|acunetix|nessus|wpscan)"
     explanation: User-Agent matched a known scanner or security testing tool.
-    owasp_category: A06:2021-Vulnerable and Outdated Components
+    owasp_category: A07:2025-Authentication Failures
+
+  - id: SAUGRA-AUTH-001
+    name: Credential Stuffing Tool User Agent
+    category: authentication_abuse
+    severity: medium
+    paranoia_level: 1
+    targets:
+      - user_agent
+    pattern: "(?i)(hydra|medusa|patator|ncrack|brutus|sentry mba|openbullet)"
+    explanation: User-Agent matched a tool commonly used for password guessing or credential stuffing.
+    owasp_category: A07:2025-Authentication Failures
