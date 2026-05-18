@@ -47,6 +47,7 @@ mod tests {
                 category: "sql_injection".to_string(),
                 severity: RuleSeverity::High,
                 matched_target: RuleTarget::Query,
+                paranoia_level: 1,
                 explanation: "SQLi matched.".to_string(),
                 owasp_category: Some("A05:2025-Injection".to_string()),
             }],

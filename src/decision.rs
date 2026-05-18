@@ -18,10 +18,18 @@ pub struct WafDecision {
     pub severity: String,
     pub risk_score: u8,
     pub anomaly_score: u16,
+    #[serde(default)]
+    pub blocking_anomaly_score: u16,
     pub anomaly_threshold: u16,
+    #[serde(default = "default_blocking_paranoia_level")]
+    pub blocking_paranoia_level: u8,
     pub explanation: String,
     pub owasp_category: Option<String>,
     pub owasp_categories: Vec<String>,
+}
+
+fn default_blocking_paranoia_level() -> u8 {
+    u8::MAX
 }
 
 impl WafDecision {
@@ -31,6 +39,22 @@ impl WafDecision {
         matches: Vec<RuleMatch>,
         anomaly_threshold: u16,
     ) -> Self {
+        Self::from_matches_with_blocking_paranoia(
+            request_id,
+            mode,
+            matches,
+            anomaly_threshold,
+            u8::MAX,
+        )
+    }
+
+    pub fn from_matches_with_blocking_paranoia(
+        request_id: String,
+        mode: WafMode,
+        matches: Vec<RuleMatch>,
+        anomaly_threshold: u16,
+        blocking_paranoia_level: u8,
+    ) -> Self {
         if matches.is_empty() || mode == WafMode::Off {
             return Self {
                 request_id,
@@ -39,7 +63,9 @@ impl WafDecision {
                 severity: "none".to_string(),
                 risk_score: 0,
                 anomaly_score: 0,
+                blocking_anomaly_score: 0,
                 anomaly_threshold,
+                blocking_paranoia_level,
                 explanation: "No security rules matched this request.".to_string(),
                 owasp_category: None,
                 owasp_categories: Vec::new(),
@@ -50,6 +76,14 @@ impl WafDecision {
             .iter()
             .map(|rule_match| rule_match.severity.anomaly_points())
             .sum();
+        let blocking_anomaly_score = matches
+            .iter()
+            .filter(|rule_match| rule_match.paranoia_level <= blocking_paranoia_level)
+            .map(|rule_match| rule_match.severity.anomaly_points())
+            .sum();
+        let has_blocking_eligible_match = matches
+            .iter()
+            .any(|rule_match| rule_match.paranoia_level <= blocking_paranoia_level);
         let risk_score = matches
             .iter()
             .map(|rule_match| rule_match.severity.risk_score())
@@ -78,16 +112,19 @@ impl WafDecision {
             request_id,
             action: match mode {
                 WafMode::Monitor => WafAction::Monitor,
-                WafMode::Block if anomaly_score >= anomaly_threshold => WafAction::Block,
+                WafMode::Block if blocking_anomaly_score >= anomaly_threshold => WafAction::Block,
                 WafMode::Block => WafAction::Monitor,
-                WafMode::Strict => WafAction::Block,
+                WafMode::Strict if has_blocking_eligible_match => WafAction::Block,
+                WafMode::Strict => WafAction::Monitor,
                 WafMode::Off => WafAction::Allow,
             },
             matched_rules: matches,
             severity,
             risk_score,
             anomaly_score,
+            blocking_anomaly_score,
             anomaly_threshold,
+            blocking_paranoia_level,
             explanation,
             owasp_category,
             owasp_categories,
@@ -127,6 +164,7 @@ mod tests {
         assert_eq!(decision.action, WafAction::Block);
         assert_eq!(decision.risk_score, 80);
         assert_eq!(decision.anomaly_score, 5);
+        assert_eq!(decision.blocking_anomaly_score, 5);
         assert_eq!(decision.anomaly_threshold, 5);
         assert_eq!(
             decision.owasp_category.as_deref(),
@@ -175,6 +213,36 @@ mod tests {
     }
 
     #[test]
+    fn block_mode_monitors_matches_above_blocking_paranoia_level() {
+        let decision = WafDecision::from_matches_with_blocking_paranoia(
+            "request-1".to_string(),
+            WafMode::Block,
+            vec![paranoia_two_rule_match()],
+            5,
+            1,
+        );
+
+        assert_eq!(decision.action, WafAction::Monitor);
+        assert_eq!(decision.anomaly_score, 5);
+        assert_eq!(decision.blocking_anomaly_score, 0);
+        assert_eq!(decision.blocking_paranoia_level, 1);
+    }
+
+    #[test]
+    fn strict_mode_monitors_matches_above_blocking_paranoia_level() {
+        let decision = WafDecision::from_matches_with_blocking_paranoia(
+            "request-1".to_string(),
+            WafMode::Strict,
+            vec![paranoia_two_rule_match()],
+            5,
+            1,
+        );
+
+        assert_eq!(decision.action, WafAction::Monitor);
+        assert_eq!(decision.blocking_anomaly_score, 0);
+    }
+
+    #[test]
     fn off_mode_allows_even_when_rules_match() {
         let decision =
             WafDecision::from_matches("request-1".to_string(), WafMode::Off, vec![rule_match()], 5);
@@ -212,8 +280,11 @@ mod tests {
         assert_eq!(json["severity"], "high");
         assert_eq!(json["risk_score"], 80);
         assert_eq!(json["anomaly_score"], 5);
+        assert_eq!(json["blocking_anomaly_score"], 5);
         assert_eq!(json["anomaly_threshold"], 5);
+        assert_eq!(json["blocking_paranoia_level"], 255);
         assert_eq!(json["matched_rules"][0]["rule_id"], "SAUGRA-SQLI-001");
+        assert_eq!(json["matched_rules"][0]["paranoia_level"], 1);
         assert_eq!(json["owasp_category"], "A05:2025-Injection");
         assert_eq!(json["owasp_categories"][0], "A05:2025-Injection");
     }
@@ -225,6 +296,7 @@ mod tests {
             category: "sql_injection".to_string(),
             severity: RuleSeverity::High,
             matched_target: RuleTarget::Query,
+            paranoia_level: 1,
             explanation: "Query data matched a common SQL injection pattern.".to_string(),
             owasp_category: Some("A05:2025-Injection".to_string()),
         }
@@ -234,6 +306,19 @@ mod tests {
         RuleMatch {
             severity: RuleSeverity::Medium,
             ..rule_match()
+        }
+    }
+
+    fn paranoia_two_rule_match() -> RuleMatch {
+        RuleMatch {
+            rule_id: "SAUGRA-PL2-001".to_string(),
+            rule_name: "Higher Paranoia Rule".to_string(),
+            category: "local_policy".to_string(),
+            severity: RuleSeverity::High,
+            matched_target: RuleTarget::Query,
+            paranoia_level: 2,
+            explanation: "Higher paranoia rule matched.".to_string(),
+            owasp_category: None,
         }
     }
 }

@@ -13,20 +13,23 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 3 — Production-Ready Proxy Verification + Abuse Controls**
+Current phase: **Phase 4 preparation — WebSocket and upgrade-aware proxying**
 
 The repository has a working Rust foundation:
 
 - CLI scaffold
 - YAML config loading and validation
-- Built-in WAF rule metadata
-- Regex-based attack inspection helpers
+- YAML rule packs with validation and anomaly scoring
 - WAF decision model
 - Basic AI-style explanation helper
 - Structured logging setup
 - Catch-all reverse proxy service
-- Local JSONL security event store
-- Initial in-memory rate limiter for local-only use
+- Rotated local JSONL security event store
+- Redis-backed distributed rate limiter for production use
+- Local-only in-memory rate limiter for development and tests
+- `logs tail`, `explain`, `owasp coverage`, `posture check`, and report
+  summary CLI workflows
+- Local and remote verification scripts
 - Example config at `configs/saugra.example.yml`
 
 ## Verified Commands
@@ -41,7 +44,7 @@ cargo run -- rules list --config configs/saugra.example.yml
 Current test status:
 
 ```txt
-22 passed; 0 failed
+111 passed; 0 failed
 ```
 
 ## Production-Ready Product Principle
@@ -113,55 +116,6 @@ Future Saugra Pro/cloud work may focus on:
 - [x] Forward allowed traffic to the configured upstream.
 - [x] Add tests for monitor and block behavior.
 
-## Phase 3.5 — External Rule Packs and CRS-Style Tuning
-
-Saugra should scale beyond hardcoded Rust rules. The community rule engine will
-load validated YAML rule packs at startup, compile rule regexes before accepting
-traffic, and expose the same rules through `saugra rules list`.
-
-The rule-pack design is inspired by OWASP CRS operational concepts while
-remaining native to Saugra instead of copying ModSecurity syntax directly:
-
-- [x] Define Saugra YAML as the product rule format; CRS is an upstream rule
-      source that can be converted into Saugra YAML, not a runtime syntax Saugra
-      must clone.
-- [x] Move the current public rules into CRS-style modular files under
-      `configs/rules/`.
-- [x] Support multiple configured rule files through `rules.files`.
-- [x] Compile and validate all rule regexes at startup.
-- [x] Support rule metadata: id, name, category, severity, targets,
-      paranoia level, OWASP category, transforms, and explanation.
-- [x] Add an initial `saugra rules convert-crs` command for supported CRS
-      `@rx` rules.
-- [ ] Support monitor-first rollout with CRS-style detection and blocking
-      paranoia levels.
-- [x] Add anomaly scoring thresholds so multiple lower-severity findings can
-      combine into a block decision instead of relying only on first-match
-      blocking.
-- [x] Add local tuning controls: disable rules by ID, disable categories, and
-      exclude specific rules by path, parameter, header, and rule ID.
-- [x] Add rule-pack validation output so operators can see loaded files, rule
-      counts, disabled rules, configured exclusions, and warnings before
-      starting traffic.
-- [ ] Add rule-pack versioning and unsupported-import reporting to validation
-      output.
-- [ ] Treat transforms as first-class ordered pipelines with tests for
-      URL-decoding, plus-to-space handling, lowercasing, and future CRS
-      transform equivalents.
-- [ ] Expand CRS conversion coverage for chains, operators such as
-      `@pmFromFile`, data files, and engine-specific features such as
-      libinjection.
-- [ ] Add support for CRS-style data files and `@pmFromFile` matchers.
-- [ ] Add test fixtures for every imported CRS category, including SQLi, XSS,
-      LFI/path traversal, RCE/command injection, scanner detection, protocol
-      enforcement, and file upload rules.
-- [ ] Document unsupported CRS features clearly so operators understand which
-      converted rules are active, skipped, or partially represented.
-- [ ] Document the import flow as `OWASP CRS .conf -> saugra rules convert-crs
-      -> Saugra YAML rule packs -> Saugra rule engine`.
-- [x] Keep bad rule files as clear startup/config errors, not silent weak
-      protection.
-
 ## Phase 3 — Production-Ready Proxy Verification + Abuse Controls
 
 - [x] Add JSON decision output shape tests.
@@ -182,12 +136,67 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
 - [x] Add safer end-to-end scripts for local proxy smoke tests.
 - [x] Add comprehensive remote staging/production WAF verification script.
 
+## Phase 3.5 — External Rule Packs and CRS-Style Tuning
+
+Saugra should scale beyond hardcoded Rust rules. The community rule engine will
+load validated YAML rule packs at startup, compile rule regexes before accepting
+traffic, and expose the same rules through `saugra rules list`.
+
+The rule-pack design is inspired by OWASP CRS operational concepts while
+remaining native to Saugra instead of copying ModSecurity syntax directly:
+
+- [x] Define Saugra YAML as the product rule format; CRS is an upstream rule
+      source that can be converted into Saugra YAML, not a runtime syntax Saugra
+      must clone.
+- [x] Move the current public rules into CRS-style modular files under
+      `configs/rules/`.
+- [x] Support multiple configured rule files through `rules.files`.
+- [x] Compile and validate all rule regexes at startup.
+- [x] Support rule metadata: id, name, category, severity, targets,
+      paranoia level, OWASP category, transforms, and explanation.
+- [x] Add an initial `saugra rules convert-crs` command for supported CRS
+      `@rx` rules.
+- [x] Support monitor-first rollout with CRS-style detection and blocking
+      paranoia levels.
+- [x] Add anomaly scoring thresholds so multiple lower-severity findings can
+      combine into a block decision instead of relying only on first-match
+      blocking.
+- [x] Add local tuning controls: disable rules by ID, disable categories, and
+      exclude specific rules by path, parameter, header, and rule ID.
+- [x] Add rule-pack validation output so operators can see loaded files, rule
+      counts, disabled rules, configured exclusions, and warnings before
+      starting traffic.
+- [x] Add rule-pack versioning and unsupported-import reporting to validation
+      output.
+- [x] Treat transforms as first-class ordered pipelines with tests for
+      URL-decoding, plus-to-space handling, lowercasing, and future CRS
+      transform equivalents.
+- [x] Expand CRS conversion and unsupported-reporting coverage for chains, operators such as
+      `@pmFromFile`, data files, and engine-specific features such as
+      libinjection.
+- [x] Add support for CRS-style data files and `@pmFromFile` matchers.
+- [x] Add test fixtures for every imported CRS category, including SQLi, XSS,
+      LFI/path traversal, RCE/command injection, scanner detection, protocol
+      enforcement, and file upload rules.
+- [x] Document unsupported CRS features clearly so operators understand which
+      converted rules are active, skipped, or partially represented.
+- [x] Document the import flow as `OWASP CRS .conf -> saugra rules convert-crs
+      -> Saugra YAML rule packs -> Saugra rule engine`.
+- [x] Keep bad rule files as clear startup/config errors, not silent weak
+      protection.
+
 ## Phase 4 — WebSocket and Upgrade-Aware Proxying
 
 Saugra currently protects normal HTTP request paths that are routed through the
 Saugra reverse proxy. WebSocket locations such as `/ws/` often remain proxied
 directly from Nginx to an ASGI server such as Daphne, which means those upgrade
 requests are not inspected by Saugra yet.
+
+Production posture until upgrade-aware proxying is implemented: route normal
+HTTP traffic through Saugra, and keep WebSocket paths explicitly protected by
+Nginx/Apache and the application layer. Operators should validate `Origin`,
+`Host`, authentication, rate limits, and message-level authorization outside
+Saugra for those paths.
 
 - [ ] Detect HTTP upgrade requests for WebSocket handshakes.
 - [ ] Inspect the initial WebSocket handshake path, query string, headers,
@@ -207,7 +216,7 @@ requests are not inspected by Saugra yet.
       `/ws/` through Saugra.
 - [ ] Add tests for allowed, monitored, blocked, and rate-limited WebSocket
       handshake requests.
-- [ ] Document the temporary deployment posture: `/ws/` should be hardened at
+- [x] Document the temporary deployment posture: `/ws/` should be hardened at
       Nginx and the application layer until Saugra supports upgrade tunneling.
 
 ## Phase 4.5 — OWASP Top 10 Layered Coverage
@@ -253,9 +262,10 @@ Before Saugra is recommended for production use, complete:
       event persistence, and `explain <request-id>`.
 - [x] Safe defaults documented for first production rollout.
 - [x] Source install and systemd service documented.
-- [ ] WebSocket upgrade support, or clear production documentation that
-      WebSocket paths must bypass Saugra and be protected by Nginx and the
-      application layer until upgrade-aware proxying is enabled.
+- [x] Clear production documentation that WebSocket paths must bypass Saugra
+      and be protected by Nginx and the application layer until upgrade-aware
+      proxying is enabled.
+- [ ] WebSocket upgrade support.
 
 ## Public Built-In Rules
 

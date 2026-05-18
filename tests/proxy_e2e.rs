@@ -271,6 +271,42 @@ async fn block_mode_blocks_combined_findings_at_anomaly_threshold() {
 }
 
 #[tokio::test]
+async fn block_mode_monitors_detection_paranoia_above_blocking_paranoia() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.rules.inbound_anomaly_threshold = 5;
+    config.rules.detection_paranoia_level = Some(2);
+    config.rules.blocking_paranoia_level = Some(1);
+    config.rules.files = vec![single_high_paranoia_rule_file()];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/?signal=pl2")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    assert_eq!(events[0].decision.anomaly_score, 5);
+    assert_eq!(events[0].decision.blocking_anomaly_score, 0);
+    assert_eq!(events[0].decision.blocking_paranoia_level, 1);
+    assert_eq!(events[0].decision.matched_rules[0].paranoia_level, 2);
+}
+
+#[tokio::test]
 async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
     let fake_upstream = Arc::new(FakeUpstreamTransport::new());
     let event_log_path = test_event_log_path();
@@ -472,6 +508,27 @@ rules:
       - query
     pattern: "medium-two"
     explanation: Second medium-risk test signal matched.
+"#,
+    )
+    .unwrap();
+    path
+}
+
+fn single_high_paranoia_rule_file() -> std::path::PathBuf {
+    let path = std::env::temp_dir().join(format!("saugra-pl2-rule-{}.yml", Uuid::new_v4()));
+    std::fs::write(
+        &path,
+        r#"
+rules:
+  - id: TEST-PL2-001
+    name: Test PL2 Rule
+    category: test
+    severity: high
+    paranoia_level: 2
+    targets:
+      - query
+    pattern: "pl2"
+    explanation: Higher-paranoia test signal matched.
 "#,
     )
     .unwrap();

@@ -57,6 +57,7 @@ Public docs:
 - `docs/PRODUCT_SPEC.md` — product specification
 - `docs/PRODUCTION_DEPLOYMENT.md` — Nginx/Apache production deployment guide
 - `docs/OWASP_TOP_10_STRATEGY.md` — layered OWASP Top 10 coverage strategy
+- `docs/CRS_IMPORT.md` — OWASP CRS conversion support and limitations
 
 Install status:
 
@@ -76,6 +77,16 @@ List configured rules:
 ```bash
 cargo run -- rules list --config configs/saugra.example.yml
 ```
+
+Validate rule-pack metadata, versions, active rule counts, exclusions, and any
+unsupported CRS imports:
+
+```bash
+cargo run -- test-config --config configs/saugra.example.yml
+```
+
+`rules list` also shows each active rule's ordered transform pipeline, which is
+useful when checking CRS imports or false-positive tuning.
 
 Review OWASP Top 10:2025 mapped coverage:
 
@@ -115,6 +126,9 @@ OWASP CRS .conf files
   -> Saugra YAML rule packs
   -> Saugra rule engine
 ```
+
+See `docs/CRS_IMPORT.md` for supported CRS operators, transform mappings,
+data-file import behavior, and unsupported feature reporting.
 
 Start the service:
 
@@ -203,6 +217,13 @@ Client -> Nginx TLS -> Saugra on 127.0.0.1:8787 -> Rust app on 127.0.0.1:8080
 
 That means Nginx proxies to Saugra, and Saugra proxies to the actual app.
 
+Current WebSocket posture: Saugra protects normal HTTP reverse-proxy traffic.
+Until upgrade-aware proxying lands in Phase 4, keep WebSocket paths such as
+`/ws/` in explicit Nginx or Apache locations that bypass Saugra and proxy
+directly to the WebSocket upstream. Harden those paths with edge/application
+authentication, `Origin` and `Host` validation, rate limits, and message-level
+authorization.
+
 ### Install Saugra
 
 For the full Ubuntu install path, including building from Git, installing the
@@ -236,7 +257,7 @@ server:
   mode: monitor
 
 upstreams:
-  - name: jirani-rust
+  - name: app
     host: example.com
     target: http://127.0.0.1:8080
 
@@ -260,6 +281,8 @@ rate_limit:
 rules:
   owasp_crs: true
   paranoia_level: 1
+  detection_paranoia_level: 1
+  blocking_paranoia_level: 1
   inbound_anomaly_threshold: 5
   files:
     - configs/rules/REQUEST-913-SCANNER-DETECTION.yml
@@ -318,6 +341,11 @@ standards:
 
 Start in `monitor` mode. Switch to `block` only after reviewing real traffic
 with `logs tail`, `explain`, and `posture check`.
+
+For monitor-first CRS-style tuning, raise `detection_paranoia_level` before
+raising `blocking_paranoia_level`. For example, use detection level `2` and
+blocking level `1` to log higher-paranoia findings without letting them block
+traffic yet.
 
 ### Rule Exclusions
 
@@ -428,6 +456,23 @@ server {
 
 The port 80 Certbot redirect block can remain unchanged.
 
+If the application uses WebSockets, keep the upgrade path separate until
+Saugra supports upgrade-aware proxying:
+
+```nginx
+location /ws/ {
+    proxy_pass http://127.0.0.1:8002;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 86400;
+}
+```
+
 Deployment order:
 
 1. Keep the app running on `127.0.0.1:8080`.
@@ -440,10 +485,16 @@ Deployment order:
 
 ## Next Development Step
 
-The remaining useful production-readiness slice is operational polish:
+The next major implementation slice is Phase 4 WebSocket support:
 
-1. Add packaged binary release instructions.
-2. Add live Redis integration tests where Redis is available.
+1. Detect WebSocket upgrade handshakes.
+2. Apply the existing WAF and rate-limit decision flow to the handshake.
+3. Tunnel accepted upgraded connections without breaking long-lived sessions.
+4. Add tests and deployment examples for allowed, monitored, blocked, and
+   rate-limited handshakes.
+
+Operational polish can continue in parallel with packaged binary release
+instructions and live Redis integration tests where Redis is available.
 
 ## Licensing
 

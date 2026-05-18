@@ -154,9 +154,24 @@ async fn main() -> anyhow::Result<()> {
                 let config = load_valid_config(&config)?;
                 let rule_set = rules::load_rule_set(&config.rules)?;
                 for rule in rule_set.rules() {
+                    let transforms = if rule.transforms.is_empty() {
+                        "none".to_string()
+                    } else {
+                        rule.transforms
+                            .iter()
+                            .map(ToString::to_string)
+                            .collect::<Vec<_>>()
+                            .join(",")
+                    };
                     println!(
-                        "{}\t{}\t{}\t{}\t{}",
-                        rule.id, rule.severity, rule.category, rule.target, rule.name
+                        "{}\t{}\t{}\t{}\tPL{}\t{}\t{}",
+                        rule.id,
+                        rule.severity,
+                        rule.category,
+                        rule.target,
+                        rule.paranoia_level,
+                        transforms,
+                        rule.name
                     );
                 }
                 Ok(())
@@ -254,7 +269,7 @@ fn print_rule_load_report(report: &rules::RuleLoadReport) {
     println!("rule files: {}", report.files.len());
     for file in &report.files {
         println!(
-            "  {}: name={}, version={}, standards={}, entries={}, enabled={}, disabled={}, active_rules={}, filtered_by_paranoia={}",
+            "  {}: name={}, version={}, standards={}, entries={}, enabled={}, disabled={}, active_rules={}, transform_pipelines={}, filtered_by_detection_paranoia={}, unsupported_imports={}",
             file.path,
             file.name.as_deref().unwrap_or("unknown"),
             file.version.as_deref().unwrap_or("unknown"),
@@ -267,16 +282,22 @@ fn print_rule_load_report(report: &rules::RuleLoadReport) {
             file.enabled_entries,
             file.disabled_entries,
             file.active_rules,
-            file.filtered_by_paranoia
+            file.transform_pipelines,
+            file.filtered_by_paranoia,
+            file.unsupported_imports
         );
+        for warning in &file.warnings {
+            println!("    warning: {warning}");
+        }
     }
     println!(
-        "rules: entries={}, enabled={}, disabled={}, compiled={}, active={}, filtered_by_paranoia={}",
+        "rules: entries={}, enabled={}, disabled={}, compiled={}, active={}, transform_pipelines={}, filtered_by_detection_paranoia={}",
         report.total_entries,
         report.enabled_entries,
         report.disabled_entries,
         report.compiled_rules,
         report.active_rules,
+        report.transform_pipelines,
         report.filtered_by_paranoia
     );
     println!(

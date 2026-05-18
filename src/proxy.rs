@@ -237,11 +237,12 @@ pub async fn proxy_request(
     let matches = state
         .rule_set
         .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
-    let decision = WafDecision::from_matches(
+    let decision = WafDecision::from_matches_with_blocking_paranoia(
         request_id.clone(),
         state.config.server.mode,
         matches,
         state.config.rules.inbound_anomaly_threshold,
+        state.config.rules.blocking_paranoia_level(),
     );
 
     log_decision(&parts.method, &path, &query, &client_ip, &decision);
@@ -431,6 +432,7 @@ fn rate_limit_match(exceeded: &RateLimitExceeded) -> RuleMatch {
         category: "rate_limit_abuse".to_string(),
         severity: RuleSeverity::Medium,
         matched_target: RuleTarget::Headers,
+        paranoia_level: 1,
         explanation: format!(
             "Client exceeded the configured rate limit of {} requests per minute with a burst of {}.",
             exceeded.limit, exceeded.burst

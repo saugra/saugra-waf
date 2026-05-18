@@ -461,6 +461,12 @@ are blocked when the accumulated score reaches `rules.inbound_anomaly_threshold`
 `monitor` mode still records findings without blocking, and `strict` mode blocks
 on any matched rule.
 
+For monitor-first CRS-style tuning, Saugra can load and log rules up to
+`rules.detection_paranoia_level` while allowing only matches at or below
+`rules.blocking_paranoia_level` to contribute to blocking decisions. The legacy
+`rules.paranoia_level` remains the default for both values when the split levels
+are not configured.
+
 Rule exclusions are applied before anomaly scoring. They are intended for
 false-positive tuning and can be scoped by rule ID, category, path prefix, query
 parameter, and header:
@@ -477,11 +483,22 @@ rules:
         - content
 ```
 
+Rule-pack validation reports metadata such as pack name, version, standards,
+active rule counts, filtered rules, and unsupported CRS imports. Converted CRS
+packs can carry `unsupported_imports` entries so operators can see which rules
+were skipped and why during `saugra test-config`.
+
+Rule transforms are ordered pipelines. Saugra applies each transform exactly in
+the order listed in YAML before evaluating the regex. Supported native
+transforms are `url_decode`, `plus_to_space`, and `lowercase`; CRS conversion
+currently maps `t:urlDecode`, `t:urlDecodeUni`, and `t:lowercase`, honors
+`t:none`, and reports unsupported transform actions as skipped imports.
+
+The CRS import workflow and unsupported feature list are documented in
+`docs/CRS_IMPORT.md`.
+
 Next rule-engine milestones:
 
-- Add rule-pack versioning and validation output that lists loaded files, rule
-  counts, skipped imports, disabled rules, and warnings.
-- Treat transforms as first-class ordered pipelines with dedicated tests.
 - Add CRS-style data files and `@pmFromFile` matcher support.
 - Add fixtures for every imported CRS category before marking that category
   production-supported.

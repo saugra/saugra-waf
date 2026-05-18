@@ -61,7 +61,7 @@ cp configs/standards/*.yml /etc/saugra/standards/
 editor /etc/saugra/saugra.yml
 ```
 
-For your staging example, set:
+For a local backend, set:
 
 ```yaml
 server:
@@ -69,8 +69,8 @@ server:
   mode: monitor
 
 upstreams:
-  - name: jirani-rust
-    host: snf-6731.vlab.ac.ke
+  - name: app
+    host: example.com
     target: http://127.0.0.1:8080
 ```
 
@@ -150,6 +150,35 @@ configs/nginx.production.example.conf
 
 Install it as a site config, adjust `server_name`, and reload Nginx. The public
 server forwards all application traffic to Saugra at `127.0.0.1:8787`.
+
+### WebSocket Paths
+
+Saugra currently protects normal HTTP reverse-proxy traffic. Until Phase 4 adds
+upgrade-aware proxying, do not route WebSocket upgrade paths such as `/ws/`
+through Saugra. Keep those paths as explicit Nginx or Apache locations that
+proxy directly to the WebSocket upstream, and harden them at the edge and in
+the application.
+
+For Nginx, keep a separate location like:
+
+```nginx
+location /ws/ {
+    proxy_pass http://127.0.0.1:8002;
+    proxy_http_version 1.1;
+    proxy_set_header Upgrade $http_upgrade;
+    proxy_set_header Connection "upgrade";
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_read_timeout 86400;
+}
+```
+
+Require application authentication and authorization for WebSocket handshakes,
+validate `Origin` and `Host`, apply upstream or edge rate limits, and keep
+message-level authorization checks in the application. This limitation should
+be removed only after Saugra supports inspected upgrade tunneling.
 
 ## Apache
 

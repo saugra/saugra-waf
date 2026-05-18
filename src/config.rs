@@ -35,6 +35,10 @@ pub enum ConfigError {
     InvalidAiMode,
     #[error("rules.inbound_anomaly_threshold must be greater than zero")]
     InvalidAnomalyThreshold,
+    #[error("rules paranoia levels must be greater than zero")]
+    InvalidParanoiaLevel,
+    #[error("rules.blocking_paranoia_level must be less than or equal to rules.detection_paranoia_level")]
+    InvalidBlockingParanoiaLevel,
     #[error("rules.exclusions entries must include at least one rule_id or category")]
     InvalidRuleExclusion,
     #[error("posture.expected_external_scheme must be http or https")]
@@ -184,6 +188,10 @@ pub struct RuleSettings {
     pub owasp_crs: bool,
     #[serde(default = "default_paranoia_level")]
     pub paranoia_level: u8,
+    #[serde(default)]
+    pub detection_paranoia_level: Option<u8>,
+    #[serde(default)]
+    pub blocking_paranoia_level: Option<u8>,
     #[serde(default = "default_inbound_anomaly_threshold")]
     pub inbound_anomaly_threshold: u16,
     #[serde(default = "default_rule_files")]
@@ -197,10 +205,22 @@ impl Default for RuleSettings {
         Self {
             owasp_crs: true,
             paranoia_level: default_paranoia_level(),
+            detection_paranoia_level: None,
+            blocking_paranoia_level: None,
             inbound_anomaly_threshold: default_inbound_anomaly_threshold(),
             files: default_rule_files(),
             exclusions: Vec::new(),
         }
+    }
+}
+
+impl RuleSettings {
+    pub fn detection_paranoia_level(&self) -> u8 {
+        self.detection_paranoia_level.unwrap_or(self.paranoia_level)
+    }
+
+    pub fn blocking_paranoia_level(&self) -> u8 {
+        self.blocking_paranoia_level.unwrap_or(self.paranoia_level)
     }
 }
 
@@ -396,6 +416,17 @@ impl SaugraConfig {
             return Err(ConfigError::InvalidAnomalyThreshold);
         }
 
+        if self.rules.paranoia_level == 0
+            || self.rules.detection_paranoia_level() == 0
+            || self.rules.blocking_paranoia_level() == 0
+        {
+            return Err(ConfigError::InvalidParanoiaLevel);
+        }
+
+        if self.rules.blocking_paranoia_level() > self.rules.detection_paranoia_level() {
+            return Err(ConfigError::InvalidBlockingParanoiaLevel);
+        }
+
         for exclusion in &self.rules.exclusions {
             if exclusion.rule_ids.is_empty() && exclusion.categories.is_empty() {
                 return Err(ConfigError::InvalidRuleExclusion);
@@ -484,7 +515,7 @@ impl SaugraConfig {
             .join(",");
 
         format!(
-            "listen={}, mode={:?}, upstreams=[{}], max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, inspect_json_body={}, owasp_crs={}, paranoia_level={}",
+            "listen={}, mode={:?}, upstreams=[{}], max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, inspect_json_body={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
             self.server.listen,
             self.server.mode,
             upstreams,
@@ -496,7 +527,9 @@ impl SaugraConfig {
             self.rate_limit.routes.len(),
             self.security.inspect_json_body,
             self.rules.owasp_crs,
-            self.rules.paranoia_level
+            self.rules.paranoia_level,
+            self.rules.detection_paranoia_level(),
+            self.rules.blocking_paranoia_level()
         )
     }
 
@@ -834,6 +867,74 @@ rules:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidAnomalyThreshold)
+        ));
+    }
+
+    #[test]
+    fn accepts_split_detection_and_blocking_paranoia_levels() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rules:
+  paranoia_level: 1
+  detection_paranoia_level: 2
+  blocking_paranoia_level: 1
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.rules.detection_paranoia_level(), 2);
+        assert_eq!(config.rules.blocking_paranoia_level(), 1);
+    }
+
+    #[test]
+    fn rejects_blocking_paranoia_above_detection_paranoia() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rules:
+  detection_paranoia_level: 1
+  blocking_paranoia_level: 2
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBlockingParanoiaLevel)
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_paranoia_level() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rules:
+  detection_paranoia_level: 0
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidParanoiaLevel)
         ));
     }
 

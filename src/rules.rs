@@ -30,6 +30,8 @@ pub enum RuleError {
     EmptyRuleSet,
     #[error("rule {rule_id} must target at least one request component")]
     MissingTargets { rule_id: String },
+    #[error("rule file {path} metadata.{field} must not be blank when metadata is provided")]
+    InvalidMetadata { path: String, field: String },
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -103,6 +105,8 @@ pub struct RuleMatch {
     pub category: String,
     pub severity: RuleSeverity,
     pub matched_target: RuleTarget,
+    #[serde(default = "default_rule_paranoia_level")]
+    pub paranoia_level: u8,
     pub explanation: String,
     pub owasp_category: Option<String>,
 }
@@ -136,6 +140,7 @@ pub struct RuleLoadReport {
     pub compiled_rules: usize,
     pub filtered_by_paranoia: usize,
     pub active_rules: usize,
+    pub transform_pipelines: usize,
     pub exclusions: RuleExclusionReport,
     pub warnings: Vec<String>,
 }
@@ -152,6 +157,9 @@ pub struct RuleFileLoadReport {
     pub compiled_rules: usize,
     pub filtered_by_paranoia: usize,
     pub active_rules: usize,
+    pub transform_pipelines: usize,
+    pub unsupported_imports: usize,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -188,6 +196,7 @@ impl RuleSet {
                     category: rule.category.clone(),
                     severity: rule.severity,
                     matched_target: rule.target,
+                    paranoia_level: rule.paranoia_level,
                     explanation: rule.explanation.clone(),
                     owasp_category: rule.owasp_category.clone(),
                 });
@@ -253,6 +262,17 @@ pub enum RuleTransform {
     Lowercase,
 }
 
+impl std::fmt::Display for RuleTransform {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            Self::UrlDecode => "url_decode",
+            Self::PlusToSpace => "plus_to_space",
+            Self::Lowercase => "lowercase",
+        };
+        formatter.write_str(value)
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct RequestParts<'a> {
     pub path: &'a str,
@@ -307,18 +327,22 @@ pub fn load_rule_set_with_report(
         compiled_rules: 0,
         filtered_by_paranoia: 0,
         active_rules: 0,
+        transform_pipelines: 0,
         exclusions: RuleExclusionReport::from_exclusions(&settings.exclusions),
         warnings: Vec::new(),
     };
 
     for path in &settings.files {
-        let (mut file_rules, file_report) = load_rule_file(path, settings.paranoia_level)?;
+        let (mut file_rules, file_report) =
+            load_rule_file(path, settings.detection_paranoia_level())?;
         report.total_entries += file_report.entries;
         report.enabled_entries += file_report.enabled_entries;
         report.disabled_entries += file_report.disabled_entries;
         report.compiled_rules += file_report.compiled_rules;
         report.filtered_by_paranoia += file_report.filtered_by_paranoia;
         report.active_rules += file_report.active_rules;
+        report.transform_pipelines += file_report.transform_pipelines;
+        report.warnings.extend(file_report.warnings.iter().cloned());
         report
             .standards
             .extend(file_report.standards.iter().cloned());
@@ -366,6 +390,8 @@ fn compile_rule_pack(
         source,
     })?;
 
+    validate_rule_file_metadata(&rule_file, source_name)?;
+
     if rule_file.rules.is_empty() {
         return Err(RuleError::EmptyRuleFile {
             path: source_name.to_string(),
@@ -394,6 +420,9 @@ fn compile_rule_pack(
         compiled_rules: 0,
         filtered_by_paranoia: 0,
         active_rules: 0,
+        transform_pipelines: 0,
+        unsupported_imports: rule_file.unsupported_imports.len(),
+        warnings: rule_file_warnings(&rule_file, source_name),
     };
 
     for entry in rule_file.rules {
@@ -410,6 +439,9 @@ fn compile_rule_pack(
         for definition in Vec::<RuleDefinition>::from(entry) {
             let rule = BuiltinRule::try_from(definition)?;
             report.compiled_rules += 1;
+            if !rule.transforms.is_empty() {
+                report.transform_pipelines += 1;
+            }
             if rule.paranoia_level > paranoia_level {
                 report.filtered_by_paranoia += 1;
                 continue;
@@ -421,6 +453,60 @@ fn compile_rule_pack(
     }
 
     Ok((rules, report))
+}
+
+fn validate_rule_file_metadata(rule_file: &RuleFile, source_name: &str) -> Result<(), RuleError> {
+    if let Some(metadata) = &rule_file.metadata {
+        if metadata.name.trim().is_empty() {
+            return Err(RuleError::InvalidMetadata {
+                path: source_name.to_string(),
+                field: "name".to_string(),
+            });
+        }
+
+        if metadata.version.trim().is_empty() {
+            return Err(RuleError::InvalidMetadata {
+                path: source_name.to_string(),
+                field: "version".to_string(),
+            });
+        }
+
+        if metadata
+            .standards
+            .iter()
+            .any(|standard| standard.trim().is_empty())
+        {
+            return Err(RuleError::InvalidMetadata {
+                path: source_name.to_string(),
+                field: "standards".to_string(),
+            });
+        }
+    }
+
+    Ok(())
+}
+
+fn rule_file_warnings(rule_file: &RuleFile, source_name: &str) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    if rule_file.metadata.is_none() {
+        warnings.push(format!(
+            "rule file {source_name} has no metadata.name or metadata.version"
+        ));
+    }
+
+    for unsupported_import in &rule_file.unsupported_imports {
+        warnings.push(format!(
+            "rule file {source_name} skipped import {}: {}",
+            unsupported_import
+                .id
+                .as_deref()
+                .unwrap_or("unknown-rule-id"),
+            unsupported_import.reason
+        ));
+    }
+
+    warnings
 }
 
 fn normalize_rule_input(target: RuleTarget, input: &str, transforms: &[RuleTransform]) -> String {
@@ -528,6 +614,8 @@ struct RuleDefinition {
 struct RuleFile {
     #[serde(default)]
     metadata: Option<RuleFileMetadata>,
+    #[serde(default)]
+    unsupported_imports: Vec<UnsupportedImport>,
     rules: Vec<RuleFileEntry>,
 }
 
@@ -537,6 +625,13 @@ struct RuleFileMetadata {
     version: String,
     #[serde(default)]
     standards: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct UnsupportedImport {
+    #[serde(default)]
+    id: Option<String>,
+    reason: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -857,6 +952,86 @@ rules:
     }
 
     #[test]
+    fn applies_transforms_as_ordered_pipeline() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("transform-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+rules:
+  - id: LOCAL-TRANSFORM-001
+    name: Ordered Transform Rule
+    category: local_policy
+    severity: low
+    targets:
+      - query
+    transforms:
+      - url_decode
+      - plus_to_space
+      - lowercase
+    pattern: "hello world"
+    explanation: Ordered transform pipeline matched.
+"#,
+        )
+        .unwrap();
+
+        let rule_set = load_rule_set(&RuleSettings {
+            files: vec![rule_path],
+            ..RuleSettings::default()
+        })
+        .unwrap();
+        let matches = rule_set.inspect(&RequestParts {
+            query: "q=HELLO+WORLD",
+            ..RequestParts::default()
+        });
+
+        assert_eq!(matches[0].rule_id, "LOCAL-TRANSFORM-001");
+        assert_eq!(
+            rule_set.rules()[0].transforms,
+            vec![
+                RuleTransform::UrlDecode,
+                RuleTransform::PlusToSpace,
+                RuleTransform::Lowercase
+            ]
+        );
+    }
+
+    #[test]
+    fn plus_to_space_only_changes_query_inputs() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("body-transform-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+rules:
+  - id: LOCAL-BODY-001
+    name: Body Transform Rule
+    category: local_policy
+    severity: low
+    targets:
+      - body
+    transforms:
+      - plus_to_space
+    pattern: "hello world"
+    explanation: Body transform rule matched.
+"#,
+        )
+        .unwrap();
+
+        let rule_set = load_rule_set(&RuleSettings {
+            files: vec![rule_path],
+            ..RuleSettings::default()
+        })
+        .unwrap();
+        let matches = rule_set.inspect(&RequestParts {
+            body: "hello+world",
+            ..RequestParts::default()
+        });
+
+        assert!(matches.is_empty());
+    }
+
+    #[test]
     fn excludes_rule_by_id_path_and_query_param() {
         let rule_set = RuleSet {
             rules: builtin_rules().unwrap(),
@@ -992,6 +1167,49 @@ rules:
     }
 
     #[test]
+    fn loads_rules_up_to_detection_paranoia_level() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("detection-paranoia-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+rules:
+  - id: LOCAL-PL1-001
+    name: PL1 Rule
+    category: local_policy
+    severity: low
+    paranoia_level: 1
+    targets:
+      - query
+    pattern: "pl1"
+    explanation: PL1 rule matched.
+  - id: LOCAL-PL2-001
+    name: PL2 Rule
+    category: local_policy
+    severity: low
+    paranoia_level: 2
+    targets:
+      - query
+    pattern: "pl2"
+    explanation: PL2 rule matched.
+"#,
+        )
+        .unwrap();
+
+        let rule_set = load_rule_set(&RuleSettings {
+            files: vec![rule_path],
+            paranoia_level: 1,
+            detection_paranoia_level: Some(2),
+            blocking_paranoia_level: Some(1),
+            ..RuleSettings::default()
+        })
+        .unwrap();
+
+        assert_eq!(rule_set.rules().len(), 2);
+        assert_eq!(rule_set.rules()[1].id, "LOCAL-PL2-001");
+    }
+
+    #[test]
     fn validates_regexes_even_when_filtered_by_paranoia_level() {
         let temp_dir = tempfile::tempdir().unwrap();
         let rule_path = temp_dir.path().join("bad-paranoia-rules.yml");
@@ -1084,6 +1302,7 @@ rules:
         assert_eq!(report.disabled_entries, 1);
         assert_eq!(report.compiled_rules, 3);
         assert_eq!(report.active_rules, 2);
+        assert_eq!(report.transform_pipelines, 0);
         assert_eq!(report.filtered_by_paranoia, 1);
         assert_eq!(report.files[0].path, rule_path.display().to_string());
     }
@@ -1130,5 +1349,76 @@ rules:
         assert_eq!(report.exclusions.scoped, 1);
         assert_eq!(report.exclusions.disabled_rule_ids, vec!["LOCAL-001"]);
         assert_eq!(report.exclusions.disabled_categories, vec!["local_policy"]);
+    }
+
+    #[test]
+    fn reports_unsupported_imports_as_warnings() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("converted-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+metadata:
+  name: converted-owasp-crs-rules
+  version: generated
+  standards:
+    - owasp-crs-converted
+unsupported_imports:
+  - id: CRS-942100
+    reason: unsupported operator @detectSQLi; only @rx is currently converted
+rules:
+  - id: LOCAL-001
+    name: Local Rule
+    category: local_policy
+    severity: low
+    targets:
+      - query
+    pattern: "local"
+    explanation: Local rule matched.
+"#,
+        )
+        .unwrap();
+
+        let (_rule_set, report) = load_rule_set_with_report(&RuleSettings {
+            files: vec![rule_path],
+            ..RuleSettings::default()
+        })
+        .unwrap();
+
+        assert_eq!(report.files[0].unsupported_imports, 1);
+        assert!(report.warnings[0].contains("CRS-942100"));
+        assert!(report.warnings[0].contains("unsupported operator"));
+    }
+
+    #[test]
+    fn rejects_blank_rule_pack_metadata() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("blank-metadata-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+metadata:
+  name: ""
+  version: 0.1.0
+rules:
+  - id: LOCAL-001
+    name: Local Rule
+    category: local_policy
+    severity: low
+    targets:
+      - query
+    pattern: "local"
+    explanation: Local rule matched.
+"#,
+        )
+        .unwrap();
+
+        let error = load_rule_set_with_report(&RuleSettings {
+            files: vec![rule_path],
+            ..RuleSettings::default()
+        })
+        .unwrap_err();
+
+        assert!(matches!(error, RuleError::InvalidMetadata { .. }));
     }
 }

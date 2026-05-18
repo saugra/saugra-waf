@@ -256,6 +256,8 @@ mode: block
 rules:
   owasp_crs: true
   paranoia_level: 1
+  detection_paranoia_level: 1
+  blocking_paranoia_level: 1
 
 exclusions:
   - path: /api/upload
