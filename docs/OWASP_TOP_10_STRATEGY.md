@@ -82,8 +82,8 @@ Every finding should produce operator-friendly evidence:
 - structured security events
 - `logs tail` output
 - `explain <request-id>`
-- future dashboard views
-- future `owasp coverage` output
+- `logs summary` output for recent events by action and OWASP category
+- `owasp coverage` output
 
 The goal is not just blocking. The goal is to show what Saugra observed, which
 OWASP category it maps to, and what tuning or hardening action is appropriate.
@@ -95,6 +95,7 @@ CLI commands should make coverage explicit:
 ```bash
 saugra posture check
 saugra owasp coverage
+saugra logs summary
 ```
 
 `saugra posture check` should validate configured deployment assumptions before
@@ -169,8 +170,9 @@ integrations can come later once the local report model is stable.
    into Saugra findings mapped to OWASP categories.
 
 4. Add dashboard/log viewer coverage views.
-   Operators should see coverage gaps, active controls, and recent events by
-   OWASP category.
+   Initial local log-viewer support is done through `saugra logs summary`,
+   which shows recent events by action and OWASP category. Future dashboard
+   work should reuse the same event fields and coverage model.
 
 5. Add upgradeable standard mappings.
    Future OWASP releases, such as `owasp-top-10:2026`, should be shipped as YAML

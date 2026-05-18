@@ -237,6 +237,7 @@ Review recent events:
 
 ```bash
 cargo run -- logs tail --config configs/saugra.production.example.yml --limit 20
+cargo run -- logs summary --config configs/saugra.production.example.yml --limit 200
 ```
 
 Explain a request:
@@ -254,9 +255,10 @@ cargo run -- explain <request-id> --config configs/saugra.production.example.yml
 5. Send normal traffic and confirm it reaches the backend.
 6. Send attack-shaped test requests and confirm they appear in `logs tail`.
 7. Review explanations for matched requests with `explain <request-id>`.
-8. Tune route limits and rule exclusions for false positives.
-9. Switch to `server.mode: block` during a low-traffic window.
-10. Keep watching `logs tail` after block mode is enabled.
+8. Use `logs summary` to check recent event volume by OWASP category.
+9. Tune route limits and rule exclusions for false positives.
+10. Switch to `server.mode: block` during a low-traffic window.
+11. Keep watching `logs tail` and `logs summary` after block mode is enabled.
 
 Recommended first-production defaults:
 

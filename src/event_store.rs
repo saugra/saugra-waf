@@ -41,6 +41,19 @@ pub struct WebSocketEvent {
     pub protocol: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SecurityEventSummary {
+    pub total_events: usize,
+    pub actions: Vec<EventCount>,
+    pub owasp_categories: Vec<EventCount>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EventCount {
+    pub name: String,
+    pub count: usize,
+}
+
 impl SecurityEvent {
     pub fn new(method: &str, path: &str, query: &str, decision: WafDecision) -> Self {
         Self::new_with_timezone(method, path, query, decision, "unknown", "UTC")
@@ -261,6 +274,38 @@ pub fn find_by_request_id(
     Ok(None)
 }
 
+pub fn summarize(events: &[SecurityEvent]) -> SecurityEventSummary {
+    let mut actions = std::collections::BTreeMap::<String, usize>::new();
+    let mut owasp_categories = std::collections::BTreeMap::<String, usize>::new();
+
+    for event in events {
+        *actions
+            .entry(format!("{:?}", event.decision.action).to_ascii_lowercase())
+            .or_default() += 1;
+
+        if event.owasp_categories.is_empty() {
+            *owasp_categories.entry("none".to_string()).or_default() += 1;
+        } else {
+            for category in &event.owasp_categories {
+                *owasp_categories.entry(category.clone()).or_default() += 1;
+            }
+        }
+    }
+
+    SecurityEventSummary {
+        total_events: events.len(),
+        actions: event_counts(actions),
+        owasp_categories: event_counts(owasp_categories),
+    }
+}
+
+fn event_counts(counts: std::collections::BTreeMap<String, usize>) -> Vec<EventCount> {
+    counts
+        .into_iter()
+        .map(|(name, count)| EventCount { name, count })
+        .collect()
+}
+
 fn rotate_if_needed(
     path: &Path,
     retention: EventLogRetention,
@@ -430,6 +475,61 @@ mod tests {
 
         assert_eq!(event.timestamp, "2026-05-16T00:00:00Z");
         assert_eq!(event.client_ip, "unknown");
+    }
+
+    #[test]
+    fn summarizes_events_by_action_and_owasp_category() {
+        let mut injection = decision("request-1");
+        injection.action = WafAction::Block;
+        injection.owasp_categories = vec!["A05:2025-Injection".to_string()];
+        let mut auth = decision("request-2");
+        auth.action = WafAction::Monitor;
+        auth.owasp_categories =
+            vec!["A07:2025-Identification and Authentication Failures".to_string()];
+
+        let events = vec![
+            SecurityEvent::new("GET", "/search", "q=--", injection),
+            SecurityEvent::new("GET", "/login", "", auth),
+            SecurityEvent::new("GET", "/", "", decision("request-3")),
+        ];
+
+        let summary = summarize(&events);
+
+        assert_eq!(summary.total_events, 3);
+        assert_eq!(
+            summary.actions,
+            vec![
+                EventCount {
+                    name: "allow".to_string(),
+                    count: 1,
+                },
+                EventCount {
+                    name: "block".to_string(),
+                    count: 1,
+                },
+                EventCount {
+                    name: "monitor".to_string(),
+                    count: 1,
+                },
+            ]
+        );
+        assert_eq!(
+            summary.owasp_categories,
+            vec![
+                EventCount {
+                    name: "A05:2025-Injection".to_string(),
+                    count: 1,
+                },
+                EventCount {
+                    name: "A07:2025-Identification and Authentication Failures".to_string(),
+                    count: 1,
+                },
+                EventCount {
+                    name: "none".to_string(),
+                    count: 1,
+                },
+            ]
+        );
     }
 
     #[test]

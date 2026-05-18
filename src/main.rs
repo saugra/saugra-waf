@@ -98,6 +98,13 @@ enum LogsCommand {
         #[arg(short, long, default_value_t = 20)]
         limit: usize,
     },
+    /// Summarize local security events by action and OWASP category.
+    Summary {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+        #[arg(short, long, default_value_t = 200)]
+        limit: usize,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -197,6 +204,17 @@ async fn main() -> anyhow::Result<()> {
                 for event in events {
                     println!("{}", serde_json::to_string(&event)?);
                 }
+                Ok(())
+            }
+            LogsCommand::Summary { config, limit } => {
+                let config = load_valid_config(&config)?;
+                let retention = event_log_retention(&config)?;
+                let events = event_store::tail(
+                    PathBuf::from(config.logging.event_log_path).as_path(),
+                    retention,
+                    limit,
+                )?;
+                print_security_event_summary(&event_store::summarize(&events));
                 Ok(())
             }
         },
@@ -384,6 +402,28 @@ fn print_security_report_summary(summary: &reports::SecurityReportSummary) {
                 finding.owasp_category,
                 finding.summary
             );
+        }
+    }
+}
+
+fn print_security_event_summary(summary: &event_store::SecurityEventSummary) {
+    println!("security events: {}", summary.total_events);
+
+    println!("actions:");
+    if summary.actions.is_empty() {
+        println!("  none\t0");
+    } else {
+        for action in &summary.actions {
+            println!("  {}\t{}", action.name, action.count);
+        }
+    }
+
+    println!("owasp categories:");
+    if summary.owasp_categories.is_empty() {
+        println!("  none\t0");
+    } else {
+        for category in &summary.owasp_categories {
+            println!("  {}\t{}", category.name, category.count);
         }
     }
 }

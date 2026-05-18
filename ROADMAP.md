@@ -13,7 +13,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 4 complete — WebSocket and upgrade-aware proxying**
+Current phase: **Phase 4.5 complete — OWASP Top 10 layered coverage**
 
 The repository has a working Rust foundation:
 
@@ -246,7 +246,8 @@ Planned work:
       outputs.
 - [x] Show OWASP category coverage in structured logs, security events, block
       responses, and explanations.
-- [ ] Show OWASP category coverage in the future dashboard/log viewer.
+- [x] Show OWASP category coverage in the local log viewer through
+      `saugra logs summary`.
 - [x] Support future standard mappings, such as `owasp-top-10:2026`, through
       YAML metadata and coverage mappings rather than proxy rewrites.
 
@@ -263,10 +264,9 @@ Before Saugra is recommended for production use, complete:
       event persistence, and `explain <request-id>`.
 - [x] Safe defaults documented for first production rollout.
 - [x] Source install and systemd service documented.
-- [x] Clear production documentation that WebSocket paths must bypass Saugra
-      and be protected by Nginx and the application layer until upgrade-aware
-      proxying is enabled.
-- [ ] WebSocket upgrade support.
+- [x] Clear production documentation for routing WebSocket paths through Saugra
+      with edge and application-layer hardening.
+- [x] WebSocket upgrade support.
 
 ## Public Built-In Rules
 

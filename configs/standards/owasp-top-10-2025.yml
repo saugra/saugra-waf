@@ -52,7 +52,7 @@ categories:
     name: Security Logging and Alerting Failures
     baseline_control: request rules for log injection markers
     planned_controls:
-      - dashboard coverage views
+      - richer dashboard coverage views
       - alerting integrations
   - id: A10:2025
     name: Mishandling of Exceptional Conditions

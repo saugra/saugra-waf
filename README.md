@@ -107,6 +107,12 @@ Summarize configured SBOM/dependency scan reports:
 cargo run -- reports summary --config configs/saugra.example.yml
 ```
 
+Summarize recent security events by action and OWASP category:
+
+```bash
+cargo run -- logs summary --config configs/saugra.example.yml --limit 200
+```
+
 Convert supported OWASP CRS regex rules into Saugra YAML:
 
 ```bash
@@ -348,7 +354,7 @@ standards:
 ```
 
 Start in `monitor` mode. Switch to `block` only after reviewing real traffic
-with `logs tail`, `explain`, and `posture check`.
+with `logs tail`, `logs summary`, `explain`, and `posture check`.
 
 For monitor-first CRS-style tuning, raise `detection_paranoia_level` before
 raising `blocking_paranoia_level`. For example, use detection level `2` and
