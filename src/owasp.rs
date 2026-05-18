@@ -369,6 +369,7 @@ mod tests {
                 host: "example.com".to_string(),
                 target: "http://127.0.0.1:8000".to_string(),
             }],
+            routes: Vec::new(),
             security: SecurityConfig::default(),
             rate_limit: RateLimitConfig {
                 backend: RateLimitBackend::Redis,

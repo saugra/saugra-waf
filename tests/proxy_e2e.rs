@@ -13,8 +13,9 @@ use axum::{
 };
 use saugra::{
     config::{
-        AiConfig, LoggingConfig, RateLimitBackend, RateLimitConfig, RuleExclusionConfig,
-        RuleSettings, SaugraConfig, SecurityConfig, ServerConfig, UpstreamConfig, WafMode,
+        AiConfig, LoggingConfig, ProxyRouteConfig, RateLimitBackend, RateLimitConfig,
+        RuleExclusionConfig, RuleSettings, SaugraConfig, SecurityConfig, ServerConfig,
+        UpstreamConfig, WafMode,
     },
     decision::WafAction,
     event_store::{self, EventLogRetention},
@@ -57,6 +58,69 @@ async fn forwards_clean_requests_to_upstream() {
 }
 
 #[tokio::test]
+async fn forwards_http_requests_to_longest_matching_upstream_route() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.upstreams.push(UpstreamConfig {
+        name: "api".to_string(),
+        host: "api.example.com".to_string(),
+        target: "http://127.0.0.1:2".to_string(),
+    });
+    config.upstreams.push(UpstreamConfig {
+        name: "admin-api".to_string(),
+        host: "admin-api.example.com".to_string(),
+        target: "http://127.0.0.1:3".to_string(),
+    });
+    config.routes = vec![
+        ProxyRouteConfig {
+            path_prefix: "/api/".to_string(),
+            upstream: "api".to_string(),
+        },
+        ProxyRouteConfig {
+            path_prefix: "/api/admin/".to_string(),
+            upstream: "admin-api".to_string(),
+        },
+        ProxyRouteConfig {
+            path_prefix: "/".to_string(),
+            upstream: "app".to_string(),
+        },
+    ];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/api/admin/users?active=true")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        recorded[0].uri,
+        "http://127.0.0.1:3/api/admin/users?active=true"
+    );
+    assert_eq!(
+        recorded[0].headers.get(header::HOST).unwrap(),
+        "admin-api.example.com"
+    );
+    let upstream = events[0].upstream.as_ref().unwrap();
+    assert_eq!(upstream.name, "admin-api");
+    assert_eq!(upstream.host, "admin-api.example.com");
+    assert_eq!(upstream.target, "http://127.0.0.1:3");
+}
+
+#[tokio::test]
 async fn monitor_mode_records_attack_and_still_forwards() {
     let fake_upstream = Arc::new(FakeUpstreamTransport::new());
     let event_log_path = test_event_log_path();
@@ -82,6 +146,7 @@ async fn monitor_mode_records_attack_and_still_forwards() {
     assert_eq!(recorded.len(), 1);
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].client_ip, "203.0.113.10");
+    assert_eq!(events[0].upstream.as_ref().unwrap().name, "app");
     assert_eq!(events[0].decision.action, WafAction::Monitor);
     assert_eq!(
         events[0].decision.matched_rules[0].rule_id,
@@ -120,6 +185,7 @@ async fn block_mode_records_attack_and_does_not_forward() {
     assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert!(recorded.is_empty());
     assert_eq!(events.len(), 1);
+    assert_eq!(events[0].upstream.as_ref().unwrap().name, "app");
     assert_eq!(events[0].decision.action, WafAction::Block);
     assert_eq!(
         events[0].decision.matched_rules[0].rule_id,
@@ -386,6 +452,7 @@ async fn rate_limit_blocks_and_persists_event_before_forwarding() {
     assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
     assert_eq!(recorded.len(), 1);
     assert_eq!(events.len(), 2);
+    assert_eq!(events[1].upstream.as_ref().unwrap().name, "app");
     assert_eq!(events[1].decision.action, WafAction::Block);
     assert_eq!(
         events[1].decision.matched_rules[0].rule_id,
@@ -399,7 +466,21 @@ async fn websocket_handshake_is_inspected_forwarded_and_tunneled() {
     let event_log_path = test_event_log_path();
     let mut config = test_config(WafMode::Block, 120);
     config.server.listen = free_loopback_addr();
-    config.upstreams[0].target = format!("http://{}", upstream.addr);
+    config.upstreams.push(UpstreamConfig {
+        name: "ws".to_string(),
+        host: "ws.example.com".to_string(),
+        target: format!("http://{}", upstream.addr),
+    });
+    config.routes = vec![
+        ProxyRouteConfig {
+            path_prefix: "/ws/".to_string(),
+            upstream: "ws".to_string(),
+        },
+        ProxyRouteConfig {
+            path_prefix: "/".to_string(),
+            upstream: "app".to_string(),
+        },
+    ];
     config.logging.event_log_path = event_log_path.to_string_lossy().to_string();
     config.websocket.allowed_origins = vec!["https://example.com".to_string()];
     config.websocket.allowed_hosts = vec!["example.com".to_string()];
@@ -433,7 +514,18 @@ async fn websocket_handshake_is_inspected_forwarded_and_tunneled() {
     assert!(upstream_request.contains("sec-websocket-version: 13"));
     let events = event_store::tail(&event_log_path, retention, 10).unwrap();
     assert_eq!(events[0].decision.action, WafAction::Allow);
+    assert_eq!(events[0].upstream.as_ref().unwrap().name, "ws");
+    assert_eq!(events[0].upstream.as_ref().unwrap().host, "ws.example.com");
     assert_eq!(events[0].websocket.as_ref().unwrap().outcome, "accepted");
+    assert_eq!(
+        events[0]
+            .websocket
+            .as_ref()
+            .unwrap()
+            .upstream_target
+            .as_str(),
+        format!("http://{}", upstream.addr)
+    );
     assert_eq!(
         events[0].websocket.as_ref().unwrap().origin.as_deref(),
         Some("https://example.com")
@@ -592,6 +684,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
             host: "example.com".to_string(),
             target: "http://127.0.0.1:1".to_string(),
         }],
+        routes: Vec::new(),
         security: SecurityConfig {
             enable_rate_limiting: true,
             ..Default::default()

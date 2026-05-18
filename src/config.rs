@@ -15,6 +15,17 @@ pub enum ConfigError {
     MissingUpstream,
     #[error("upstream '{name}' target must start with http:// or https://")]
     InvalidUpstreamTarget { name: String },
+    #[error("upstream names must not be blank")]
+    InvalidUpstreamName,
+    #[error("upstream names must be unique")]
+    DuplicateUpstreamName,
+    #[error("routes entries must include a non-empty path_prefix")]
+    InvalidRoutePathPrefix,
+    #[error("route for path_prefix '{path_prefix}' references unknown upstream '{upstream}'")]
+    UnknownRouteUpstream {
+        path_prefix: String,
+        upstream: String,
+    },
     #[error("security.max_body_size must be a positive byte size, for example 2mb")]
     InvalidMaxBodySize,
     #[error("logging.event_log_max_size must be a positive byte size, for example 100mb")]
@@ -66,6 +77,8 @@ pub struct SaugraConfig {
     pub server: ServerConfig,
     pub upstreams: Vec<UpstreamConfig>,
     #[serde(default)]
+    pub routes: Vec<ProxyRouteConfig>,
+    #[serde(default)]
     pub security: SecurityConfig,
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
@@ -112,6 +125,12 @@ pub struct UpstreamConfig {
     pub name: String,
     pub host: String,
     pub target: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ProxyRouteConfig {
+    pub path_prefix: String,
+    pub upstream: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -374,11 +393,33 @@ impl SaugraConfig {
             return Err(ConfigError::MissingUpstream);
         }
 
+        let mut upstream_names = std::collections::BTreeSet::new();
         for upstream in &self.upstreams {
+            if upstream.name.trim().is_empty() {
+                return Err(ConfigError::InvalidUpstreamName);
+            }
+
+            if !upstream_names.insert(upstream.name.as_str()) {
+                return Err(ConfigError::DuplicateUpstreamName);
+            }
+
             if !(upstream.target.starts_with("http://") || upstream.target.starts_with("https://"))
             {
                 return Err(ConfigError::InvalidUpstreamTarget {
                     name: upstream.name.clone(),
+                });
+            }
+        }
+
+        for route in &self.routes {
+            if route.path_prefix.trim().is_empty() {
+                return Err(ConfigError::InvalidRoutePathPrefix);
+            }
+
+            if !upstream_names.contains(route.upstream.as_str()) {
+                return Err(ConfigError::UnknownRouteUpstream {
+                    path_prefix: route.path_prefix.clone(),
+                    upstream: route.upstream.clone(),
                 });
             }
         }
@@ -559,10 +600,11 @@ impl SaugraConfig {
             .join(",");
 
         format!(
-            "listen={}, mode={:?}, upstreams=[{}], max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
+            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
             self.server.listen,
             self.server.mode,
             upstreams,
+            self.routes.len(),
             self.security.max_body_size,
             self.security.enable_rate_limiting,
             self.rate_limit.backend,
@@ -765,6 +807,78 @@ upstreams: []
         assert!(matches!(
             config.validate(),
             Err(ConfigError::MissingUpstream)
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_upstream_names() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+  - name: app
+    host: api.example.com
+    target: http://127.0.0.1:8001
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::DuplicateUpstreamName)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_route_path_prefix() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+routes:
+  - path_prefix: ""
+    upstream: app
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidRoutePathPrefix)
+        ));
+    }
+
+    #[test]
+    fn rejects_route_with_unknown_upstream() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+routes:
+  - path_prefix: /api/
+    upstream: api
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::UnknownRouteUpstream {
+                path_prefix,
+                upstream
+            }) if path_prefix == "/api/" && upstream == "api"
         ));
     }
 

@@ -45,6 +45,7 @@ This repository now has a production-oriented foundation:
 - Monitor/block/off mode model
 - Structured logging setup
 - Catch-all reverse proxy with `/_saugra/health`
+- Route-based multi-upstream HTTP and WebSocket forwarding
 - WebSocket handshake inspection and upgrade tunneling
 - Redis-backed production rate limiting option
 - Rotated local JSONL security event storage
@@ -267,6 +268,15 @@ upstreams:
   - name: app
     host: example.com
     target: http://127.0.0.1:8080
+  - name: ws
+    host: example.com
+    target: http://127.0.0.1:8002
+
+routes:
+  - path_prefix: /ws/
+    upstream: ws
+  - path_prefix: /
+    upstream: app
 
 security:
   max_body_size: 2mb

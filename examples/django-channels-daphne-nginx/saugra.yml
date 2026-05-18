@@ -7,6 +7,10 @@ upstreams:
     host: example.com
     target: http://127.0.0.1:8001
 
+routes:
+  - path_prefix: /
+    upstream: daphne
+
 security:
   max_body_size: 2mb
   enable_rate_limiting: true

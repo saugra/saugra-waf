@@ -27,7 +27,7 @@ use crate::{
     ai,
     config::{RouteRateLimitConfig, SaugraConfig, UpstreamConfig, WafMode},
     decision::{WafAction, WafDecision},
-    event_store::{self, EventLogRetention, SecurityEvent, WebSocketEvent},
+    event_store::{self, EventLogRetention, SecurityEvent, UpstreamEvent, WebSocketEvent},
     rate_limit::{self, RateLimitExceeded, RateLimitPolicy, RateLimitStore},
     rules::{self, RequestParts, RuleMatch, RuleSet, RuleSeverity, RuleTarget},
 };
@@ -36,7 +36,7 @@ use crate::{
 pub struct ProxyState {
     config: SaugraConfig,
     upstream_transport: Arc<dyn UpstreamTransport>,
-    upstream: UpstreamConfig,
+    upstreams: Vec<UpstreamConfig>,
     max_body_size_bytes: usize,
     rate_limit_store: Arc<dyn RateLimitStore>,
     event_log_path: PathBuf,
@@ -52,11 +52,14 @@ impl ProxyState {
         event_log_path: PathBuf,
         event_log_retention: EventLogRetention,
     ) -> anyhow::Result<Self> {
-        let upstream = config
+        config
+            .validate()
+            .context("proxy state requires a valid Saugra config")?;
+        config
             .upstreams
             .first()
-            .context("config validation should require at least one upstream")?
-            .clone();
+            .context("config validation should require at least one upstream")?;
+        let upstreams = config.upstreams.clone();
         let max_body_size_bytes = config
             .max_body_size_bytes()?
             .try_into()
@@ -66,13 +69,30 @@ impl ProxyState {
         Ok(Self {
             config,
             upstream_transport,
-            upstream,
+            upstreams,
             max_body_size_bytes,
             rate_limit_store,
             event_log_path,
             event_log_retention,
             rule_set,
         })
+    }
+
+    fn select_upstream(&self, path: &str) -> Option<&UpstreamConfig> {
+        if let Some(route) = self
+            .config
+            .routes
+            .iter()
+            .filter(|route| path_matches_route(path, &route.path_prefix))
+            .max_by_key(|route| route.path_prefix.trim_end_matches('/').len())
+        {
+            return self
+                .upstreams
+                .iter()
+                .find(|upstream| upstream.name == route.upstream);
+        }
+
+        self.upstreams.first()
     }
 }
 
@@ -158,6 +178,23 @@ pub async fn proxy_request(
     let request_id = Uuid::new_v4().to_string();
     let (mut parts, body) = request.into_parts();
     let client_ip = client_id_from_headers(&parts.headers);
+    let upstream = state
+        .select_upstream(parts.uri.path())
+        .cloned()
+        .ok_or_else(|| {
+            error!(
+                request_id,
+                path = parts.uri.path(),
+                "no upstream matched request path"
+            );
+            json_response(
+                StatusCode::BAD_GATEWAY,
+                json!({
+                    "request_id": request_id,
+                    "error": "no upstream configured for request path"
+                }),
+            )
+        })?;
     let websocket_handshake = is_websocket_upgrade(&parts.headers);
     let client_upgrade = if websocket_handshake {
         parts.extensions.remove::<OnUpgrade>()
@@ -195,6 +232,7 @@ pub async fn proxy_request(
                 parts.uri.query().unwrap_or_default(),
                 &client_ip,
                 &decision,
+                &upstream,
                 websocket_handshake,
             );
             record_event(
@@ -204,8 +242,9 @@ pub async fn proxy_request(
                 parts.uri.query().unwrap_or_default(),
                 &client_ip,
                 &decision,
+                &upstream,
                 websocket_event(
-                    &state,
+                    &upstream,
                     &parts.headers,
                     if websocket_handshake {
                         "rate_limited"
@@ -222,8 +261,15 @@ pub async fn proxy_request(
     }
 
     if websocket_handshake {
-        return proxy_websocket_handshake(state, parts, client_upgrade, request_id, client_ip)
-            .await;
+        return proxy_websocket_handshake(
+            state,
+            upstream,
+            parts,
+            client_upgrade,
+            request_id,
+            client_ip,
+        )
+        .await;
     }
 
     let body_bytes = to_bytes(body, state.max_body_size_bytes)
@@ -268,7 +314,15 @@ pub async fn proxy_request(
         state.config.rules.blocking_paranoia_level(),
     );
 
-    log_decision(&parts.method, &path, &query, &client_ip, &decision, false);
+    log_decision(
+        &parts.method,
+        &path,
+        &query,
+        &client_ip,
+        &decision,
+        &upstream,
+        false,
+    );
     record_event(
         &state,
         parts.method.as_str(),
@@ -276,6 +330,7 @@ pub async fn proxy_request(
         &query,
         &client_ip,
         &decision,
+        &upstream,
         None,
     );
 
@@ -294,7 +349,7 @@ pub async fn proxy_request(
         ));
     }
 
-    let upstream_uri = build_upstream_uri(&state.upstream.target, &parts.uri).map_err(|error| {
+    let upstream_uri = build_upstream_uri(&upstream.target, &parts.uri).map_err(|error| {
         error!(request_id, %error, "failed to build upstream request URI");
         json_response(
             StatusCode::BAD_GATEWAY,
@@ -323,7 +378,7 @@ pub async fn proxy_request(
     copy_forward_headers(
         &parts.headers,
         upstream_request.headers_mut(),
-        &state.upstream.host,
+        &upstream.host,
         &request_id,
         false,
     );
@@ -346,6 +401,7 @@ pub async fn proxy_request(
 
 async fn proxy_websocket_handshake(
     state: ProxyState,
+    upstream: UpstreamConfig,
     parts: axum::http::request::Parts,
     client_upgrade: Option<OnUpgrade>,
     request_id: String,
@@ -381,7 +437,7 @@ async fn proxy_websocket_handshake(
         state.config.rules.blocking_paranoia_level(),
     );
     let event = websocket_event(
-        &state,
+        &upstream,
         &parts.headers,
         if decision.action == WafAction::Block {
             "blocked"
@@ -392,7 +448,15 @@ async fn proxy_websocket_handshake(
         },
     );
 
-    log_decision(&parts.method, &path, &query, &client_ip, &decision, true);
+    log_decision(
+        &parts.method,
+        &path,
+        &query,
+        &client_ip,
+        &decision,
+        &upstream,
+        true,
+    );
     record_event(
         &state,
         parts.method.as_str(),
@@ -400,6 +464,7 @@ async fn proxy_websocket_handshake(
         &query,
         &client_ip,
         &decision,
+        &upstream,
         event,
     );
 
@@ -430,7 +495,7 @@ async fn proxy_websocket_handshake(
         ));
     };
 
-    let upstream_uri = build_upstream_uri(&state.upstream.target, &parts.uri).map_err(|error| {
+    let upstream_uri = build_upstream_uri(&upstream.target, &parts.uri).map_err(|error| {
         error!(request_id, %error, "failed to build websocket upstream URI");
         json_response(
             StatusCode::BAD_GATEWAY,
@@ -458,7 +523,7 @@ async fn proxy_websocket_handshake(
     copy_forward_headers(
         &parts.headers,
         upstream_request.headers_mut(),
-        &state.upstream.host,
+        &upstream.host,
         &request_id,
         true,
     );
@@ -791,7 +856,7 @@ fn websocket_policy_matches(state: &ProxyState, headers: &HeaderMap) -> Vec<Rule
 }
 
 fn websocket_event(
-    state: &ProxyState,
+    upstream: &UpstreamConfig,
     headers: &HeaderMap,
     outcome: &str,
 ) -> Option<WebSocketEvent> {
@@ -801,7 +866,7 @@ fn websocket_event(
 
     Some(WebSocketEvent {
         upgrade: true,
-        upstream_target: state.upstream.target.clone(),
+        upstream_target: upstream.target.clone(),
         outcome: outcome.to_string(),
         origin: header_string(headers, header::ORIGIN),
         host: header_string(headers, header::HOST),
@@ -844,6 +909,7 @@ fn log_decision(
     query: &str,
     client_ip: &str,
     decision: &WafDecision,
+    upstream: &UpstreamConfig,
     websocket_upgrade: bool,
 ) {
     info!(
@@ -858,6 +924,9 @@ fn log_decision(
         %method,
         path,
         query,
+        upstream_name = %upstream.name,
+        upstream_host = %upstream.host,
+        upstream_target = %upstream.target,
         websocket_upgrade,
         explanation = %decision.explanation,
         "waf decision"
@@ -871,6 +940,7 @@ fn record_event(
     query: &str,
     client_ip: &str,
     decision: &WafDecision,
+    upstream: &UpstreamConfig,
     websocket: Option<WebSocketEvent>,
 ) {
     let mut event = SecurityEvent::new_with_timezone(
@@ -881,6 +951,11 @@ fn record_event(
         client_ip,
         &state.config.logging.timezone,
     );
+    event = event.with_upstream(UpstreamEvent {
+        name: upstream.name.clone(),
+        host: upstream.host.clone(),
+        target: upstream.target.clone(),
+    });
     if let Some(websocket) = websocket {
         event = event.with_websocket(websocket);
     }
@@ -927,7 +1002,7 @@ fn _assert_socket_addr(_: SocketAddr) {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{RouteRateLimitConfig, ServerConfig, WafMode};
+    use crate::config::{ProxyRouteConfig, RouteRateLimitConfig, ServerConfig, WafMode};
 
     #[test]
     fn builds_upstream_uri_with_path_and_query() {
@@ -1006,6 +1081,81 @@ mod tests {
         assert!(!path_matches_route("/sensitive-area", "/sensitive"));
     }
 
+    #[test]
+    fn selects_first_upstream_when_no_routes_are_configured() {
+        let state = ProxyState::with_transport(
+            test_config(WafMode::Block, 120),
+            Arc::new(TestUpstreamTransport),
+            Arc::new(crate::rate_limit::MemoryRateLimitStore::new()),
+            PathBuf::from("logs/test-events.jsonl"),
+            EventLogRetention {
+                max_size_bytes: 1024 * 1024,
+                max_files: 3,
+            },
+        )
+        .unwrap();
+
+        let upstream = state.select_upstream("/api/users").unwrap();
+
+        assert_eq!(upstream.name, "app");
+    }
+
+    #[test]
+    fn selects_longest_matching_proxy_route() {
+        let mut config = test_config(WafMode::Block, 120);
+        config.upstreams.push(UpstreamConfig {
+            name: "api".to_string(),
+            host: "api.example.com".to_string(),
+            target: "http://127.0.0.1:2".to_string(),
+        });
+        config.upstreams.push(UpstreamConfig {
+            name: "admin-api".to_string(),
+            host: "admin-api.example.com".to_string(),
+            target: "http://127.0.0.1:3".to_string(),
+        });
+        config.routes = vec![
+            ProxyRouteConfig {
+                path_prefix: "/api/".to_string(),
+                upstream: "api".to_string(),
+            },
+            ProxyRouteConfig {
+                path_prefix: "/api/admin/".to_string(),
+                upstream: "admin-api".to_string(),
+            },
+            ProxyRouteConfig {
+                path_prefix: "/".to_string(),
+                upstream: "app".to_string(),
+            },
+        ];
+        let state = ProxyState::with_transport(
+            config,
+            Arc::new(TestUpstreamTransport),
+            Arc::new(crate::rate_limit::MemoryRateLimitStore::new()),
+            PathBuf::from("logs/test-events.jsonl"),
+            EventLogRetention {
+                max_size_bytes: 1024 * 1024,
+                max_files: 3,
+            },
+        )
+        .unwrap();
+
+        assert_eq!(state.select_upstream("/api/users").unwrap().name, "api");
+        assert_eq!(
+            state.select_upstream("/api/admin/users").unwrap().name,
+            "admin-api"
+        );
+        assert_eq!(state.select_upstream("/").unwrap().name, "app");
+    }
+
+    struct TestUpstreamTransport;
+
+    #[async_trait]
+    impl UpstreamTransport for TestUpstreamTransport {
+        async fn request(&self, _request: Request<Body>) -> anyhow::Result<Response<Body>> {
+            Ok(Response::new(Body::empty()))
+        }
+    }
+
     fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
         SaugraConfig {
             server: ServerConfig {
@@ -1017,6 +1167,7 @@ mod tests {
                 host: "example.com".to_string(),
                 target: "http://127.0.0.1:1".to_string(),
             }],
+            routes: Vec::new(),
             security: crate::config::SecurityConfig {
                 enable_rate_limiting: true,
                 ..Default::default()

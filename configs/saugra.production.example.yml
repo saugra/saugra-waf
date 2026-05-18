@@ -6,6 +6,20 @@ upstreams:
   - name: app
     host: example.com
     target: http://127.0.0.1:8000
+  # - name: api
+  #   host: api.example.com
+  #   target: http://127.0.0.1:8001
+  # - name: ws
+  #   host: example.com
+  #   target: http://127.0.0.1:8002
+
+routes:
+  - path_prefix: /
+    upstream: app
+  # - path_prefix: /api/
+  #   upstream: api
+  # - path_prefix: /ws/
+  #   upstream: ws
 
 security:
   max_body_size: 2mb

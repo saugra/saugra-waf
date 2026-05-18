@@ -13,7 +13,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 4.5 complete — OWASP Top 10 layered coverage**
+Current phase: **Phase 5 complete — Multi-upstream HTTP and WebSocket routing**
 
 The repository has a working Rust foundation:
 
@@ -31,6 +31,7 @@ The repository has a working Rust foundation:
   summary CLI workflows
 - Local and remote verification scripts
 - WebSocket handshake inspection with upgrade tunneling
+- Route-based multi-upstream HTTP and WebSocket forwarding
 - Example config at `configs/saugra.example.yml`
 
 ## Verified Commands
@@ -45,7 +46,7 @@ cargo run -- rules list --config configs/saugra.example.yml
 Current test status:
 
 ```txt
-111 passed; 0 failed
+124 passed; 0 failed
 ```
 
 ## Production-Ready Product Principle
@@ -253,11 +254,11 @@ Planned work:
 
 ## Phase 5 — Multi-Upstream HTTP and WebSocket Routing
 
-Saugra currently validates multiple upstream entries but forwards traffic to the
-first configured upstream. Production applications often split normal web
-traffic, APIs, admin surfaces, file services, and WebSocket endpoints across
-different backend processes. Saugra should route each accepted request to the
-right upstream while keeping one shared WAF decision pipeline.
+Saugra supports route-based forwarding to multiple named upstreams. Production
+applications often split normal web traffic, APIs, admin surfaces, file
+services, and WebSocket endpoints across different backend processes. Saugra
+should route each accepted request to the right upstream while keeping one
+shared WAF decision pipeline.
 
 The implementation target is route-based upstream selection:
 
@@ -272,22 +273,22 @@ The implementation target is route-based upstream selection:
 
 Planned work:
 
-- [ ] Add a `routes` config section for path-prefix to upstream mappings.
-- [ ] Validate that every route has a non-empty path prefix and references an
+- [x] Add a `routes` config section for path-prefix to upstream mappings.
+- [x] Validate that every route has a non-empty path prefix and references an
       existing upstream name.
-- [ ] Support a deterministic fallback route, either explicit `/` or the first
+- [x] Support a deterministic fallback route, either explicit `/` or the first
       upstream for backward compatibility.
-- [ ] Implement longest-prefix upstream selection for HTTP requests.
-- [ ] Apply the same upstream selection to accepted WebSocket handshakes and
+- [x] Implement longest-prefix upstream selection for HTTP requests.
+- [x] Apply the same upstream selection to accepted WebSocket handshakes and
       tunnels.
-- [ ] Include selected upstream name, host, and target in security events and
+- [x] Include selected upstream name, host, and target in security events and
       structured decision logs.
-- [ ] Preserve existing WAF, monitor/block, anomaly scoring, and rate-limit
+- [x] Preserve existing WAF, monitor/block, anomaly scoring, and rate-limit
       behavior before forwarding to the selected upstream.
-- [ ] Add tests for default routing, longest-prefix routing, invalid route
+- [x] Add tests for default routing, longest-prefix routing, invalid route
       config, HTTP forwarding, WebSocket tunneling, blocked requests, monitored
       requests, and rate-limited requests.
-- [ ] Update example configs and production deployment docs for multi-upstream
+- [x] Update example configs and production deployment docs for multi-upstream
       HTTP and WebSocket deployments.
 
 ## Production Readiness Gate

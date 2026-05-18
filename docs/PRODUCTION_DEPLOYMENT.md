@@ -72,6 +72,15 @@ upstreams:
   - name: app
     host: example.com
     target: http://127.0.0.1:8080
+  - name: ws
+    host: example.com
+    target: http://127.0.0.1:8002
+
+routes:
+  - path_prefix: /ws/
+    upstream: ws
+  - path_prefix: /
+    upstream: app
 ```
 
 Validate the installed config:
@@ -110,6 +119,9 @@ Important production defaults:
 - `server.mode` should start as `monitor` until the rules are tuned.
 - `security.max_body_size` should match the public proxy body limit.
 - `security.enable_rate_limiting` should stay enabled.
+- `routes` should include explicit path-prefix mappings when traffic is split
+  across HTTP, API, admin, or WebSocket backend processes. The longest matching
+  `path_prefix` wins.
 - `rate_limit.backend` should be `redis`.
 - `rate_limit.routes` should be configured for the application routes that need
   stricter limits.
