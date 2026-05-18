@@ -56,6 +56,15 @@ logging:
   event_log_max_files: 10
   timezone: UTC
 
+websocket:
+  enabled: true
+  # Empty allowlists only inspect the handshake with normal WAF rules.
+  # Add exact public origins and hosts before routing production /ws/ traffic.
+  allowed_origins:
+    - https://example.com
+  allowed_hosts:
+    - example.com
+
 posture:
   enabled: true
   expected_external_scheme: https

@@ -45,6 +45,7 @@ This repository now has a production-oriented foundation:
 - Monitor/block/off mode model
 - Structured logging setup
 - Catch-all reverse proxy with `/_saugra/health`
+- WebSocket handshake inspection and upgrade tunneling
 - Redis-backed production rate limiting option
 - Rotated local JSONL security event storage
 - Example config at `configs/saugra.example.yml`
@@ -318,6 +319,13 @@ logging:
   event_log_max_size: 100mb
   event_log_max_files: 30
   timezone: Africa/Nairobi
+
+websocket:
+  enabled: true
+  allowed_origins:
+    - https://example.com
+  allowed_hosts:
+    - example.com
 
 posture:
   enabled: true

@@ -67,6 +67,14 @@ logging:
   event_log_max_files: 30
   timezone: Africa/Nairobi
 
+websocket:
+  enabled: true
+  # Configure exact public browser origins before routing /ws/ through Saugra.
+  allowed_origins:
+    - https://example.com
+  allowed_hosts:
+    - example.com
+
 posture:
   enabled: true
   expected_external_scheme: https

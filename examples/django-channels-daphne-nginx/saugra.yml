@@ -1,0 +1,45 @@
+server:
+  listen: 127.0.0.1:8787
+  mode: monitor
+
+upstreams:
+  - name: daphne
+    host: example.com
+    target: http://127.0.0.1:8001
+
+security:
+  max_body_size: 2mb
+  enable_rate_limiting: true
+  block_suspicious_user_agents: true
+  inspect_json_body: true
+
+rate_limit:
+  backend: memory
+  requests_per_minute: 120
+  burst: 30
+  routes:
+    - path: /ws/
+      requests_per_minute: 60
+      burst: 10
+
+websocket:
+  enabled: true
+  allowed_origins:
+    - https://example.com
+  allowed_hosts:
+    - example.com
+
+rules:
+  owasp_crs: true
+  paranoia_level: 1
+  detection_paranoia_level: 1
+  blocking_paranoia_level: 1
+  inbound_anomaly_threshold: 5
+
+logging:
+  format: json
+  level: info
+  event_log_path: logs/django-channels-saugra-events.jsonl
+  event_log_max_size: 100mb
+  event_log_max_files: 10
+  timezone: UTC

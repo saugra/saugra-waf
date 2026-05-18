@@ -13,7 +13,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 4 preparation — WebSocket and upgrade-aware proxying**
+Current phase: **Phase 4 complete — WebSocket and upgrade-aware proxying**
 
 The repository has a working Rust foundation:
 
@@ -30,6 +30,7 @@ The repository has a working Rust foundation:
 - `logs tail`, `explain`, `owasp coverage`, `posture check`, and report
   summary CLI workflows
 - Local and remote verification scripts
+- WebSocket handshake inspection with upgrade tunneling
 - Example config at `configs/saugra.example.yml`
 
 ## Verified Commands
@@ -198,23 +199,23 @@ Nginx/Apache and the application layer. Operators should validate `Origin`,
 `Host`, authentication, rate limits, and message-level authorization outside
 Saugra for those paths.
 
-- [ ] Detect HTTP upgrade requests for WebSocket handshakes.
-- [ ] Inspect the initial WebSocket handshake path, query string, headers,
+- [x] Detect HTTP upgrade requests for WebSocket handshakes.
+- [x] Inspect the initial WebSocket handshake path, query string, headers,
       origin, user-agent, cookies, and client identity before upgrade.
-- [ ] Apply existing allow, monitor, block, and rate-limit decisions to the
+- [x] Apply existing allow, monitor, block, and rate-limit decisions to the
       handshake request.
-- [ ] Preserve required upgrade semantics, including `Upgrade`,
+- [x] Preserve required upgrade semantics, including `Upgrade`,
       `Connection`, `Sec-WebSocket-Key`, `Sec-WebSocket-Version`, and
       `Sec-WebSocket-Protocol` headers.
-- [ ] Tunnel accepted upgraded connections between client and upstream without
+- [x] Tunnel accepted upgraded connections between client and upstream without
       breaking long-lived WebSocket sessions.
-- [ ] Add WebSocket-specific logging fields for upgrade decisions, upstream
+- [x] Add WebSocket-specific logging fields for upgrade decisions, upstream
       target, close/error outcomes, and request ID correlation.
-- [ ] Add configurable origin and host validation guidance for WebSocket
+- [x] Add configurable origin and host validation guidance for WebSocket
       deployments.
-- [ ] Add Nginx and Django Channels/Daphne deployment examples that route
+- [x] Add Nginx and Django Channels/Daphne deployment examples that route
       `/ws/` through Saugra.
-- [ ] Add tests for allowed, monitored, blocked, and rate-limited WebSocket
+- [x] Add tests for allowed, monitored, blocked, and rate-limited WebSocket
       handshake requests.
 - [x] Document the temporary deployment posture: `/ws/` should be hardened at
       Nginx and the application layer until Saugra supports upgrade tunneling.

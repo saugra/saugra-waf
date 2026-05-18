@@ -352,6 +352,7 @@ mod tests {
             rules: RuleSettings::default(),
             ai: AiConfig::default(),
             logging: LoggingConfig::default(),
+            websocket: Default::default(),
             posture,
             reports: Default::default(),
             standards: Default::default(),

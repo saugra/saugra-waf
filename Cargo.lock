@@ -929,6 +929,7 @@ dependencies = [
  "async-trait",
  "axum",
  "clap",
+ "hyper",
  "hyper-util",
  "percent-encoding",
  "redis",

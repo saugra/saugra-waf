@@ -1,4 +1,8 @@
-use std::sync::{Arc, Mutex};
+use std::{
+    net::SocketAddr,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -16,6 +20,11 @@ use saugra::{
     event_store::{self, EventLogRetention},
     proxy::{proxy_request, ProxyState, UpstreamTransport},
     rate_limit::MemoryRateLimitStore,
+};
+use tokio::{
+    io::{AsyncReadExt, AsyncWriteExt},
+    net::{TcpListener, TcpStream},
+    time::timeout,
 };
 use uuid::Uuid;
 
@@ -384,6 +393,155 @@ async fn rate_limit_blocks_and_persists_event_before_forwarding() {
     );
 }
 
+#[tokio::test]
+async fn websocket_handshake_is_inspected_forwarded_and_tunneled() {
+    let upstream = spawn_raw_websocket_upstream().await;
+    let event_log_path = test_event_log_path();
+    let mut config = test_config(WafMode::Block, 120);
+    config.server.listen = free_loopback_addr();
+    config.upstreams[0].target = format!("http://{}", upstream.addr);
+    config.logging.event_log_path = event_log_path.to_string_lossy().to_string();
+    config.websocket.allowed_origins = vec!["https://example.com".to_string()];
+    config.websocket.allowed_hosts = vec!["example.com".to_string()];
+    let listen = config.server.listen.clone();
+    let retention = EventLogRetention {
+        max_size_bytes: config.event_log_max_size_bytes().unwrap(),
+        max_files: config.logging.event_log_max_files,
+    };
+
+    let server = tokio::spawn(saugra::proxy::run(config));
+    let mut stream = connect_with_retry(&listen).await;
+    stream
+        .write_all(websocket_request("/ws/chat?room=main", "https://example.com").as_bytes())
+        .await
+        .unwrap();
+    let response = read_until_headers(&mut stream).await;
+    stream.write_all(b"hello").await.unwrap();
+    let mut echoed = [0_u8; 10];
+    stream.read_exact(&mut echoed).await.unwrap();
+    server.abort();
+
+    assert!(
+        response.starts_with("HTTP/1.1 101 Switching Protocols"),
+        "{response}"
+    );
+    assert_eq!(&echoed, b"echo:hello");
+    let upstream_request = upstream.request_headers.lock().unwrap().to_lowercase();
+    assert!(upstream_request.contains("upgrade: websocket"));
+    assert!(upstream_request.contains("connection: upgrade"));
+    assert!(upstream_request.contains("sec-websocket-key: dghlihnhbxbszsbub25jzq=="));
+    assert!(upstream_request.contains("sec-websocket-version: 13"));
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    assert_eq!(events[0].decision.action, WafAction::Allow);
+    assert_eq!(events[0].websocket.as_ref().unwrap().outcome, "accepted");
+    assert_eq!(
+        events[0].websocket.as_ref().unwrap().origin.as_deref(),
+        Some("https://example.com")
+    );
+}
+
+#[tokio::test]
+async fn websocket_monitor_mode_records_attack_and_tunnels() {
+    let upstream = spawn_raw_websocket_upstream().await;
+    let event_log_path = test_event_log_path();
+    let mut config = test_config(WafMode::Monitor, 120);
+    config.server.listen = free_loopback_addr();
+    config.upstreams[0].target = format!("http://{}", upstream.addr);
+    config.logging.event_log_path = event_log_path.to_string_lossy().to_string();
+    let listen = config.server.listen.clone();
+    let retention = EventLogRetention {
+        max_size_bytes: config.event_log_max_size_bytes().unwrap(),
+        max_files: config.logging.event_log_max_files,
+    };
+
+    let server = tokio::spawn(saugra::proxy::run(config));
+    let mut stream = connect_with_retry(&listen).await;
+    stream
+        .write_all(websocket_request("/ws/chat?q=--", "https://example.com").as_bytes())
+        .await
+        .unwrap();
+    let response = read_until_headers(&mut stream).await;
+    stream.write_all(b"hello").await.unwrap();
+    let mut echoed = [0_u8; 10];
+    stream.read_exact(&mut echoed).await.unwrap();
+    server.abort();
+
+    assert!(
+        response.starts_with("HTTP/1.1 101 Switching Protocols"),
+        "{response}"
+    );
+    assert_eq!(&echoed, b"echo:hello");
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    assert_eq!(events[0].websocket.as_ref().unwrap().outcome, "monitored");
+    assert_eq!(
+        events[0].decision.matched_rules[0].rule_id,
+        "SAUGRA-SQLI-001"
+    );
+}
+
+#[tokio::test]
+async fn websocket_block_mode_blocks_disallowed_origin() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.websocket.allowed_origins = vec!["https://example.com".to_string()];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = websocket_axum_request("/ws/chat", "https://evil.example");
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(fake_upstream.requests.lock().unwrap().is_empty());
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(
+        events[0].decision.matched_rules[0].rule_id,
+        "SAUGRA-WS-ORIGIN-001"
+    );
+    assert_eq!(events[0].websocket.as_ref().unwrap().outcome, "blocked");
+}
+
+#[tokio::test]
+async fn websocket_rate_limit_blocks_handshake_before_forwarding() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let state = test_state_with_path(
+        WafMode::Block,
+        1,
+        fake_upstream.clone(),
+        event_log_path.clone(),
+        retention,
+    );
+
+    let first = websocket_axum_request("/ws/chat", "https://example.com");
+    let second = websocket_axum_request("/ws/chat", "https://example.com");
+    let _ = proxy_request(State(state.clone()), first).await;
+    let response = proxy_request(State(state), second).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+
+    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert!(fake_upstream.requests.lock().unwrap().is_empty());
+    assert_eq!(events[1].decision.action, WafAction::Block);
+    assert_eq!(
+        events[1].decision.matched_rules[0].rule_id,
+        "SAUGRA-RATE-001"
+    );
+    assert_eq!(
+        events[1].websocket.as_ref().unwrap().outcome,
+        "rate_limited"
+    );
+}
+
 fn test_state(mode: WafMode, requests_per_minute: u32) -> ProxyState {
     test_state_with_transport(
         mode,
@@ -449,9 +607,96 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
         rules: RuleSettings::default(),
         ai: AiConfig::default(),
         logging: LoggingConfig::default(),
+        websocket: Default::default(),
         posture: Default::default(),
         reports: Default::default(),
         standards: Default::default(),
+    }
+}
+
+fn websocket_axum_request(path: &str, origin: &str) -> Request<Body> {
+    Request::builder()
+        .method(Method::GET)
+        .uri(path)
+        .header(header::HOST, "example.com")
+        .header(header::CONNECTION, "Upgrade")
+        .header(header::UPGRADE, "websocket")
+        .header(header::SEC_WEBSOCKET_KEY, "dGhlIHNhbXBsZSBub25jZQ==")
+        .header(header::SEC_WEBSOCKET_VERSION, "13")
+        .header(header::ORIGIN, origin)
+        .body(Body::empty())
+        .unwrap()
+}
+
+fn websocket_request(path: &str, origin: &str) -> String {
+    format!(
+        "GET {path} HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: chat\r\nOrigin: {origin}\r\nUser-Agent: saugra-test\r\n\r\n"
+    )
+}
+
+fn free_loopback_addr() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.local_addr().unwrap().to_string()
+}
+
+async fn connect_with_retry(addr: &str) -> TcpStream {
+    for _ in 0..50 {
+        if let Ok(stream) = TcpStream::connect(addr).await {
+            return stream;
+        }
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    }
+    TcpStream::connect(addr).await.unwrap()
+}
+
+async fn read_until_headers(stream: &mut TcpStream) -> String {
+    let mut bytes = Vec::new();
+    let mut byte = [0_u8; 1];
+    timeout(Duration::from_secs(5), async {
+        while !bytes.ends_with(b"\r\n\r\n") {
+            stream.read_exact(&mut byte).await.unwrap();
+            bytes.push(byte[0]);
+        }
+    })
+    .await
+    .unwrap();
+    String::from_utf8(bytes).unwrap()
+}
+
+struct RawWebSocketUpstream {
+    addr: SocketAddr,
+    request_headers: Arc<Mutex<String>>,
+}
+
+async fn spawn_raw_websocket_upstream() -> RawWebSocketUpstream {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let request_headers = Arc::new(Mutex::new(String::new()));
+    let request_headers_for_task = request_headers.clone();
+
+    tokio::spawn(async move {
+        let (mut socket, _) = listener.accept().await.unwrap();
+        let mut bytes = Vec::new();
+        let mut byte = [0_u8; 1];
+        while !bytes.ends_with(b"\r\n\r\n") {
+            socket.read_exact(&mut byte).await.unwrap();
+            bytes.push(byte[0]);
+        }
+        *request_headers_for_task.lock().unwrap() = String::from_utf8(bytes).unwrap();
+        socket
+            .write_all(
+                b"HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Protocol: chat\r\n\r\n",
+            )
+            .await
+            .unwrap();
+        let mut tunneled = [0_u8; 5];
+        socket.read_exact(&mut tunneled).await.unwrap();
+        socket.write_all(b"echo:hello").await.unwrap();
+    });
+
+    RawWebSocketUpstream {
+        addr,
+        request_headers,
     }
 }
 

@@ -117,6 +117,8 @@ Important production defaults:
 - `logging.event_log_max_size` and `logging.event_log_max_files` should be set.
 - `logging.timezone` should be set to the operator's preferred log timezone,
   for example `Africa/Nairobi`.
+- `websocket.allowed_origins` and `websocket.allowed_hosts` should list the
+  exact public origins and hosts that may open browser WebSocket connections.
 
 Do not use `backend: memory` for production rate limiting. It is only for local
 development and single-process demos.
@@ -153,21 +155,29 @@ server forwards all application traffic to Saugra at `127.0.0.1:8787`.
 
 ### WebSocket Paths
 
-Saugra currently protects normal HTTP reverse-proxy traffic. Until Phase 4 adds
-upgrade-aware proxying, do not route WebSocket upgrade paths such as `/ws/`
-through Saugra. Keep those paths as explicit Nginx or Apache locations that
-proxy directly to the WebSocket upstream, and harden them at the edge and in
-the application.
+Saugra inspects WebSocket upgrade handshakes before tunneling accepted
+connections to the upstream. The initial handshake path, query string, headers,
+`Origin`, `Host`, user-agent, cookies, and client identity go through the normal
+rule, monitor/block, logging, and rate-limit pipeline. After a clean or
+monitor-only decision, Saugra preserves the upgrade headers and tunnels the
+long-lived connection.
 
-For Nginx, keep a separate location like:
+For Nginx, route `/ws/` through Saugra and preserve upgrade semantics:
 
 ```nginx
+map $http_upgrade $saugra_connection_upgrade {
+    default upgrade;
+    '' close;
+}
+
 location /ws/ {
-    proxy_pass http://127.0.0.1:8002;
+    proxy_pass http://127.0.0.1:8787;
     proxy_http_version 1.1;
+
     proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection "upgrade";
+    proxy_set_header Connection $saugra_connection_upgrade;
     proxy_set_header Host $host;
+    proxy_set_header Origin $http_origin;
     proxy_set_header X-Real-IP $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
@@ -175,10 +185,21 @@ location /ws/ {
 }
 ```
 
-Require application authentication and authorization for WebSocket handshakes,
-validate `Origin` and `Host`, apply upstream or edge rate limits, and keep
-message-level authorization checks in the application. This limitation should
-be removed only after Saugra supports inspected upgrade tunneling.
+Configure Saugra with the public browser origins and hosts you expect:
+
+```yaml
+websocket:
+  enabled: true
+  allowed_origins:
+    - https://example.com
+  allowed_hosts:
+    - example.com
+```
+
+Saugra validates the handshake, but applications must still authenticate the
+user, authorize channel subscriptions, and enforce message-level authorization.
+Do not treat handshake protection as authorization for every future message on
+the socket.
 
 ## Apache
 
@@ -191,7 +212,7 @@ configs/apache.production.example.conf
 Enable required modules before using the reverse-proxy config:
 
 ```bash
-a2enmod proxy proxy_http headers
+a2enmod proxy proxy_http proxy_wstunnel headers
 ```
 
 Adjust `ServerName`, install the virtual host, and reload Apache.

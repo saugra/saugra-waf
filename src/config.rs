@@ -55,6 +55,10 @@ pub enum ConfigError {
     InvalidReportPath,
     #[error("standards.owasp_catalog must not be blank when provided")]
     InvalidOwaspCatalogPath,
+    #[error("websocket.allowed_origins entries must not be blank")]
+    InvalidWebSocketAllowedOrigin,
+    #[error("websocket.allowed_hosts entries must not be blank")]
+    InvalidWebSocketAllowedHost,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -71,6 +75,8 @@ pub struct SaugraConfig {
     pub ai: AiConfig,
     #[serde(default)]
     pub logging: LoggingConfig,
+    #[serde(default)]
+    pub websocket: WebSocketConfig,
     #[serde(default)]
     pub posture: PostureConfig,
     #[serde(default)]
@@ -287,6 +293,26 @@ impl Default for LoggingConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+pub struct WebSocketConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default)]
+    pub allowed_origins: Vec<String>,
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+}
+
+impl Default for WebSocketConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            allowed_origins: Vec::new(),
+            allowed_hosts: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
 pub struct PostureConfig {
     #[serde(default = "default_true")]
     pub enabled: bool,
@@ -488,6 +514,24 @@ impl SaugraConfig {
             return Err(ConfigError::InvalidOwaspCatalogPath);
         }
 
+        if self
+            .websocket
+            .allowed_origins
+            .iter()
+            .any(|origin| origin.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidWebSocketAllowedOrigin);
+        }
+
+        if self
+            .websocket
+            .allowed_hosts
+            .iter()
+            .any(|host| host.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidWebSocketAllowedHost);
+        }
+
         Ok(())
     }
 
@@ -515,7 +559,7 @@ impl SaugraConfig {
             .join(",");
 
         format!(
-            "listen={}, mode={:?}, upstreams=[{}], max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, inspect_json_body={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
+            "listen={}, mode={:?}, upstreams=[{}], max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
             self.server.listen,
             self.server.mode,
             upstreams,
@@ -526,6 +570,9 @@ impl SaugraConfig {
             self.rate_limit.burst,
             self.rate_limit.routes.len(),
             self.security.inspect_json_body,
+            self.websocket.enabled,
+            self.websocket.allowed_origins.len(),
+            self.websocket.allowed_hosts.len(),
             self.rules.owasp_crs,
             self.rules.paranoia_level,
             self.rules.detection_paranoia_level(),
@@ -656,6 +703,52 @@ mod tests {
 
         assert!(config.validate().is_ok());
         assert_eq!(config.max_body_size_bytes().unwrap(), 2 * 1024 * 1024);
+    }
+
+    #[test]
+    fn rejects_blank_websocket_allowed_origin() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+websocket:
+  allowed_origins:
+    - " "
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidWebSocketAllowedOrigin)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_websocket_allowed_host() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+websocket:
+  allowed_hosts:
+    - ""
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidWebSocketAllowedHost)
+        ));
     }
 
     #[test]

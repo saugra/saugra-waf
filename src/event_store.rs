@@ -23,7 +23,22 @@ pub struct SecurityEvent {
     pub path: String,
     pub query: String,
     pub owasp_categories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub websocket: Option<WebSocketEvent>,
     pub decision: WafDecision,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+pub struct WebSocketEvent {
+    pub upgrade: bool,
+    pub upstream_target: String,
+    pub outcome: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub host: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub protocol: Option<String>,
 }
 
 impl SecurityEvent {
@@ -48,8 +63,14 @@ impl SecurityEvent {
             path: path.to_string(),
             query: query.to_string(),
             owasp_categories,
+            websocket: None,
             decision,
         }
+    }
+
+    pub fn with_websocket(mut self, websocket: WebSocketEvent) -> Self {
+        self.websocket = Some(websocket);
+        self
     }
 }
 
@@ -364,6 +385,7 @@ mod tests {
             path: "/search".to_string(),
             query: "q=test".to_string(),
             owasp_categories: Vec::new(),
+            websocket: None,
             decision: decision("request-1"),
         };
 
@@ -375,6 +397,7 @@ mod tests {
         assert_eq!(json["method"], "GET");
         assert_eq!(json["path"], "/search");
         assert_eq!(json["query"], "q=test");
+        assert!(json["websocket"].is_null());
         assert!(json["owasp_categories"].as_array().unwrap().is_empty());
         assert_eq!(json["decision"]["request_id"], "request-1");
         assert_eq!(json["decision"]["action"], "allow");

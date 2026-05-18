@@ -13,11 +13,13 @@ use axum::{
     routing::get,
     Router,
 };
+use hyper::upgrade::OnUpgrade;
 use hyper_util::{
     client::legacy::{connect::HttpConnector, Client},
-    rt::TokioExecutor,
+    rt::{TokioExecutor, TokioIo},
 };
 use serde_json::json;
+use tokio::io::copy_bidirectional;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
@@ -25,7 +27,7 @@ use crate::{
     ai,
     config::{RouteRateLimitConfig, SaugraConfig, UpstreamConfig, WafMode},
     decision::{WafAction, WafDecision},
-    event_store::{self, EventLogRetention, SecurityEvent},
+    event_store::{self, EventLogRetention, SecurityEvent, WebSocketEvent},
     rate_limit::{self, RateLimitExceeded, RateLimitPolicy, RateLimitStore},
     rules::{self, RequestParts, RuleMatch, RuleSet, RuleSeverity, RuleTarget},
 };
@@ -154,8 +156,14 @@ pub async fn proxy_request(
     request: Request<Body>,
 ) -> Result<Response<Body>, Response<Body>> {
     let request_id = Uuid::new_v4().to_string();
-    let (parts, body) = request.into_parts();
+    let (mut parts, body) = request.into_parts();
     let client_ip = client_id_from_headers(&parts.headers);
+    let websocket_handshake = is_websocket_upgrade(&parts.headers);
+    let client_upgrade = if websocket_handshake {
+        parts.extensions.remove::<OnUpgrade>()
+    } else {
+        None
+    };
 
     if state.config.security.enable_rate_limiting {
         let rate_limit = select_rate_limit(&state.config, parts.uri.path(), &client_ip);
@@ -187,6 +195,7 @@ pub async fn proxy_request(
                 parts.uri.query().unwrap_or_default(),
                 &client_ip,
                 &decision,
+                websocket_handshake,
             );
             record_event(
                 &state,
@@ -195,12 +204,26 @@ pub async fn proxy_request(
                 parts.uri.query().unwrap_or_default(),
                 &client_ip,
                 &decision,
+                websocket_event(
+                    &state,
+                    &parts.headers,
+                    if websocket_handshake {
+                        "rate_limited"
+                    } else {
+                        "http"
+                    },
+                ),
             );
 
             if decision.action == WafAction::Block {
                 return Err(rate_limit_response(&decision, exceeded.retry_after_seconds));
             }
         }
+    }
+
+    if websocket_handshake {
+        return proxy_websocket_handshake(state, parts, client_upgrade, request_id, client_ip)
+            .await;
     }
 
     let body_bytes = to_bytes(body, state.max_body_size_bytes)
@@ -245,7 +268,7 @@ pub async fn proxy_request(
         state.config.rules.blocking_paranoia_level(),
     );
 
-    log_decision(&parts.method, &path, &query, &client_ip, &decision);
+    log_decision(&parts.method, &path, &query, &client_ip, &decision, false);
     record_event(
         &state,
         parts.method.as_str(),
@@ -253,6 +276,7 @@ pub async fn proxy_request(
         &query,
         &client_ip,
         &decision,
+        None,
     );
 
     if decision.action == WafAction::Block {
@@ -301,6 +325,7 @@ pub async fn proxy_request(
         upstream_request.headers_mut(),
         &state.upstream.host,
         &request_id,
+        false,
     );
 
     state
@@ -317,6 +342,209 @@ pub async fn proxy_request(
                 }),
             )
         })
+}
+
+async fn proxy_websocket_handshake(
+    state: ProxyState,
+    parts: axum::http::request::Parts,
+    client_upgrade: Option<OnUpgrade>,
+    request_id: String,
+    client_ip: String,
+) -> Result<Response<Body>, Response<Body>> {
+    let path = parts.uri.path().to_string();
+    let query = parts.uri.query().unwrap_or_default().to_string();
+    let headers = normalize_headers(&parts.headers);
+    let user_agent = parts
+        .headers
+        .get(header::USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
+
+    let request_parts = RequestParts {
+        path: &path,
+        query: &query,
+        headers: &headers,
+        body: "",
+        user_agent: &user_agent,
+    };
+    let mut matches = state
+        .rule_set
+        .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
+    matches.extend(websocket_policy_matches(&state, &parts.headers));
+
+    let decision = WafDecision::from_matches_with_blocking_paranoia(
+        request_id.clone(),
+        state.config.server.mode,
+        matches,
+        state.config.rules.inbound_anomaly_threshold,
+        state.config.rules.blocking_paranoia_level(),
+    );
+    let event = websocket_event(
+        &state,
+        &parts.headers,
+        if decision.action == WafAction::Block {
+            "blocked"
+        } else if decision.action == WafAction::Monitor {
+            "monitored"
+        } else {
+            "accepted"
+        },
+    );
+
+    log_decision(&parts.method, &path, &query, &client_ip, &decision, true);
+    record_event(
+        &state,
+        parts.method.as_str(),
+        &path,
+        &query,
+        &client_ip,
+        &decision,
+        event,
+    );
+
+    if decision.action == WafAction::Block {
+        return Err(json_response(
+            StatusCode::FORBIDDEN,
+            json!({
+                "request_id": request_id,
+                "action": "block",
+                "risk_score": decision.risk_score,
+                "matched_rules": &decision.matched_rules,
+                "explanation": ai::explain(&decision)
+            }),
+        ));
+    }
+
+    let Some(client_upgrade) = client_upgrade else {
+        warn!(
+            request_id,
+            "websocket request missing server upgrade extension"
+        );
+        return Err(json_response(
+            StatusCode::BAD_REQUEST,
+            json!({
+                "request_id": request_id,
+                "error": "websocket upgrade unavailable"
+            }),
+        ));
+    };
+
+    let upstream_uri = build_upstream_uri(&state.upstream.target, &parts.uri).map_err(|error| {
+        error!(request_id, %error, "failed to build websocket upstream URI");
+        json_response(
+            StatusCode::BAD_GATEWAY,
+            json!({
+                "request_id": request_id,
+                "error": "invalid upstream target"
+            }),
+        )
+    })?;
+    let mut upstream_request = Request::builder()
+        .method(parts.method)
+        .uri(upstream_uri)
+        .body(Body::empty())
+        .map_err(|error| {
+            error!(request_id, %error, "failed to build websocket upstream request");
+            json_response(
+                StatusCode::BAD_GATEWAY,
+                json!({
+                    "request_id": request_id,
+                    "error": "failed to build upstream request"
+                }),
+            )
+        })?;
+
+    copy_forward_headers(
+        &parts.headers,
+        upstream_request.headers_mut(),
+        &state.upstream.host,
+        &request_id,
+        true,
+    );
+
+    let mut upstream_response = state
+        .upstream_transport
+        .request(upstream_request)
+        .await
+        .map_err(|error| {
+            error!(request_id, %error, "websocket upstream request failed");
+            json_response(
+                StatusCode::BAD_GATEWAY,
+                json!({
+                    "request_id": request_id,
+                    "error": "upstream request failed"
+                }),
+            )
+        })?;
+
+    if upstream_response.status() != StatusCode::SWITCHING_PROTOCOLS {
+        warn!(
+            request_id,
+            status = %upstream_response.status(),
+            "websocket upstream did not switch protocols"
+        );
+        return Ok(upstream_response);
+    }
+
+    let upstream_upgrade = upstream_response.extensions_mut().remove::<OnUpgrade>();
+    if let Some(upstream_upgrade) = upstream_upgrade {
+        tokio::spawn(tunnel_websocket(
+            request_id.clone(),
+            client_upgrade,
+            upstream_upgrade,
+        ));
+    } else {
+        warn!(
+            request_id,
+            "websocket upstream response missing upgrade extension"
+        );
+        return Err(json_response(
+            StatusCode::BAD_GATEWAY,
+            json!({
+                "request_id": request_id,
+                "error": "upstream upgrade unavailable"
+            }),
+        ));
+    }
+
+    Ok(upstream_response)
+}
+
+async fn tunnel_websocket(
+    request_id: String,
+    client_upgrade: OnUpgrade,
+    upstream_upgrade: OnUpgrade,
+) {
+    let (client, upstream) = match tokio::try_join!(client_upgrade, upstream_upgrade) {
+        Ok(upgraded) => upgraded,
+        Err(error) => {
+            warn!(request_id, %error, "websocket upgrade failed before tunnel start");
+            return;
+        }
+    };
+    let mut client = TokioIo::new(client);
+    let mut upstream = TokioIo::new(upstream);
+
+    match copy_bidirectional(&mut client, &mut upstream).await {
+        Ok((from_client, from_upstream)) => {
+            info!(
+                request_id,
+                from_client,
+                from_upstream,
+                outcome = "closed",
+                "websocket tunnel closed"
+            );
+        }
+        Err(error) => {
+            warn!(
+                request_id,
+                %error,
+                outcome = "error",
+                "websocket tunnel ended with error"
+            );
+        }
+    }
 }
 
 fn build_upstream_uri(
@@ -337,9 +565,12 @@ fn copy_forward_headers(
     forwarded: &mut HeaderMap,
     upstream_host: &str,
     request_id: &str,
+    preserve_upgrade: bool,
 ) {
     for (name, value) in original {
-        if is_hop_by_hop_header(name) || name == header::HOST {
+        if (is_hop_by_hop_header(name) && !(preserve_upgrade && is_websocket_hop_header(name)))
+            || name == header::HOST
+        {
             continue;
         }
         forwarded.insert(name, value.clone());
@@ -357,6 +588,32 @@ fn copy_forward_headers(
     if let Ok(value) = request_id.parse() {
         forwarded.insert("x-saugra-request-id", value);
     }
+}
+
+fn is_websocket_upgrade(headers: &HeaderMap) -> bool {
+    header_contains_token(headers, header::CONNECTION, "upgrade")
+        && header_value_eq(headers, header::UPGRADE, "websocket")
+}
+
+fn header_contains_token(headers: &HeaderMap, name: HeaderName, token: &str) -> bool {
+    headers.get_all(name).iter().any(|value| {
+        value
+            .to_str()
+            .map(|value| {
+                value
+                    .split(',')
+                    .any(|part| part.trim().eq_ignore_ascii_case(token))
+            })
+            .unwrap_or(false)
+    })
+}
+
+fn header_value_eq(headers: &HeaderMap, name: HeaderName, expected: &str) -> bool {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.eq_ignore_ascii_case(expected))
+        .unwrap_or(false)
 }
 
 fn client_id_from_headers(headers: &HeaderMap) -> String {
@@ -455,6 +712,110 @@ fn is_hop_by_hop_header(name: &HeaderName) -> bool {
     )
 }
 
+fn is_websocket_hop_header(name: &HeaderName) -> bool {
+    matches!(name.as_str(), "connection" | "upgrade")
+}
+
+fn websocket_policy_matches(state: &ProxyState, headers: &HeaderMap) -> Vec<RuleMatch> {
+    let mut matches = Vec::new();
+
+    if !state.config.websocket.enabled {
+        matches.push(RuleMatch {
+            rule_id: "SAUGRA-WS-000".to_string(),
+            rule_name: "WebSocket Proxying Disabled".to_string(),
+            category: "websocket_policy".to_string(),
+            severity: RuleSeverity::High,
+            matched_target: RuleTarget::Headers,
+            paranoia_level: 1,
+            explanation: "WebSocket upgrade request was received while websocket.enabled is false."
+                .to_string(),
+            owasp_category: Some("A06:2025-Insecure Design".to_string()),
+        });
+    }
+
+    if !state.config.websocket.allowed_origins.is_empty() {
+        let origin = headers
+            .get(header::ORIGIN)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        if !state
+            .config
+            .websocket
+            .allowed_origins
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(origin))
+        {
+            matches.push(RuleMatch {
+                rule_id: "SAUGRA-WS-ORIGIN-001".to_string(),
+                rule_name: "WebSocket Origin Not Allowed".to_string(),
+                category: "websocket_origin_policy".to_string(),
+                severity: RuleSeverity::High,
+                matched_target: RuleTarget::Headers,
+                paranoia_level: 1,
+                explanation:
+                    "WebSocket handshake Origin header did not match configured allowed origins."
+                        .to_string(),
+                owasp_category: Some("A01:2025-Broken Access Control".to_string()),
+            });
+        }
+    }
+
+    if !state.config.websocket.allowed_hosts.is_empty() {
+        let host = headers
+            .get(header::HOST)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default();
+        if !state
+            .config
+            .websocket
+            .allowed_hosts
+            .iter()
+            .any(|allowed| allowed.eq_ignore_ascii_case(host))
+        {
+            matches.push(RuleMatch {
+                rule_id: "SAUGRA-WS-HOST-001".to_string(),
+                rule_name: "WebSocket Host Not Allowed".to_string(),
+                category: "websocket_host_policy".to_string(),
+                severity: RuleSeverity::High,
+                matched_target: RuleTarget::Headers,
+                paranoia_level: 1,
+                explanation:
+                    "WebSocket handshake Host header did not match configured allowed hosts."
+                        .to_string(),
+                owasp_category: Some("A05:2025-Security Misconfiguration".to_string()),
+            });
+        }
+    }
+
+    matches
+}
+
+fn websocket_event(
+    state: &ProxyState,
+    headers: &HeaderMap,
+    outcome: &str,
+) -> Option<WebSocketEvent> {
+    if !is_websocket_upgrade(headers) {
+        return None;
+    }
+
+    Some(WebSocketEvent {
+        upgrade: true,
+        upstream_target: state.upstream.target.clone(),
+        outcome: outcome.to_string(),
+        origin: header_string(headers, header::ORIGIN),
+        host: header_string(headers, header::HOST),
+        protocol: header_string(headers, header::SEC_WEBSOCKET_PROTOCOL),
+    })
+}
+
+fn header_string(headers: &HeaderMap, name: HeaderName) -> Option<String> {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .map(ToString::to_string)
+}
+
 fn normalize_headers(headers: &HeaderMap) -> String {
     headers
         .iter()
@@ -477,7 +838,14 @@ fn is_sensitive_header(name: &HeaderName) -> bool {
     )
 }
 
-fn log_decision(method: &Method, path: &str, query: &str, client_ip: &str, decision: &WafDecision) {
+fn log_decision(
+    method: &Method,
+    path: &str,
+    query: &str,
+    client_ip: &str,
+    decision: &WafDecision,
+    websocket_upgrade: bool,
+) {
     info!(
         request_id = %decision.request_id,
         client_ip,
@@ -490,6 +858,7 @@ fn log_decision(method: &Method, path: &str, query: &str, client_ip: &str, decis
         %method,
         path,
         query,
+        websocket_upgrade,
         explanation = %decision.explanation,
         "waf decision"
     );
@@ -502,8 +871,9 @@ fn record_event(
     query: &str,
     client_ip: &str,
     decision: &WafDecision,
+    websocket: Option<WebSocketEvent>,
 ) {
-    let event = SecurityEvent::new_with_timezone(
+    let mut event = SecurityEvent::new_with_timezone(
         method,
         path,
         query,
@@ -511,6 +881,9 @@ fn record_event(
         client_ip,
         &state.config.logging.timezone,
     );
+    if let Some(websocket) = websocket {
+        event = event.with_websocket(websocket);
+    }
 
     if let Err(error) =
         event_store::append(&state.event_log_path, state.event_log_retention, &event)
@@ -659,6 +1032,7 @@ mod tests {
             rules: Default::default(),
             ai: Default::default(),
             logging: Default::default(),
+            websocket: Default::default(),
             posture: Default::default(),
             reports: Default::default(),
             standards: Default::default(),
