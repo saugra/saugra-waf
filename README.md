@@ -1,6 +1,6 @@
 # Saugra WAF
 
-[![CI](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml/badge.svg)](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml)
+[![CI](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml?query=branch%3Amain)
 [![Coverage](https://codecov.io/gh/ewanyonyi/saugra/branch/main/graph/badge.svg)](https://codecov.io/gh/ewanyonyi/saugra)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](Cargo.toml)
