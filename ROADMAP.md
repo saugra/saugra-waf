@@ -251,6 +251,45 @@ Planned work:
 - [x] Support future standard mappings, such as `owasp-top-10:2026`, through
       YAML metadata and coverage mappings rather than proxy rewrites.
 
+## Phase 5 — Multi-Upstream HTTP and WebSocket Routing
+
+Saugra currently validates multiple upstream entries but forwards traffic to the
+first configured upstream. Production applications often split normal web
+traffic, APIs, admin surfaces, file services, and WebSocket endpoints across
+different backend processes. Saugra should route each accepted request to the
+right upstream while keeping one shared WAF decision pipeline.
+
+The implementation target is route-based upstream selection:
+
+- explicit route entries in YAML
+- longest path-prefix match wins
+- named upstream references with startup validation
+- one deterministic fallback route
+- shared inspection, rate limiting, logging, and explanation behavior before
+  forwarding
+- selected upstream context recorded in security events
+- WebSocket handshakes and tunnels using the same route selection model
+
+Planned work:
+
+- [ ] Add a `routes` config section for path-prefix to upstream mappings.
+- [ ] Validate that every route has a non-empty path prefix and references an
+      existing upstream name.
+- [ ] Support a deterministic fallback route, either explicit `/` or the first
+      upstream for backward compatibility.
+- [ ] Implement longest-prefix upstream selection for HTTP requests.
+- [ ] Apply the same upstream selection to accepted WebSocket handshakes and
+      tunnels.
+- [ ] Include selected upstream name, host, and target in security events and
+      structured decision logs.
+- [ ] Preserve existing WAF, monitor/block, anomaly scoring, and rate-limit
+      behavior before forwarding to the selected upstream.
+- [ ] Add tests for default routing, longest-prefix routing, invalid route
+      config, HTTP forwarding, WebSocket tunneling, blocked requests, monitored
+      requests, and rate-limited requests.
+- [ ] Update example configs and production deployment docs for multi-upstream
+      HTTP and WebSocket deployments.
+
 ## Production Readiness Gate
 
 Before Saugra is recommended for production use, complete:
