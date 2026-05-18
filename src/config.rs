@@ -105,19 +105,14 @@ pub struct ServerConfig {
     pub mode: WafMode,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum WafMode {
     Off,
+    #[default]
     Monitor,
     Block,
     Strict,
-}
-
-impl Default for WafMode {
-    fn default() -> Self {
-        Self::Monitor
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -194,17 +189,12 @@ pub struct RouteRateLimitConfig {
     pub burst: u32,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum RateLimitBackend {
+    #[default]
     Memory,
     Redis,
-}
-
-impl Default for RateLimitBackend {
-    fn default() -> Self {
-        Self::Memory
-    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
