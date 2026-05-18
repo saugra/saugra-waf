@@ -449,10 +449,6 @@ The remaining useful production-readiness slice is operational polish:
 
 Saugra WAF is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
 
-### Why AGPL-3.0?
-We chose the AGPL-3.0 to ensure that Saugra remains open and collaborative. Specifically:
-- **Service Protection**: If you run a modified version of Saugra as a service (SaaS), you must share your source code modifications with the community. This prevents vendors from reselling Saugra without contributing back.
-- **Open Source Integrity**: It is a true OSI-approved open-source license that guarantees user freedom.
 
 ### Saugra Pro
 Saugra follows an **Open-Core** model. While the core engine and rules are open-source under AGPL-3.0, we offer an enterprise-grade **Saugra Pro** version with additional features (SSO, SIEM integration, multi-node management, etc.) under a separate commercial license.
