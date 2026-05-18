@@ -53,6 +53,12 @@ impl MemoryRateLimitStore {
     }
 }
 
+impl Default for MemoryRateLimitStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[async_trait]
 impl RateLimitStore for MemoryRateLimitStore {
     async fn check(

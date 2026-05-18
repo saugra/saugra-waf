@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
@@ -266,7 +266,7 @@ async fn main() -> anyhow::Result<()> {
     }
 }
 
-fn load_valid_config(path: &PathBuf) -> anyhow::Result<SaugraConfig> {
+fn load_valid_config(path: &Path) -> anyhow::Result<SaugraConfig> {
     let config = SaugraConfig::from_file(path)
         .with_context(|| format!("failed to load config {}", path.display()))?;
     config.validate()?;

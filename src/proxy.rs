@@ -237,10 +237,12 @@ pub async fn proxy_request(
             );
             record_event(
                 &state,
-                parts.method.as_str(),
-                parts.uri.path(),
-                parts.uri.query().unwrap_or_default(),
-                &client_ip,
+                EventRequest {
+                    method: parts.method.as_str(),
+                    path: parts.uri.path(),
+                    query: parts.uri.query().unwrap_or_default(),
+                    client_ip: &client_ip,
+                },
                 &decision,
                 &upstream,
                 websocket_event(
@@ -325,10 +327,12 @@ pub async fn proxy_request(
     );
     record_event(
         &state,
-        parts.method.as_str(),
-        &path,
-        &query,
-        &client_ip,
+        EventRequest {
+            method: parts.method.as_str(),
+            path: &path,
+            query: &query,
+            client_ip: &client_ip,
+        },
         &decision,
         &upstream,
         None,
@@ -459,10 +463,12 @@ async fn proxy_websocket_handshake(
     );
     record_event(
         &state,
-        parts.method.as_str(),
-        &path,
-        &query,
-        &client_ip,
+        EventRequest {
+            method: parts.method.as_str(),
+            path: &path,
+            query: &query,
+            client_ip: &client_ip,
+        },
         &decision,
         &upstream,
         event,
@@ -933,22 +939,26 @@ fn log_decision(
     );
 }
 
+struct EventRequest<'a> {
+    method: &'a str,
+    path: &'a str,
+    query: &'a str,
+    client_ip: &'a str,
+}
+
 fn record_event(
     state: &ProxyState,
-    method: &str,
-    path: &str,
-    query: &str,
-    client_ip: &str,
+    request: EventRequest<'_>,
     decision: &WafDecision,
     upstream: &UpstreamConfig,
     websocket: Option<WebSocketEvent>,
 ) {
     let mut event = SecurityEvent::new_with_timezone(
-        method,
-        path,
-        query,
+        request.method,
+        request.path,
+        request.query,
         decision.clone(),
-        client_ip,
+        request.client_ip,
         &state.config.logging.timezone,
     );
     event = event.with_upstream(UpstreamEvent {
