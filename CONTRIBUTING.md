@@ -10,7 +10,7 @@ Please take a moment to read this guide to ensure a smooth contribution process.
 
 ## Code of Conduct
 
-By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md). Please report any violations or inappropriate behavior to [wanyonyi.d.emanuel@gmail.com](mailto:wanyonyi.d.emanuel@gmail.com).
+By participating in this project, you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md). Please report violations or inappropriate behavior through the repository maintainer contact channel listed in the project profile.
 
 ---
 
@@ -52,7 +52,7 @@ Saugra is built with Rust. You will need a modern Rust toolchain installed.
    ```
 3. Add the upstream repository as a remote:
    ```bash
-   git remote add upstream https://github.com/ewanyonyi/saugra.git
+   git remote add upstream https://github.com/<upstream-owner>/saugra.git
    ```
 
 ---
@@ -138,7 +138,7 @@ Please refer to `docs/OWASP_TOP_10_STRATEGY.md` for our layered coverage matrix.
    ```bash
    git push origin feature/your-awesome-feature
    ```
-4. **Open a PR**: Open a Pull Request from your branch to `ewanyonyi/saugra:main`. Fill out the Pull Request Template completely.
+4. **Open a PR**: Open a Pull Request from your branch to the upstream repository's `main` branch. Fill out the Pull Request Template completely.
 5. **Address review feedback**: The project maintainers will review your PR and suggest changes or additions if needed.
 
 ---
@@ -150,4 +150,4 @@ If you have questions about the codebase or design decisions, feel free to refer
 * [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) for product specification.
 * [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for deployment insights.
 
-Alternatively, contact the core maintainers at [wanyonyi.d.emanuel@gmail.com](mailto:wanyonyi.d.emanuel@gmail.com) or open a Github Discussion!
+Alternatively, open a GitHub Discussion or issue for non-sensitive questions.

@@ -2,12 +2,13 @@
 
 ## Supported Versions
 
-The table below outlines which versions of the project are currently receiving security updates and patches. 
+The table below outlines which versions of the project are currently receiving security updates and patches.
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | :white_check_mark: |
-| < 1.0.0 | :x:                |
+| main    | :white_check_mark: |
+| latest release | :white_check_mark: |
+| older releases | best effort |
 
 ## Reporting a Vulnerability
 
@@ -15,7 +16,9 @@ We take the security of this project seriously. If you believe you have found a 
 
 ### How to Report
 
-Please send a detailed email to **[wanyonyi.d.emanuel@gmail.com]** with the following information:
+Use GitHub private vulnerability reporting for this repository. If private vulnerability reporting is unavailable, contact a maintainer privately through the contact channel listed in the repository profile.
+
+Please include:
 
 * **Type of issue** (e.g., Buffer overflow, SQL injection, Remote Code Execution, etc.)
 * **Paths, components, or dependencies** affected.

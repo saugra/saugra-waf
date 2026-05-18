@@ -7,7 +7,7 @@ assignees: ""
 ---
 
 > [!WARNING]
-> If you are reporting a **security vulnerability**, please **do not** use this issue template. Instead, follow our responsible disclosure policy in [SECURITY.md](https://github.com/ewanyonyi/saugra/blob/main/SECURITY.md) and email us privately at **wanyonyi.d.emanuel@gmail.com**.
+> If you are reporting a **security vulnerability**, please **do not** use this issue template. Instead, follow the responsible disclosure policy in [SECURITY.md](../../SECURITY.md).
 
 ## Description
 A clear and concise description of what the bug is.
