@@ -13,7 +13,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 5 complete — Multi-upstream HTTP and WebSocket routing**
+Current phase: **Phase 6 planned — Behavior scoring and threshold-based blocking**
 
 The repository has a working Rust foundation:
 
@@ -290,6 +290,49 @@ Planned work:
       requests, and rate-limited requests.
 - [x] Update example configs and production deployment docs for multi-upstream
       HTTP and WebSocket deployments.
+
+## Phase 6 — Behavior Scoring and Threshold-Based Blocking
+
+Saugra already supports per-request rule anomaly scoring. The next public phase
+adds community-edition behavior scoring so repeated probing, suspicious path
+enumeration, scanner-like request patterns, and route-specific abuse can raise
+risk even when an individual request does not match a blocking rule.
+
+This phase should keep Saugra rules-first: behavior scores augment deterministic
+rule decisions and rate limits, but AI remains explain-only and must not become
+the blocking mechanism.
+
+The community-edition target is local, transparent, and production-usable for a
+single Saugra node:
+
+- [ ] Add a `behavior` config section with monitor-first defaults, scoring
+      windows, decay, per-client thresholds, and route/category overrides.
+- [ ] Add a stable behavior-state abstraction so local durable storage can be
+      replaced by Redis or another distributed backend without changing proxy
+      decision call sites.
+- [ ] Implement local durable behavior state suitable for single-node
+      production, restart survival, `explain <request-id>`, and audit
+      workflows.
+- [ ] Score repeated suspicious requests from the same client, including
+      scanner paths, development/internal endpoint probes, repeated 404-style
+      enumeration, authentication abuse, and repeated low-severity rule matches.
+- [ ] Add configurable behavior thresholds for `monitor` and `block`, separate
+      from per-request anomaly thresholds.
+- [ ] Preserve monitor-first rollout: new behavior rules should log and explain
+      before operators enable threshold-based blocking.
+- [ ] Emit behavior score, score contributors, threshold, window, and storage
+      backend in structured security events.
+- [ ] Include behavior contributors in `saugra explain <request-id>` and
+      `saugra logs summary`.
+- [ ] Add tests for score accumulation, decay/window expiry, restart behavior,
+      monitor thresholds, block thresholds, route overrides, and event shape.
+- [ ] Document how behavior scoring differs from rule anomaly scoring and rate
+      limiting.
+
+Future Saugra Pro/cloud behavior scoring may add distributed/fleet-wide
+reputation, multi-instance correlation, adaptive route baselines, external
+threat feeds, alert routing, and team investigation workflows. Those features
+should extend the public behavior scoring model rather than replace it.
 
 ## Production Readiness Gate
 
