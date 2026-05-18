@@ -71,6 +71,13 @@ Install status:
 - Supported today: build from Git/source and run with systemd.
 - Planned later: packaged binary releases and Ubuntu apt repository.
 
+## CI Coverage
+
+GitHub Actions generates an LCOV coverage report and uploads it to Codecov when
+the repository has a `CODECOV_TOKEN` Actions secret configured. Store the token
+only in the CI secret manager; do not commit it to source files, examples, or
+documentation.
+
 ## Quick Start
 
 Validate the example config:
