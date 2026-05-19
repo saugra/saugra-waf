@@ -13,7 +13,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 6 planned — Behavior scoring and threshold-based blocking**
+Current phase: **Phase 6 core complete — Behavior scoring and threshold-based blocking**
 
 The repository has a working Rust foundation:
 
@@ -46,7 +46,7 @@ cargo run -- rules list --config configs/saugra.example.yml
 Current test status:
 
 ```txt
-124 passed; 0 failed
+161 passed; 0 failed
 ```
 
 ## Production-Ready Product Principle
@@ -305,29 +305,90 @@ the blocking mechanism.
 The community-edition target is local, transparent, and production-usable for a
 single Saugra node:
 
-- [ ] Add a `behavior` config section with monitor-first defaults, scoring
+- [x] Add a `behavior` config section with monitor-first defaults, scoring
       windows, decay, per-client thresholds, and route/category overrides.
-- [ ] Add a stable behavior-state abstraction so local durable storage can be
+- [x] Add a stable behavior-state abstraction so local durable storage can be
       replaced by Redis or another distributed backend without changing proxy
       decision call sites.
-- [ ] Implement local durable behavior state suitable for single-node
+- [x] Implement local durable behavior state suitable for single-node
       production, restart survival, `explain <request-id>`, and audit
       workflows.
-- [ ] Score repeated suspicious requests from the same client, including
+- [x] Score repeated suspicious requests from the same client, including
       scanner paths, development/internal endpoint probes, repeated 404-style
       enumeration, authentication abuse, and repeated low-severity rule matches.
-- [ ] Add configurable behavior thresholds for `monitor` and `block`, separate
+- [x] Add configurable behavior thresholds for `monitor` and `block`, separate
       from per-request anomaly thresholds.
-- [ ] Preserve monitor-first rollout: new behavior rules should log and explain
+- [x] Preserve monitor-first rollout: new behavior rules should log and explain
       before operators enable threshold-based blocking.
-- [ ] Emit behavior score, score contributors, threshold, window, and storage
+- [x] Emit behavior score, score contributors, threshold, window, and storage
       backend in structured security events.
-- [ ] Include behavior contributors in `saugra explain <request-id>` and
+- [x] Include behavior contributors in `saugra explain <request-id>` and
       `saugra logs summary`.
-- [ ] Add tests for score accumulation, decay/window expiry, restart behavior,
+- [x] Add tests for score accumulation, decay/window expiry, restart behavior,
       monitor thresholds, block thresholds, route overrides, and event shape.
-- [ ] Document how behavior scoring differs from rule anomaly scoring and rate
+- [x] Document how behavior scoring differs from rule anomaly scoring and rate
       limiting.
+
+### Bot Protection and Traffic Abuse Defense
+
+Bot protection should be built on top of the Phase 6 behavior-scoring and
+rate-limit foundations instead of becoming a separate black-box blocker. The
+community edition goal is deterministic, explainable bot and automation defense
+that can start in monitor mode, produce useful evidence for tuning, and then
+block only after operators enable tuned thresholds.
+
+Initial scope:
+
+- [x] Add a `bot_protection` config section with `enabled`, `mode`,
+      `score_window`, `monitor_threshold`, `block_threshold`,
+      `temporary_block_duration`, allowlists, and route overrides.
+- [x] Support production-safe local state for single-node deployments, with
+      Redis or another durable/distributed backend documented as required for
+      future multi-instance deployments.
+- [x] Combine deterministic bot signals such as known scanner user agents,
+      suspicious automation headers, missing or malformed browser-like headers,
+      configured scanner path probes, development/internal endpoint probes,
+      login abuse, and repeated low-severity WAF matches.
+- [x] Keep CAPTCHA out of scope. Saugra bot protection should rely on
+      deterministic request signals, rate limits, behavior scoring, allowlists,
+      blocklists, and temporary blocking rather than interactive user
+      challenges.
+- [x] Keep JavaScript challenges and browser fingerprinting out of the first
+      public implementation unless they are added behind explicit, documented,
+      monitor-first controls.
+- [x] Add allowlist and blocklist support for trusted crawlers, internal IP
+      ranges, service accounts, user-agent patterns, and high-risk clients.
+- [x] Add configurable temporary blocking that emits a security event and
+      records the score contributors, threshold, duration, storage backend, and
+      route policy that caused the block.
+- [x] Include bot-protection contributors in `saugra explain <request-id>`,
+      `saugra logs tail`, and `saugra logs summary`.
+- [x] Document a production rollout path: monitor first, review events, tune
+      allowlists and route thresholds, then enable blocking for selected routes.
+- [x] Add tests for monitor-only bot scoring, threshold blocking, temporary
+      block expiry, allowlist bypass, blocklist enforcement, route overrides,
+      durable state restart behavior, and structured event shape.
+
+Example target configuration:
+
+```yaml
+bot_protection:
+  enabled: true
+  mode: monitor
+  backend: local
+  state_path: /var/lib/saugra/saugra-bot-state.json
+  score_window: 10m
+  monitor_threshold: 40
+  block_threshold: 80
+  temporary_block_duration: 15m
+  allowlists:
+    user_agents:
+      - Googlebot
+    ip_ranges: []
+  routes:
+    - path: /login
+      block_threshold: 60
+```
 
 Future Saugra Pro/cloud behavior scoring may add distributed/fleet-wide
 reputation, multi-instance correlation, adaptive route baselines, external

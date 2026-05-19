@@ -289,6 +289,8 @@ Add tests for:
 - block mode behavior
 - rate limiting
 - JSON log output shape
+- behavior scoring, durable behavior state, and threshold decisions when those
+  features are touched
 
 Example attack test cases:
 
@@ -298,6 +300,27 @@ Example attack test cases:
 /download?file=../../../../etc/passwd
 /api?cmd=cat /etc/passwd
 ```
+
+## SDLC Coverage Requirements
+
+Saugra's SDLC loop should include Codecov-backed test coverage for pull
+requests and release branches.
+
+Coverage expectations:
+
+- Run the normal Rust test suite before coverage collection.
+- Generate coverage with a Rust-compatible tool such as `cargo llvm-cov` or
+  `cargo tarpaulin`, then upload the report to Codecov from CI.
+- Treat coverage as a regression signal, not a vanity metric. Do not add weak
+  tests only to increase percentages.
+- Preserve or improve coverage for security-critical code paths, especially
+  request inspection, rule matching, monitor/block decisions, rate limiting,
+  behavior scoring, event storage, explanation output, config validation, and
+  proxy forwarding.
+- Pull requests that lower coverage on security-critical modules should add
+  focused tests or clearly document why the uncovered code is acceptable.
+- Coverage checks should complement, not replace, attack-case tests,
+  integration/e2e tests, and production deployment verification commands.
 
 ## Documentation Requirements
 

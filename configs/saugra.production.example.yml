@@ -38,6 +38,73 @@ rate_limit:
       requests_per_minute: 10
       burst: 5
 
+behavior:
+  enabled: false
+  mode: monitor
+  backend: local
+  state_path: /var/lib/saugra/saugra-behavior-state.json
+  score_window: 10m
+  decay_window: 30m
+  monitor_threshold: 40
+  block_threshold: 80
+  route_overrides:
+    - path: /login
+      monitor_threshold: 30
+      block_threshold: 60
+      score_window: 5m
+  category_overrides:
+    - category: scanner_behavior
+      score_delta: 15
+      monitor_threshold: 30
+      block_threshold: 70
+  probe_paths:
+    - /.env
+    - /wp-admin
+    - /wp-login.php
+    - /phpmyadmin
+    - /admin
+    - /.git
+    - /server-status
+
+bot_protection:
+  enabled: false
+  mode: monitor
+  backend: local
+  state_path: /var/lib/saugra/saugra-bot-state.json
+  score_window: 10m
+  monitor_threshold: 40
+  block_threshold: 80
+  temporary_block_duration: 15m
+  allowlists:
+    user_agents:
+      - Googlebot
+    ip_ranges: []
+  blocklists:
+    user_agents: []
+    ip_ranges: []
+  routes:
+    - path: /login
+      monitor_threshold: 30
+      block_threshold: 60
+  scanner_paths:
+    - /.env
+    - /wp-admin
+    - /wp-login.php
+    - /phpmyadmin
+    - /admin
+    - /.git
+    - /server-status
+    - /vendor/phpunit
+  rule:
+    id: SAUGRA-BOT-PROTECTION-001
+    name: Bot Protection Threshold
+    category: bot_protection
+    monitor_severity: medium
+    block_severity: high
+    paranoia_level: 1
+    explanation: Bot protection score reached the configured threshold.
+    owasp_category: A06:2025-Insecure Design
+
 rules:
   owasp_crs: true
   paranoia_level: 1

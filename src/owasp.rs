@@ -380,6 +380,8 @@ mod tests {
                 routes: vec![],
             },
             rules: RuleSettings::default(),
+            behavior: Default::default(),
+            bot_protection: Default::default(),
             ai: AiConfig::default(),
             logging: LoggingConfig {
                 event_log_path: "/var/log/saugra/saugra-events.jsonl".to_string(),

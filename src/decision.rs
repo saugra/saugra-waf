@@ -1,6 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{config::WafMode, rules::RuleMatch};
+use crate::{
+    behavior::BehaviorOutcome, bot::BotProtectionOutcome, config::WafMode, rules::RuleMatch,
+};
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -26,6 +28,10 @@ pub struct WafDecision {
     pub explanation: String,
     pub owasp_category: Option<String>,
     pub owasp_categories: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub behavior: Option<BehaviorOutcome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bot_protection: Option<BotProtectionOutcome>,
 }
 
 fn default_blocking_paranoia_level() -> u8 {
@@ -69,6 +75,8 @@ impl WafDecision {
                 explanation: "No security rules matched this request.".to_string(),
                 owasp_category: None,
                 owasp_categories: Vec::new(),
+                behavior: None,
+                bot_protection: None,
             };
         }
 
@@ -128,7 +136,19 @@ impl WafDecision {
             explanation,
             owasp_category,
             owasp_categories,
+            behavior: None,
+            bot_protection: None,
         }
+    }
+
+    pub fn with_behavior(mut self, behavior: BehaviorOutcome) -> Self {
+        self.behavior = Some(behavior);
+        self
+    }
+
+    pub fn with_bot_protection(mut self, bot_protection: BotProtectionOutcome) -> Self {
+        self.bot_protection = Some(bot_protection);
+        self
     }
 }
 

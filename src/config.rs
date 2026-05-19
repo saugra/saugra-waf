@@ -3,6 +3,8 @@ use std::{fs, net::SocketAddr, path::Path, path::PathBuf};
 use serde::Deserialize;
 use thiserror::Error;
 
+use crate::rules::RuleSeverity;
+
 #[derive(Debug, Error)]
 pub enum ConfigError {
     #[error("config file is not valid YAML: {0}")]
@@ -42,6 +44,46 @@ pub enum ConfigError {
     MissingRedisUrl,
     #[error("rate_limit.redis_password must not be blank when provided")]
     InvalidRedisPassword,
+    #[error("behavior.score_window must be a positive duration, for example 10m")]
+    InvalidBehaviorScoreWindow,
+    #[error("behavior.decay_window must be a positive duration, for example 30m")]
+    InvalidBehaviorDecayWindow,
+    #[error("behavior.state_path must not be blank when behavior.backend is local")]
+    InvalidBehaviorStatePath,
+    #[error("behavior.monitor_threshold must be greater than zero")]
+    InvalidBehaviorMonitorThreshold,
+    #[error(
+        "behavior.block_threshold must be greater than or equal to behavior.monitor_threshold"
+    )]
+    InvalidBehaviorBlockThreshold,
+    #[error("behavior.route_overrides entries must include a non-empty path")]
+    InvalidBehaviorRouteOverride,
+    #[error("behavior.category_overrides entries must include a non-empty category")]
+    InvalidBehaviorCategoryOverride,
+    #[error("behavior.probe_paths entries must not be blank")]
+    InvalidBehaviorProbePath,
+    #[error("bot_protection.score_window must be a positive duration, for example 10m")]
+    InvalidBotProtectionScoreWindow,
+    #[error(
+        "bot_protection.temporary_block_duration must be a positive duration, for example 15m"
+    )]
+    InvalidBotProtectionTemporaryBlockDuration,
+    #[error("bot_protection.state_path must not be blank when bot_protection.backend is local")]
+    InvalidBotProtectionStatePath,
+    #[error("bot_protection.monitor_threshold must be greater than zero")]
+    InvalidBotProtectionMonitorThreshold,
+    #[error("bot_protection.block_threshold must be greater than or equal to bot_protection.monitor_threshold")]
+    InvalidBotProtectionBlockThreshold,
+    #[error("bot_protection.routes entries must include a non-empty path")]
+    InvalidBotProtectionRoute,
+    #[error("bot_protection allowlist and blocklist entries must not be blank")]
+    InvalidBotProtectionListEntry,
+    #[error("bot_protection.scanner_paths entries must not be blank")]
+    InvalidBotProtectionScannerPath,
+    #[error("bot_protection.rule id, name, category, and explanation must not be blank")]
+    InvalidBotProtectionRule,
+    #[error("bot_protection.rule.paranoia_level must be greater than zero")]
+    InvalidBotProtectionRuleParanoiaLevel,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
     #[error("rules.inbound_anomaly_threshold must be greater than zero")]
@@ -82,6 +124,10 @@ pub struct SaugraConfig {
     pub security: SecurityConfig,
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
+    #[serde(default)]
+    pub behavior: BehaviorConfig,
+    #[serde(default)]
+    pub bot_protection: BotProtectionConfig,
     #[serde(default)]
     pub rules: RuleSettings,
     #[serde(default)]
@@ -195,6 +241,191 @@ pub enum RateLimitBackend {
     #[default]
     Memory,
     Redis,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BehaviorConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: BehaviorMode,
+    #[serde(default)]
+    pub backend: BehaviorBackend,
+    #[serde(default = "default_behavior_state_path")]
+    pub state_path: PathBuf,
+    #[serde(default = "default_behavior_score_window")]
+    pub score_window: String,
+    #[serde(default = "default_behavior_decay_window")]
+    pub decay_window: String,
+    #[serde(default = "default_behavior_monitor_threshold")]
+    pub monitor_threshold: u16,
+    #[serde(default = "default_behavior_block_threshold")]
+    pub block_threshold: u16,
+    #[serde(default)]
+    pub route_overrides: Vec<BehaviorRouteOverrideConfig>,
+    #[serde(default)]
+    pub category_overrides: Vec<BehaviorCategoryOverrideConfig>,
+    #[serde(default = "default_probe_paths")]
+    pub probe_paths: Vec<String>,
+}
+
+impl Default for BehaviorConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: BehaviorMode::Monitor,
+            backend: BehaviorBackend::Local,
+            state_path: default_behavior_state_path(),
+            score_window: default_behavior_score_window(),
+            decay_window: default_behavior_decay_window(),
+            monitor_threshold: default_behavior_monitor_threshold(),
+            block_threshold: default_behavior_block_threshold(),
+            route_overrides: Vec::new(),
+            category_overrides: Vec::new(),
+            probe_paths: default_probe_paths(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BehaviorMode {
+    Off,
+    #[default]
+    Monitor,
+    Block,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum BehaviorBackend {
+    Memory,
+    #[default]
+    Local,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BehaviorRouteOverrideConfig {
+    pub path: String,
+    #[serde(default)]
+    pub monitor_threshold: Option<u16>,
+    #[serde(default)]
+    pub block_threshold: Option<u16>,
+    #[serde(default)]
+    pub score_window: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BehaviorCategoryOverrideConfig {
+    pub category: String,
+    #[serde(default)]
+    pub monitor_threshold: Option<u16>,
+    #[serde(default)]
+    pub block_threshold: Option<u16>,
+    #[serde(default)]
+    pub score_delta: Option<u16>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BotProtectionConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: BehaviorMode,
+    #[serde(default)]
+    pub backend: BehaviorBackend,
+    #[serde(default = "default_bot_protection_state_path")]
+    pub state_path: PathBuf,
+    #[serde(default = "default_behavior_score_window")]
+    pub score_window: String,
+    #[serde(default = "default_bot_protection_monitor_threshold")]
+    pub monitor_threshold: u16,
+    #[serde(default = "default_bot_protection_block_threshold")]
+    pub block_threshold: u16,
+    #[serde(default = "default_bot_protection_temporary_block_duration")]
+    pub temporary_block_duration: String,
+    #[serde(default)]
+    pub allowlists: BotProtectionLists,
+    #[serde(default)]
+    pub blocklists: BotProtectionLists,
+    #[serde(default)]
+    pub routes: Vec<BotProtectionRouteConfig>,
+    #[serde(default = "default_scanner_paths")]
+    pub scanner_paths: Vec<String>,
+    #[serde(default)]
+    pub rule: BotProtectionRuleConfig,
+}
+
+impl Default for BotProtectionConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: BehaviorMode::Monitor,
+            backend: BehaviorBackend::Local,
+            state_path: default_bot_protection_state_path(),
+            score_window: default_behavior_score_window(),
+            monitor_threshold: default_bot_protection_monitor_threshold(),
+            block_threshold: default_bot_protection_block_threshold(),
+            temporary_block_duration: default_bot_protection_temporary_block_duration(),
+            allowlists: BotProtectionLists::default(),
+            blocklists: BotProtectionLists::default(),
+            routes: Vec::new(),
+            scanner_paths: default_scanner_paths(),
+            rule: BotProtectionRuleConfig::default(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct BotProtectionRuleConfig {
+    #[serde(default = "default_bot_protection_rule_id")]
+    pub id: String,
+    #[serde(default = "default_bot_protection_rule_name")]
+    pub name: String,
+    #[serde(default = "default_bot_protection_rule_category")]
+    pub category: String,
+    #[serde(default = "default_bot_protection_monitor_severity")]
+    pub monitor_severity: RuleSeverity,
+    #[serde(default = "default_bot_protection_block_severity")]
+    pub block_severity: RuleSeverity,
+    #[serde(default = "default_rule_paranoia_level")]
+    pub paranoia_level: u8,
+    #[serde(default = "default_bot_protection_rule_explanation")]
+    pub explanation: String,
+    #[serde(default = "default_bot_protection_owasp_category")]
+    pub owasp_category: Option<String>,
+}
+
+impl Default for BotProtectionRuleConfig {
+    fn default() -> Self {
+        Self {
+            id: default_bot_protection_rule_id(),
+            name: default_bot_protection_rule_name(),
+            category: default_bot_protection_rule_category(),
+            monitor_severity: default_bot_protection_monitor_severity(),
+            block_severity: default_bot_protection_block_severity(),
+            paranoia_level: default_rule_paranoia_level(),
+            explanation: default_bot_protection_rule_explanation(),
+            owasp_category: default_bot_protection_owasp_category(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BotProtectionLists {
+    #[serde(default)]
+    pub ip_ranges: Vec<String>,
+    #[serde(default)]
+    pub user_agents: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct BotProtectionRouteConfig {
+    pub path: String,
+    #[serde(default)]
+    pub monitor_threshold: Option<u16>,
+    #[serde(default)]
+    pub block_threshold: Option<u16>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -465,6 +696,9 @@ impl SaugraConfig {
             return Err(ConfigError::InvalidRedisPassword);
         }
 
+        self.validate_behavior()?;
+        self.validate_bot_protection()?;
+
         if self.ai.enabled && self.ai.mode != "explain_only" {
             return Err(ConfigError::InvalidAiMode);
         }
@@ -566,6 +800,141 @@ impl SaugraConfig {
         Ok(())
     }
 
+    fn validate_behavior(&self) -> Result<(), ConfigError> {
+        if parse_duration_seconds(&self.behavior.score_window).is_none() {
+            return Err(ConfigError::InvalidBehaviorScoreWindow);
+        }
+
+        if parse_duration_seconds(&self.behavior.decay_window).is_none() {
+            return Err(ConfigError::InvalidBehaviorDecayWindow);
+        }
+
+        if self.behavior.backend == BehaviorBackend::Local
+            && self.behavior.state_path.as_os_str().is_empty()
+        {
+            return Err(ConfigError::InvalidBehaviorStatePath);
+        }
+
+        validate_behavior_thresholds(
+            self.behavior.monitor_threshold,
+            self.behavior.block_threshold,
+        )?;
+
+        for route in &self.behavior.route_overrides {
+            if route.path.trim().is_empty() {
+                return Err(ConfigError::InvalidBehaviorRouteOverride);
+            }
+
+            validate_optional_behavior_thresholds(
+                route.monitor_threshold,
+                route.block_threshold,
+                self.behavior.monitor_threshold,
+                self.behavior.block_threshold,
+            )?;
+
+            if route
+                .score_window
+                .as_deref()
+                .is_some_and(|duration| parse_duration_seconds(duration).is_none())
+            {
+                return Err(ConfigError::InvalidBehaviorScoreWindow);
+            }
+        }
+
+        for category in &self.behavior.category_overrides {
+            if category.category.trim().is_empty() {
+                return Err(ConfigError::InvalidBehaviorCategoryOverride);
+            }
+
+            validate_optional_behavior_thresholds(
+                category.monitor_threshold,
+                category.block_threshold,
+                self.behavior.monitor_threshold,
+                self.behavior.block_threshold,
+            )?;
+        }
+
+        if self
+            .behavior
+            .probe_paths
+            .iter()
+            .any(|path| path.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidBehaviorProbePath);
+        }
+
+        Ok(())
+    }
+
+    fn validate_bot_protection(&self) -> Result<(), ConfigError> {
+        if parse_duration_seconds(&self.bot_protection.score_window).is_none() {
+            return Err(ConfigError::InvalidBotProtectionScoreWindow);
+        }
+
+        if parse_duration_seconds(&self.bot_protection.temporary_block_duration).is_none() {
+            return Err(ConfigError::InvalidBotProtectionTemporaryBlockDuration);
+        }
+
+        if self.bot_protection.backend == BehaviorBackend::Local
+            && self.bot_protection.state_path.as_os_str().is_empty()
+        {
+            return Err(ConfigError::InvalidBotProtectionStatePath);
+        }
+
+        validate_bot_protection_thresholds(
+            self.bot_protection.monitor_threshold,
+            self.bot_protection.block_threshold,
+        )?;
+
+        if bot_list_has_blank(&self.bot_protection.allowlists)
+            || bot_list_has_blank(&self.bot_protection.blocklists)
+        {
+            return Err(ConfigError::InvalidBotProtectionListEntry);
+        }
+
+        for route in &self.bot_protection.routes {
+            if route.path.trim().is_empty() {
+                return Err(ConfigError::InvalidBotProtectionRoute);
+            }
+
+            validate_optional_bot_protection_thresholds(
+                route.monitor_threshold,
+                route.block_threshold,
+                self.bot_protection.monitor_threshold,
+                self.bot_protection.block_threshold,
+            )?;
+        }
+
+        if self
+            .bot_protection
+            .scanner_paths
+            .iter()
+            .any(|path| path.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidBotProtectionScannerPath);
+        }
+
+        if self.bot_protection.rule.id.trim().is_empty()
+            || self.bot_protection.rule.name.trim().is_empty()
+            || self.bot_protection.rule.category.trim().is_empty()
+            || self.bot_protection.rule.explanation.trim().is_empty()
+            || self
+                .bot_protection
+                .rule
+                .owasp_category
+                .as_deref()
+                .is_some_and(|category| category.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidBotProtectionRule);
+        }
+
+        if self.bot_protection.rule.paranoia_level == 0 {
+            return Err(ConfigError::InvalidBotProtectionRuleParanoiaLevel);
+        }
+
+        Ok(())
+    }
+
     pub fn listen_addr(&self) -> Result<SocketAddr, ConfigError> {
         self.server
             .listen
@@ -590,7 +959,7 @@ impl SaugraConfig {
             .join(",");
 
         format!(
-            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
+            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, behavior_enabled={}, behavior_mode={:?}, behavior_backend={:?}, behavior_state_path={}, behavior_score_window={}, behavior_decay_window={}, behavior_monitor_threshold={}, behavior_block_threshold={}, behavior_route_overrides={}, behavior_category_overrides={}, bot_protection_enabled={}, bot_protection_mode={:?}, bot_protection_backend={:?}, bot_protection_state_path={}, bot_protection_monitor_threshold={}, bot_protection_block_threshold={}, bot_protection_routes={}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
             self.server.listen,
             self.server.mode,
             upstreams,
@@ -601,6 +970,23 @@ impl SaugraConfig {
             self.rate_limit.requests_per_minute,
             self.rate_limit.burst,
             self.rate_limit.routes.len(),
+            self.behavior.enabled,
+            self.behavior.mode,
+            self.behavior.backend,
+            self.behavior.state_path.display(),
+            self.behavior.score_window,
+            self.behavior.decay_window,
+            self.behavior.monitor_threshold,
+            self.behavior.block_threshold,
+            self.behavior.route_overrides.len(),
+            self.behavior.category_overrides.len(),
+            self.bot_protection.enabled,
+            self.bot_protection.mode,
+            self.bot_protection.backend,
+            self.bot_protection.state_path.display(),
+            self.bot_protection.monitor_threshold,
+            self.bot_protection.block_threshold,
+            self.bot_protection.routes.len(),
             self.security.inspect_json_body,
             self.websocket.enabled,
             self.websocket.allowed_origins.len(),
@@ -637,6 +1023,85 @@ fn parse_byte_size(value: &str) -> Option<u64> {
     };
 
     number.checked_mul(multiplier)
+}
+
+fn parse_duration_seconds(value: &str) -> Option<u64> {
+    let trimmed = value.trim().to_ascii_lowercase();
+    let split_at = trimmed.find(|c: char| !c.is_ascii_digit())?;
+    let (number, unit) = trimmed.split_at(split_at);
+    let number = number.parse::<u64>().ok()?;
+    if number == 0 {
+        return None;
+    }
+
+    let multiplier = match unit.trim() {
+        "s" | "sec" | "secs" | "second" | "seconds" => 1,
+        "m" | "min" | "mins" | "minute" | "minutes" => 60,
+        "h" | "hr" | "hrs" | "hour" | "hours" => 60 * 60,
+        "d" | "day" | "days" => 24 * 60 * 60,
+        _ => return None,
+    };
+
+    number.checked_mul(multiplier)
+}
+
+fn validate_behavior_thresholds(
+    monitor_threshold: u16,
+    block_threshold: u16,
+) -> Result<(), ConfigError> {
+    if monitor_threshold == 0 {
+        return Err(ConfigError::InvalidBehaviorMonitorThreshold);
+    }
+
+    if block_threshold < monitor_threshold {
+        return Err(ConfigError::InvalidBehaviorBlockThreshold);
+    }
+
+    Ok(())
+}
+
+fn validate_optional_behavior_thresholds(
+    monitor_threshold: Option<u16>,
+    block_threshold: Option<u16>,
+    default_monitor_threshold: u16,
+    default_block_threshold: u16,
+) -> Result<(), ConfigError> {
+    let monitor_threshold = monitor_threshold.unwrap_or(default_monitor_threshold);
+    let block_threshold = block_threshold.unwrap_or(default_block_threshold);
+    validate_behavior_thresholds(monitor_threshold, block_threshold)
+}
+
+fn validate_bot_protection_thresholds(
+    monitor_threshold: u16,
+    block_threshold: u16,
+) -> Result<(), ConfigError> {
+    if monitor_threshold == 0 {
+        return Err(ConfigError::InvalidBotProtectionMonitorThreshold);
+    }
+
+    if block_threshold < monitor_threshold {
+        return Err(ConfigError::InvalidBotProtectionBlockThreshold);
+    }
+
+    Ok(())
+}
+
+fn validate_optional_bot_protection_thresholds(
+    monitor_threshold: Option<u16>,
+    block_threshold: Option<u16>,
+    default_monitor_threshold: u16,
+    default_block_threshold: u16,
+) -> Result<(), ConfigError> {
+    let monitor_threshold = monitor_threshold.unwrap_or(default_monitor_threshold);
+    let block_threshold = block_threshold.unwrap_or(default_block_threshold);
+    validate_bot_protection_thresholds(monitor_threshold, block_threshold)
+}
+
+fn bot_list_has_blank(list: &BotProtectionLists) -> bool {
+    list.ip_ranges
+        .iter()
+        .chain(list.user_agents.iter())
+        .any(|value| value.trim().is_empty())
 }
 
 fn default_true() -> bool {
@@ -679,6 +1144,105 @@ fn default_requests_per_minute() -> u32 {
 
 fn default_rate_limit_burst() -> u32 {
     30
+}
+
+fn default_behavior_score_window() -> String {
+    "10m".to_string()
+}
+
+fn default_behavior_state_path() -> PathBuf {
+    PathBuf::from("logs/saugra-behavior-state.json")
+}
+
+fn default_bot_protection_state_path() -> PathBuf {
+    PathBuf::from("logs/saugra-bot-state.json")
+}
+
+fn default_behavior_decay_window() -> String {
+    "30m".to_string()
+}
+
+fn default_behavior_monitor_threshold() -> u16 {
+    40
+}
+
+fn default_behavior_block_threshold() -> u16 {
+    80
+}
+
+fn default_bot_protection_monitor_threshold() -> u16 {
+    40
+}
+
+fn default_bot_protection_block_threshold() -> u16 {
+    80
+}
+
+fn default_bot_protection_temporary_block_duration() -> String {
+    "15m".to_string()
+}
+
+fn default_bot_protection_rule_id() -> String {
+    "SAUGRA-BOT-PROTECTION-001".to_string()
+}
+
+fn default_bot_protection_rule_name() -> String {
+    "Bot Protection Threshold".to_string()
+}
+
+fn default_bot_protection_rule_category() -> String {
+    "bot_protection".to_string()
+}
+
+fn default_bot_protection_monitor_severity() -> RuleSeverity {
+    RuleSeverity::Medium
+}
+
+fn default_bot_protection_block_severity() -> RuleSeverity {
+    RuleSeverity::High
+}
+
+fn default_rule_paranoia_level() -> u8 {
+    1
+}
+
+fn default_bot_protection_rule_explanation() -> String {
+    "Bot protection score reached the configured threshold.".to_string()
+}
+
+fn default_bot_protection_owasp_category() -> Option<String> {
+    Some("A06:2025-Insecure Design".to_string())
+}
+
+fn default_probe_paths() -> Vec<String> {
+    [
+        "/.env",
+        "/wp-admin",
+        "/wp-login.php",
+        "/phpmyadmin",
+        "/admin",
+        "/.git",
+        "/server-status",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
+}
+
+fn default_scanner_paths() -> Vec<String> {
+    [
+        "/.env",
+        "/wp-admin",
+        "/wp-login.php",
+        "/phpmyadmin",
+        "/admin",
+        "/.git",
+        "/server-status",
+        "/vendor/phpunit",
+    ]
+    .into_iter()
+    .map(str::to_string)
+    .collect()
 }
 
 fn default_ai_mode() -> String {
@@ -1042,6 +1606,417 @@ rate_limit:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidRateLimit)
+        ));
+    }
+
+    #[test]
+    fn behavior_config_defaults_to_monitor_first_policy_shape() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert!(!config.behavior.enabled);
+        assert_eq!(config.behavior.mode, BehaviorMode::Monitor);
+        assert_eq!(config.behavior.backend, BehaviorBackend::Local);
+        assert_eq!(
+            config.behavior.state_path,
+            PathBuf::from("logs/saugra-behavior-state.json")
+        );
+        assert_eq!(config.behavior.score_window, "10m");
+        assert_eq!(config.behavior.decay_window, "30m");
+        assert_eq!(config.behavior.monitor_threshold, 40);
+        assert_eq!(config.behavior.block_threshold, 80);
+        assert!(config.behavior.probe_paths.contains(&"/.env".to_string()));
+    }
+
+    #[test]
+    fn accepts_behavior_route_and_category_overrides() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  enabled: true
+  mode: monitor
+  score_window: 10m
+  decay_window: 30m
+  monitor_threshold: 40
+  block_threshold: 80
+  route_overrides:
+    - path: /login
+      monitor_threshold: 30
+      block_threshold: 60
+      score_window: 5m
+  category_overrides:
+    - category: scanner_behavior
+      score_delta: 15
+      monitor_threshold: 30
+      block_threshold: 70
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert!(config.behavior.enabled);
+        assert_eq!(config.behavior.mode, BehaviorMode::Monitor);
+        assert_eq!(config.behavior.route_overrides.len(), 1);
+        assert_eq!(config.behavior.category_overrides.len(), 1);
+    }
+
+    #[test]
+    fn rejects_invalid_behavior_score_window() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  score_window: soon
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBehaviorScoreWindow)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_behavior_decay_window() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  decay_window: 0m
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBehaviorDecayWindow)
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_behavior_monitor_threshold() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  monitor_threshold: 0
+  block_threshold: 80
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBehaviorMonitorThreshold)
+        ));
+    }
+
+    #[test]
+    fn rejects_behavior_block_threshold_below_monitor_threshold() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  monitor_threshold: 80
+  block_threshold: 40
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBehaviorBlockThreshold)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_behavior_route_override_path() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  route_overrides:
+    - path: " "
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBehaviorRouteOverride)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_behavior_category_override() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  category_overrides:
+    - category: ""
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBehaviorCategoryOverride)
+        ));
+    }
+
+    #[test]
+    fn bot_protection_defaults_to_monitor_first_policy_shape() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert!(!config.bot_protection.enabled);
+        assert_eq!(config.bot_protection.mode, BehaviorMode::Monitor);
+        assert_eq!(config.bot_protection.backend, BehaviorBackend::Local);
+        assert_eq!(config.bot_protection.monitor_threshold, 40);
+        assert_eq!(config.bot_protection.block_threshold, 80);
+        assert_eq!(config.bot_protection.temporary_block_duration, "15m");
+        assert!(config
+            .bot_protection
+            .scanner_paths
+            .contains(&"/vendor/phpunit".to_string()));
+        assert_eq!(config.bot_protection.rule.id, "SAUGRA-BOT-PROTECTION-001");
+    }
+
+    #[test]
+    fn accepts_bot_protection_lists_and_route_overrides() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+bot_protection:
+  enabled: true
+  mode: monitor
+  backend: memory
+  score_window: 10m
+  monitor_threshold: 40
+  block_threshold: 80
+  temporary_block_duration: 15m
+  allowlists:
+    ip_ranges:
+      - 203.0.113.0/24
+    user_agents:
+      - Googlebot
+  blocklists:
+    ip_ranges:
+      - 198.51.100.10
+    user_agents:
+      - badbot
+  routes:
+    - path: /login
+      monitor_threshold: 30
+      block_threshold: 60
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert!(config.bot_protection.enabled);
+        assert_eq!(config.bot_protection.routes.len(), 1);
+    }
+
+    #[test]
+    fn rejects_invalid_bot_protection_thresholds() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+bot_protection:
+  monitor_threshold: 80
+  block_threshold: 40
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBotProtectionBlockThreshold)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_bot_protection_list_entry() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+bot_protection:
+  allowlists:
+    user_agents:
+      - " "
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBotProtectionListEntry)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_behavior_probe_path() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  probe_paths:
+    - ""
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBehaviorProbePath)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_bot_protection_scanner_path() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+bot_protection:
+  scanner_paths:
+    - " "
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBotProtectionScannerPath)
+        ));
+    }
+
+    #[test]
+    fn rejects_blank_bot_protection_rule_metadata() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+bot_protection:
+  rule:
+    id: ""
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBotProtectionRule)
+        ));
+    }
+
+    #[test]
+    fn rejects_zero_bot_protection_rule_paranoia_level() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+bot_protection:
+  rule:
+    paranoia_level: 0
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidBotProtectionRuleParanoiaLevel)
         ));
     }
 

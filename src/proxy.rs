@@ -25,6 +25,8 @@ use uuid::Uuid;
 
 use crate::{
     ai,
+    behavior::{self, BehaviorRequest, BehaviorStore},
+    bot::{self, BotProtectionRequest, BotProtectionStore},
     config::{RouteRateLimitConfig, SaugraConfig, UpstreamConfig, WafMode},
     decision::{WafAction, WafDecision},
     event_store::{self, EventLogRetention, SecurityEvent, UpstreamEvent, WebSocketEvent},
@@ -39,6 +41,8 @@ pub struct ProxyState {
     upstreams: Vec<UpstreamConfig>,
     max_body_size_bytes: usize,
     rate_limit_store: Arc<dyn RateLimitStore>,
+    behavior_store: Arc<dyn BehaviorStore>,
+    bot_protection_store: Arc<dyn BotProtectionStore>,
     event_log_path: PathBuf,
     event_log_retention: EventLogRetention,
     rule_set: Arc<RuleSet>,
@@ -65,6 +69,8 @@ impl ProxyState {
             .try_into()
             .context("security.max_body_size is too large for this platform")?;
         let rule_set = Arc::new(rules::load_rule_set(&config.rules)?);
+        let behavior_store = Arc::from(behavior::build_store(&config.behavior)?);
+        let bot_protection_store = Arc::from(bot::build_store(&config.bot_protection)?);
 
         Ok(Self {
             config,
@@ -72,6 +78,8 @@ impl ProxyState {
             upstreams,
             max_body_size_bytes,
             rate_limit_store,
+            behavior_store,
+            bot_protection_store,
             event_log_path,
             event_log_retention,
             rule_set,
@@ -308,12 +316,14 @@ pub async fn proxy_request(
     let matches = state
         .rule_set
         .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
-    let decision = WafDecision::from_matches_with_blocking_paranoia(
+    let decision = decision_with_behavior_and_bot(
+        &state,
         request_id.clone(),
-        state.config.server.mode,
         matches,
-        state.config.rules.inbound_anomaly_threshold,
-        state.config.rules.blocking_paranoia_level(),
+        &client_ip,
+        &path,
+        &headers,
+        &user_agent,
     );
 
     log_decision(
@@ -348,6 +358,8 @@ pub async fn proxy_request(
                 "owasp_category": &decision.owasp_category,
                 "owasp_categories": &decision.owasp_categories,
                 "matched_rules": &decision.matched_rules,
+                "behavior": &decision.behavior,
+                "bot_protection": &decision.bot_protection,
                 "explanation": ai::explain(&decision)
             }),
         ));
@@ -433,12 +445,14 @@ async fn proxy_websocket_handshake(
         .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
     matches.extend(websocket_policy_matches(&state, &parts.headers));
 
-    let decision = WafDecision::from_matches_with_blocking_paranoia(
+    let decision = decision_with_behavior_and_bot(
+        &state,
         request_id.clone(),
-        state.config.server.mode,
         matches,
-        state.config.rules.inbound_anomaly_threshold,
-        state.config.rules.blocking_paranoia_level(),
+        &client_ip,
+        &path,
+        &headers,
+        &user_agent,
     );
     let event = websocket_event(
         &upstream,
@@ -482,6 +496,8 @@ async fn proxy_websocket_handshake(
                 "action": "block",
                 "risk_score": decision.risk_score,
                 "matched_rules": &decision.matched_rules,
+                "behavior": &decision.behavior,
+                "bot_protection": &decision.bot_protection,
                 "explanation": ai::explain(&decision)
             }),
         ));
@@ -769,6 +785,98 @@ fn rate_limit_match(exceeded: &RateLimitExceeded) -> RuleMatch {
     }
 }
 
+fn decision_with_behavior_and_bot(
+    state: &ProxyState,
+    request_id: String,
+    mut matches: Vec<RuleMatch>,
+    client_ip: &str,
+    path: &str,
+    headers: &str,
+    user_agent: &str,
+) -> WafDecision {
+    let bot_outcome = if state.config.bot_protection.enabled {
+        match state.bot_protection_store.evaluate(
+            &state.config.bot_protection,
+            BotProtectionRequest {
+                client_id: client_ip,
+                path,
+                headers,
+                user_agent,
+                server_mode: state.config.server.mode,
+            },
+        ) {
+            Ok(outcome) => Some(outcome),
+            Err(error) => {
+                warn!(request_id, %error, "bot protection failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(outcome) = &bot_outcome {
+        if let Some(rule_match) = bot::bot_rule_match(&state.config.bot_protection, outcome) {
+            matches.push(rule_match);
+        }
+    }
+
+    let behavior_outcome = if state.config.behavior.enabled {
+        match state.behavior_store.evaluate(
+            &state.config.behavior,
+            BehaviorRequest {
+                client_id: client_ip,
+                path,
+                rule_matches: &matches,
+                server_mode: state.config.server.mode,
+            },
+        ) {
+            Ok(outcome) => Some(outcome),
+            Err(error) => {
+                warn!(request_id, %error, "behavior scoring failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
+    if let Some(outcome) = &behavior_outcome {
+        if let Some(rule_match) = behavior::behavior_rule_match(outcome) {
+            matches.push(rule_match);
+        }
+    }
+
+    let decision = WafDecision::from_matches_with_blocking_paranoia(
+        request_id,
+        state.config.server.mode,
+        matches,
+        state.config.rules.inbound_anomaly_threshold,
+        state.config.rules.blocking_paranoia_level(),
+    );
+
+    let mut decision = if let Some(outcome) = behavior_outcome {
+        if outcome.action == WafAction::Block && state.config.server.mode != WafMode::Off {
+            let mut decision = decision.with_behavior(outcome);
+            decision.action = WafAction::Block;
+            decision
+        } else {
+            decision.with_behavior(outcome)
+        }
+    } else {
+        decision
+    };
+
+    if let Some(outcome) = bot_outcome {
+        if outcome.action == WafAction::Block && state.config.server.mode != WafMode::Off {
+            decision.action = WafAction::Block;
+        }
+        decision = decision.with_bot_protection(outcome);
+    }
+
+    decision
+}
+
 fn is_hop_by_hop_header(name: &HeaderName) -> bool {
     matches!(
         name.as_str(),
@@ -923,6 +1031,10 @@ fn log_decision(
         client_ip,
         action = ?decision.action,
         risk_score = decision.risk_score,
+        behavior_score = decision.behavior.as_ref().map(|behavior| behavior.score).unwrap_or(0),
+        behavior_action = ?decision.behavior.as_ref().map(|behavior| behavior.action),
+        bot_protection_score = decision.bot_protection.as_ref().map(|bot| bot.score).unwrap_or(0),
+        bot_protection_action = ?decision.bot_protection.as_ref().map(|bot| bot.action),
         severity = %decision.severity,
         matched_rules = decision.matched_rules.len(),
         owasp_category = decision.owasp_category.as_deref().unwrap_or("none"),
@@ -993,7 +1105,9 @@ fn rate_limit_response(decision: &WafDecision, retry_after_seconds: u64) -> Resp
             "request_id": decision.request_id,
             "action": "block",
             "risk_score": decision.risk_score,
-            "matched_rules": decision.matched_rules,
+            "matched_rules": &decision.matched_rules,
+            "behavior": &decision.behavior,
+            "bot_protection": &decision.bot_protection,
             "explanation": ai::explain(decision),
             "retry_after_seconds": retry_after_seconds
         }),
@@ -1191,6 +1305,8 @@ mod tests {
                 routes: Vec::new(),
             },
             rules: Default::default(),
+            behavior: Default::default(),
+            bot_protection: Default::default(),
             ai: Default::default(),
             logging: Default::default(),
             websocket: Default::default(),

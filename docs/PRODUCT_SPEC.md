@@ -346,6 +346,73 @@ rate_limit:
   requests_per_minute: 120
   burst: 30
 
+behavior:
+  enabled: false
+  mode: monitor
+  backend: local
+  state_path: /var/lib/saugra/saugra-behavior-state.json
+  score_window: 10m
+  decay_window: 30m
+  monitor_threshold: 40
+  block_threshold: 80
+  route_overrides:
+    - path: /login
+      monitor_threshold: 30
+      block_threshold: 60
+      score_window: 5m
+  category_overrides:
+    - category: scanner_behavior
+      score_delta: 15
+      monitor_threshold: 30
+      block_threshold: 70
+  probe_paths:
+    - /.env
+    - /wp-admin
+    - /wp-login.php
+    - /phpmyadmin
+    - /admin
+    - /.git
+    - /server-status
+
+bot_protection:
+  enabled: false
+  mode: monitor
+  backend: local
+  state_path: /var/lib/saugra/saugra-bot-state.json
+  score_window: 10m
+  monitor_threshold: 40
+  block_threshold: 80
+  temporary_block_duration: 15m
+  allowlists:
+    user_agents:
+      - Googlebot
+    ip_ranges: []
+  blocklists:
+    user_agents: []
+    ip_ranges: []
+  routes:
+    - path: /login
+      monitor_threshold: 30
+      block_threshold: 60
+  scanner_paths:
+    - /.env
+    - /wp-admin
+    - /wp-login.php
+    - /phpmyadmin
+    - /admin
+    - /.git
+    - /server-status
+    - /vendor/phpunit
+  rule:
+    id: SAUGRA-BOT-PROTECTION-001
+    name: Bot Protection Threshold
+    category: bot_protection
+    monitor_severity: medium
+    block_severity: high
+    paranoia_level: 1
+    explanation: Bot protection score reached the configured threshold.
+    owasp_category: A06:2025-Insecure Design
+
 ai:
   enabled: true
   mode: explain_only
@@ -420,6 +487,32 @@ Saugra may include `backend: memory` for local development and single-process
 testing, but production documentation must recommend `backend: redis` or another
 durable/distributed backend. The rate-limiting engine should be abstracted so
 memory and Redis implementations share the same policy evaluation path.
+
+Behavior scoring is the abuse layer for repeated suspicious activity over time.
+It is separate from per-request rule anomaly scoring: anomaly score answers
+"what did this request match?", while behavior score answers "what has this
+client been doing recently?" The community implementation should persist local
+behavior state for single-node deployments, emit score contributors in security
+events, include those contributors in explanations and log summaries, and keep
+monitor-first rollout as the default.
+
+Bot protection is the bot-specific traffic abuse layer. It should not use
+CAPTCHA. It should rely on deterministic request signals, route-sensitive
+thresholds, allowlists, blocklists, temporary blocking, and durable local state
+for single-node deployments. Bot outcomes should be explainable in the same
+security event and request decision model as WAF rules, rate limiting, and
+behavior scoring.
+
+Recommended rollout:
+
+1. Start with `bot_protection.enabled: true` and `mode: monitor`.
+2. Review `logs tail`, `logs summary`, and `explain <request-id>` output for
+   bot score contributors.
+3. Tune trusted crawler, internal IP, and service-account allowlists.
+4. Lower thresholds only on sensitive routes such as `/login` after observing
+   real traffic.
+5. Enable `mode: block` only after monitor-mode events show acceptable false
+   positive behavior.
 
 ## 10. API Security Features
 

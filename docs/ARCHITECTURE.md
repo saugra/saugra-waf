@@ -209,6 +209,59 @@ Rate-limiting behavior:
 
 In-memory storage is only for local development. Production deployments should use Redis or another durable/distributed backend.
 
+### 5.5. Behavior Engine
+
+Responsible for repeated-abuse scoring before the final proxy decision.
+
+Behavior configuration is monitor-first and separate from per-request rule
+anomaly scoring:
+
+- global score window and decay window
+- monitor and block thresholds
+- per-route threshold and window overrides
+- per-category score and threshold overrides
+- configured probe paths for repeated enumeration and scanner-path behavior
+- local durable state for single-node deployments
+- memory state for local development and tests
+
+Behavior scoring adds contributors for repeated suspicious activity from the
+same client, including scanner paths, development/internal endpoint probes,
+authentication abuse categories, and repeated low-severity rule matches. The
+behavior result is stored on the request decision and written to security
+events with score, thresholds, window, storage backend, and contributors.
+
+Behavior score is not the same as rule anomaly score. Rule anomaly score is
+computed from matches on the current request. Behavior score is accumulated over
+a configured window for the client and can move repeated low-confidence signals
+from allow to monitor, or from monitor to block when `behavior.mode: block` is
+explicitly enabled.
+
+Production note: `behavior.backend: local` persists state on disk and survives a
+single Saugra process restart. Multi-instance deployments should treat this as a
+single-node backend until a distributed backend is added.
+
+### 5.6. Bot Protection
+
+Responsible for deterministic bot and automation abuse controls without CAPTCHA.
+
+Bot protection uses the same monitor-first posture as the behavior engine, but
+tracks bot-specific policy and state:
+
+- allowlists for trusted crawler user agents, internal IP ranges, and service
+  accounts
+- blocklists for high-risk clients and user-agent patterns
+- deterministic signals such as missing user agents, automation user agents,
+  configured scanner path probes, and suspicious forwarded headers
+- route-specific monitor and block thresholds
+- temporary blocking with persisted local state for single-node deployments
+- configurable synthetic rule metadata for the bot-protection threshold event
+
+Bot protection writes its outcome into the WAF decision so `logs tail`,
+`logs summary`, and `explain <request-id>` can show the score, contributors,
+thresholds, storage backend, allowlist/blocklist status, and temporary block
+duration. CAPTCHA remains out of scope; Saugra should block or monitor based on
+observable request and behavior evidence, not interactive challenges.
+
 ### 6. Decision Engine
 
 Responsible for converting rule matches and rate-limit results into a final action.

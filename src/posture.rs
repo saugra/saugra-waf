@@ -351,6 +351,8 @@ mod tests {
             security: SecurityConfig::default(),
             rate_limit: RateLimitConfig::default(),
             rules: RuleSettings::default(),
+            behavior: Default::default(),
+            bot_protection: Default::default(),
             ai: AiConfig::default(),
             logging: LoggingConfig::default(),
             websocket: Default::default(),

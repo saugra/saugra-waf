@@ -426,6 +426,15 @@ fn print_security_event_summary(summary: &event_store::SecurityEventSummary) {
             println!("  {}\t{}", category.name, category.count);
         }
     }
+
+    println!("behavior actions:");
+    if summary.behavior_actions.is_empty() {
+        println!("  none\t0");
+    } else {
+        for action in &summary.behavior_actions {
+            println!("  {}\t{}", action.name, action.count);
+        }
+    }
 }
 
 fn print_init(target: Option<InitTarget>) -> anyhow::Result<()> {

@@ -55,6 +55,7 @@ pub struct SecurityEventSummary {
     pub total_events: usize,
     pub actions: Vec<EventCount>,
     pub owasp_categories: Vec<EventCount>,
+    pub behavior_actions: Vec<EventCount>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -292,6 +293,7 @@ pub fn find_by_request_id(
 pub fn summarize(events: &[SecurityEvent]) -> SecurityEventSummary {
     let mut actions = std::collections::BTreeMap::<String, usize>::new();
     let mut owasp_categories = std::collections::BTreeMap::<String, usize>::new();
+    let mut behavior_actions = std::collections::BTreeMap::<String, usize>::new();
 
     for event in events {
         *actions
@@ -305,12 +307,25 @@ pub fn summarize(events: &[SecurityEvent]) -> SecurityEventSummary {
                 *owasp_categories.entry(category.clone()).or_default() += 1;
             }
         }
+
+        if let Some(behavior) = &event.decision.behavior {
+            *behavior_actions
+                .entry(format!("{:?}", behavior.action).to_ascii_lowercase())
+                .or_default() += 1;
+        }
+
+        if let Some(bot_protection) = &event.decision.bot_protection {
+            *behavior_actions
+                .entry(format!("bot_{:?}", bot_protection.action).to_ascii_lowercase())
+                .or_default() += 1;
+        }
     }
 
     SecurityEventSummary {
         total_events: events.len(),
         actions: event_counts(actions),
         owasp_categories: event_counts(owasp_categories),
+        behavior_actions: event_counts(behavior_actions),
     }
 }
 
@@ -383,7 +398,11 @@ fn rotated_path(path: &Path, index: usize) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decision::{WafAction, WafDecision};
+    use crate::{
+        behavior::BehaviorOutcome,
+        bot::BotProtectionOutcome,
+        decision::{WafAction, WafDecision},
+    };
 
     #[test]
     fn appends_tails_and_finds_events() {
@@ -547,6 +566,64 @@ mod tests {
                 },
             ]
         );
+        assert!(summary.behavior_actions.is_empty());
+    }
+
+    #[test]
+    fn summarizes_behavior_actions() {
+        let mut decision = decision("request-1");
+        decision.behavior = Some(BehaviorOutcome {
+            enabled: true,
+            action: WafAction::Monitor,
+            score: 40,
+            monitor_threshold: 40,
+            block_threshold: 80,
+            score_window_seconds: 600,
+            decay_window_seconds: 1_800,
+            storage_backend: "memory".to_string(),
+            contributors: Vec::new(),
+        });
+        let events = vec![SecurityEvent::new("GET", "/.env", "", decision)];
+
+        let summary = summarize(&events);
+
+        assert_eq!(
+            summary.behavior_actions,
+            vec![EventCount {
+                name: "monitor".to_string(),
+                count: 1,
+            }]
+        );
+    }
+
+    #[test]
+    fn summarizes_bot_protection_actions() {
+        let mut decision = decision("request-1");
+        decision.bot_protection = Some(BotProtectionOutcome {
+            enabled: true,
+            action: WafAction::Block,
+            score: 80,
+            monitor_threshold: 40,
+            block_threshold: 80,
+            score_window_seconds: 600,
+            temporary_block_duration_seconds: 900,
+            temporary_blocked_until: Some(1_779_035_662),
+            storage_backend: "memory".to_string(),
+            allowlisted: false,
+            blocklisted: true,
+            contributors: Vec::new(),
+        });
+        let events = vec![SecurityEvent::new("GET", "/.env", "", decision)];
+
+        let summary = summarize(&events);
+
+        assert_eq!(
+            summary.behavior_actions,
+            vec![EventCount {
+                name: "bot_block".to_string(),
+                count: 1,
+            }]
+        );
     }
 
     #[test]
@@ -600,6 +677,8 @@ mod tests {
             explanation: "No security rules matched this request.".to_string(),
             owasp_category: None,
             owasp_categories: Vec::new(),
+            behavior: None,
+            bot_protection: None,
         }
     }
 }
