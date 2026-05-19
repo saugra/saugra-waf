@@ -91,7 +91,18 @@ Make sure you write tests for:
 * Rate limiting behavior (both in-memory and Redis).
 * Structured JSON logging outputs.
 
-### 4. Validating Rules and Configs
+### 4. Coverage
+
+GitHub Actions generates an LCOV coverage report and uploads it to Codecov when
+the repository has a `CODECOV_TOKEN` Actions secret configured. Store the token
+only in the CI secret manager; do not commit it to source files, examples, or
+documentation.
+
+Run the normal Rust test suite before collecting coverage. Treat coverage as a
+regression signal for security-critical paths, not as a reason to add weak
+tests.
+
+### 5. Validating Rules and Configs
 
 Always verify that Saugra compiles and can validate the example configuration and rules files:
 ```bash

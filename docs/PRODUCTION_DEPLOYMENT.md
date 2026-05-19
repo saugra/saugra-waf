@@ -38,8 +38,8 @@ curl https://sh.rustup.rs -sSf | sh
 Clone and build Saugra:
 
 ```bash
-git clone https://github.com/<your-org>/saugra.git /opt/saugra-src
-cd /opt/saugra-src
+git clone https://github.com/<your-org>/saugra.git /opt/saugra
+cd /opt/saugra
 cargo build --release
 install -m 0755 target/release/saugra /usr/local/bin/saugra
 ```
@@ -317,7 +317,7 @@ Until packaged releases exist, upgrade by rebuilding from Git and restarting the
 service:
 
 ```bash
-cd /opt/saugra-src
+cd /opt/saugra
 git pull
 cargo build --release
 install -m 0755 target/release/saugra /usr/local/bin/saugra

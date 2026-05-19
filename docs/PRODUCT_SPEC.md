@@ -31,10 +31,11 @@ Saugra WAF addresses this by offering a developer-friendly, self-hosted, Rust-po
 
 ## Positioning Against Established WAFs
 
-Saugra should be positioned honestly against mature, established WAF platforms.
-Those tools are powerful, widely deployed, and battle-tested. Saugra should not
-claim broad parity with them, but Saugra should be designed for cautious
-production use on real applications after monitor-mode tuning.
+Mature WAF platforms are powerful and widely deployed, but many teams find them
+expensive, complex to configure, difficult to tune, or hard to explain. Saugra
+should be positioned as a developer-friendly, self-hosted alternative for teams
+that want rules-first protection, transparent decisions, and a monitor-first
+path to production blocking.
 
 Saugra's differentiation is developer experience:
 
