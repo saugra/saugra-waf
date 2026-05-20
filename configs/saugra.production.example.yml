@@ -1,7 +1,21 @@
+# Production-oriented Saugra WAF configuration.
+# Start in monitor mode, review security events, tune false positives, then move
+# to block mode when the app-specific rules are understood.
+
+# Saugra should normally listen on localhost behind Nginx, Apache, or a load
+# balancer. Do not bind this directly to a public interface unless you have a
+# separate network control in front of it.
 server:
   listen: 127.0.0.1:8787
+  # Modes:
+  # - off: forward traffic without rule-based monitor/block decisions.
+  # - monitor: log suspicious traffic without blocking it. Recommended first.
+  # - block: block only when blocking-eligible findings reach the anomaly threshold.
+  # - strict: block any blocking-eligible rule match. Use only after careful tuning.
   mode: monitor
 
+# Upstreams are the protected backend services Saugra forwards safe requests to.
+# The host value is the public Host header Saugra should match for that service.
 upstreams:
   - name: app
     host: example.com
@@ -13,6 +27,8 @@ upstreams:
   #   host: example.com
   #   target: http://127.0.0.1:8002
 
+# Routes map request path prefixes to upstream names. More specific prefixes
+# should be listed before broad catch-all routes such as /.
 routes:
   - path_prefix: /
     upstream: app
@@ -21,15 +37,24 @@ routes:
   # - path_prefix: /ws/
   #   upstream: ws
 
+# Core request inspection controls.
 security:
+  # Bodies larger than this are not fully inspected; choose a limit appropriate
+  # for your application upload/API profile.
   max_body_size: 2mb
+  # Production deployments should use Redis-backed rate limiting below.
   enable_rate_limiting: true
   block_suspicious_user_agents: true
   inspect_json_body: true
 
+# Rate limiting protects login, payment, API, and other abuse-sensitive routes.
+# Redis is recommended in production so limits survive restarts and work across
+# multiple Saugra instances.
 rate_limit:
   backend: redis
   redis_url: redis://127.0.0.1:6379
+  # Prefer injecting secrets through deployment tooling instead of committing
+  # passwords into config files.
   redis_password: null
   requests_per_minute: 120
   burst: 30
@@ -38,9 +63,14 @@ rate_limit:
       requests_per_minute: 10
       burst: 5
 
+# Behavior scoring tracks repeated suspicious activity over time. Keep disabled
+# or monitor-only until you have reviewed real traffic for false positives.
 behavior:
-  enabled: false
+  enabled: true
   mode: monitor
+  # local persists to state_path on disk. Use a shared backend when running
+  # multiple Saugra instances. To survive server reboots, keep this path on
+  # persistent storage and make it writable by the Saugra service user.
   backend: local
   state_path: /var/lib/saugra/saugra-behavior-state.json
   score_window: 10m
@@ -57,18 +87,25 @@ behavior:
       score_delta: 15
       monitor_threshold: 30
       block_threshold: 70
-  probe_paths:
-    - /.env
-    - /wp-admin
-    - /wp-login.php
-    - /phpmyadmin
-    - /admin
-    - /.git
-    - /server-status
+  # "builtin" uses Saugra's packaged scanner/probe catalog. In binary builds,
+  # that catalog is embedded at compile time, so editing the source
+  # configs/intelligence/scanner-paths.yml after build will not change runtime
+  # behavior. Use probe_paths_extra for site-specific additions, or set
+  # probe_path_catalog to an external path such as
+  # /etc/saugra/intelligence/scanner-paths.yml when operators need to manage the
+  # full catalog without rebuilding Saugra.
+  probe_path_catalog: builtin
+  # Extra app-specific probe paths are merged with the selected catalog.
+  probe_paths_extra: []
 
+# Bot protection scores scanner-like behavior, blocklists, and suspicious
+# automation signals. Enable in monitor mode first, then tune thresholds.
 bot_protection:
-  enabled: false
+  enabled: true
   mode: monitor
+  # local persists temporary blocks and scores to state_path on disk. To survive
+  # server reboots, keep this path on persistent storage and make it writable by
+  # the Saugra service user.
   backend: local
   state_path: /var/lib/saugra/saugra-bot-state.json
   score_window: 10m
@@ -86,15 +123,14 @@ bot_protection:
     - path: /login
       monitor_threshold: 30
       block_threshold: 60
-  scanner_paths:
-    - /.env
-    - /wp-admin
-    - /wp-login.php
-    - /phpmyadmin
-    - /admin
-    - /.git
-    - /server-status
-    - /vendor/phpunit
+  # "builtin" uses Saugra's packaged scanner/probe catalog. In binary builds,
+  # that catalog is embedded at compile time. Use scanner_paths_extra for
+  # site-specific additions, or point scanner_path_catalog at an external file
+  # such as /etc/saugra/intelligence/scanner-paths.yml for runtime-managed
+  # scanner paths.
+  scanner_path_catalog: builtin
+  # Extra app-specific scanner paths are merged with the selected catalog.
+  scanner_paths_extra: []
   rule:
     id: SAUGRA-BOT-PROTECTION-001
     name: Bot Protection Threshold
@@ -105,11 +141,18 @@ bot_protection:
     explanation: Bot protection score reached the configured threshold.
     owasp_category: A06:2025-Insecure Design
 
+# Rule settings control built-in rule packs, anomaly scoring, and false-positive
+# exclusions. Rules remain data-driven so behavior can be tuned without code
+# changes.
 rules:
   owasp_crs: true
+  # paranoia_level controls loaded rules. Start at 1 for lower false positives.
   paranoia_level: 1
+  # detection_paranoia_level can be higher than blocking_paranoia_level to log
+  # stricter findings without blocking them yet.
   detection_paranoia_level: 1
   blocking_paranoia_level: 1
+  # In block mode, requests block when blocking-eligible findings reach this score.
   inbound_anomaly_threshold: 5
   files:
     - /etc/saugra/rules/REQUEST-913-SCANNER-DETECTION.yml
@@ -136,10 +179,14 @@ rules:
   #       - content
   exclusions: []
 
+# AI is explain-only. It should help administrators understand and tune events;
+# deterministic rules and scoring decide monitor/block behavior.
 ai:
   enabled: true
   mode: explain_only
 
+# Structured event logs are the administrator-facing source of truth for block
+# reasons, explanations, and request references shown to users.
 logging:
   format: json
   level: info
@@ -148,6 +195,7 @@ logging:
   event_log_max_files: 30
   timezone: Africa/Nairobi
 
+# WebSocket handshakes are inspected before Saugra upgrades and tunnels traffic.
 websocket:
   enabled: true
   # Configure exact public browser origins before routing /ws/ through Saugra.
@@ -156,6 +204,8 @@ websocket:
   allowed_hosts:
     - example.com
 
+# Posture checks report deployment risks around TLS, methods, cookies, headers,
+# and dependency reports. They complement request inspection.
 posture:
   enabled: true
   expected_external_scheme: https
@@ -172,5 +222,7 @@ posture:
 reports:
   dependency_report_paths: []
 
+# Standards catalogs provide OWASP/category metadata for reporting and operator
+# explanations.
 standards:
   owasp_catalog: /etc/saugra/standards/owasp-top-10-2025.yml

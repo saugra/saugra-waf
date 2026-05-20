@@ -39,7 +39,7 @@ rate_limit:
       burst: 5
 
 behavior:
-  enabled: false
+  enabled: true
   mode: monitor
   backend: local
   state_path: logs/saugra-behavior-state.json
@@ -57,17 +57,13 @@ behavior:
       score_delta: 15
       monitor_threshold: 30
       block_threshold: 70
-  probe_paths:
-    - /.env
-    - /wp-admin
-    - /wp-login.php
-    - /phpmyadmin
-    - /admin
-    - /.git
-    - /server-status
+  # "builtin" is embedded in compiled binaries. Use probe_paths_extra for local
+  # additions, or point probe_path_catalog to an external YAML catalog.
+  probe_path_catalog: builtin
+  probe_paths_extra: []
 
 bot_protection:
-  enabled: false
+  enabled: true
   mode: monitor
   backend: local
   state_path: logs/saugra-bot-state.json
@@ -86,15 +82,10 @@ bot_protection:
     - path: /login
       monitor_threshold: 30
       block_threshold: 60
-  scanner_paths:
-    - /.env
-    - /wp-admin
-    - /wp-login.php
-    - /phpmyadmin
-    - /admin
-    - /.git
-    - /server-status
-    - /vendor/phpunit
+  # "builtin" is embedded in compiled binaries. Use scanner_paths_extra for
+  # local additions, or point scanner_path_catalog to an external YAML catalog.
+  scanner_path_catalog: builtin
+  scanner_paths_extra: []
   rule:
     id: SAUGRA-BOT-PROTECTION-001
     name: Bot Protection Threshold

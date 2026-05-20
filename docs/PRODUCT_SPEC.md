@@ -348,7 +348,7 @@ rate_limit:
   burst: 30
 
 behavior:
-  enabled: false
+  enabled: true
   mode: monitor
   backend: local
   state_path: /var/lib/saugra/saugra-behavior-state.json
@@ -366,17 +366,11 @@ behavior:
       score_delta: 15
       monitor_threshold: 30
       block_threshold: 70
-  probe_paths:
-    - /.env
-    - /wp-admin
-    - /wp-login.php
-    - /phpmyadmin
-    - /admin
-    - /.git
-    - /server-status
+  probe_path_catalog: builtin
+  probe_paths_extra: []
 
 bot_protection:
-  enabled: false
+  enabled: true
   mode: monitor
   backend: local
   state_path: /var/lib/saugra/saugra-bot-state.json
@@ -395,15 +389,8 @@ bot_protection:
     - path: /login
       monitor_threshold: 30
       block_threshold: 60
-  scanner_paths:
-    - /.env
-    - /wp-admin
-    - /wp-login.php
-    - /phpmyadmin
-    - /admin
-    - /.git
-    - /server-status
-    - /vendor/phpunit
+  scanner_path_catalog: builtin
+  scanner_paths_extra: []
   rule:
     id: SAUGRA-BOT-PROTECTION-001
     name: Bot Protection Threshold

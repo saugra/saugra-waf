@@ -60,6 +60,8 @@ pub enum ConfigError {
     InvalidBehaviorRouteOverride,
     #[error("behavior.category_overrides entries must include a non-empty category")]
     InvalidBehaviorCategoryOverride,
+    #[error("behavior.probe_path_catalog must not be blank when provided")]
+    InvalidBehaviorProbePathCatalog,
     #[error("behavior.probe_paths entries must not be blank")]
     InvalidBehaviorProbePath,
     #[error("bot_protection.score_window must be a positive duration, for example 10m")]
@@ -78,6 +80,8 @@ pub enum ConfigError {
     InvalidBotProtectionRoute,
     #[error("bot_protection allowlist and blocklist entries must not be blank")]
     InvalidBotProtectionListEntry,
+    #[error("bot_protection.scanner_path_catalog must not be blank when provided")]
+    InvalidBotProtectionScannerPathCatalog,
     #[error("bot_protection.scanner_paths entries must not be blank")]
     InvalidBotProtectionScannerPath,
     #[error("bot_protection.rule id, name, category, and explanation must not be blank")]
@@ -112,6 +116,11 @@ pub enum ConfigError {
     InvalidWebSocketAllowedOrigin,
     #[error("websocket.allowed_hosts entries must not be blank")]
     InvalidWebSocketAllowedHost,
+    #[error("failed to parse threat path catalog {path}: {source}")]
+    InvalidThreatPathCatalog {
+        path: String,
+        source: serde_yaml::Error,
+    },
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -265,14 +274,18 @@ pub struct BehaviorConfig {
     pub route_overrides: Vec<BehaviorRouteOverrideConfig>,
     #[serde(default)]
     pub category_overrides: Vec<BehaviorCategoryOverrideConfig>,
+    #[serde(default)]
+    pub probe_path_catalog: Option<String>,
     #[serde(default = "default_probe_paths")]
     pub probe_paths: Vec<String>,
+    #[serde(default)]
+    pub probe_paths_extra: Vec<String>,
 }
 
 impl Default for BehaviorConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             mode: BehaviorMode::Monitor,
             backend: BehaviorBackend::Local,
             state_path: default_behavior_state_path(),
@@ -282,7 +295,9 @@ impl Default for BehaviorConfig {
             block_threshold: default_behavior_block_threshold(),
             route_overrides: Vec::new(),
             category_overrides: Vec::new(),
+            probe_path_catalog: None,
             probe_paths: default_probe_paths(),
+            probe_paths_extra: Vec::new(),
         }
     }
 }
@@ -350,8 +365,12 @@ pub struct BotProtectionConfig {
     pub blocklists: BotProtectionLists,
     #[serde(default)]
     pub routes: Vec<BotProtectionRouteConfig>,
+    #[serde(default)]
+    pub scanner_path_catalog: Option<String>,
     #[serde(default = "default_scanner_paths")]
     pub scanner_paths: Vec<String>,
+    #[serde(default)]
+    pub scanner_paths_extra: Vec<String>,
     #[serde(default)]
     pub rule: BotProtectionRuleConfig,
 }
@@ -359,7 +378,7 @@ pub struct BotProtectionConfig {
 impl Default for BotProtectionConfig {
     fn default() -> Self {
         Self {
-            enabled: false,
+            enabled: true,
             mode: BehaviorMode::Monitor,
             backend: BehaviorBackend::Local,
             state_path: default_bot_protection_state_path(),
@@ -370,10 +389,20 @@ impl Default for BotProtectionConfig {
             allowlists: BotProtectionLists::default(),
             blocklists: BotProtectionLists::default(),
             routes: Vec::new(),
+            scanner_path_catalog: None,
             scanner_paths: default_scanner_paths(),
+            scanner_paths_extra: Vec::new(),
             rule: BotProtectionRuleConfig::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+struct ThreatPathCatalog {
+    #[serde(default)]
+    behavior_probe_paths: Vec<String>,
+    #[serde(default)]
+    bot_scanner_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -604,7 +633,9 @@ pub struct ReportConfig {
 impl SaugraConfig {
     pub fn from_file(path: &Path) -> Result<Self, ConfigError> {
         let contents = fs::read_to_string(path)?;
-        Ok(serde_yaml::from_str(&contents)?)
+        let mut config: Self = serde_yaml::from_str(&contents)?;
+        config.resolve_threat_path_catalogs()?;
+        Ok(config)
     }
 
     pub fn validate(&self) -> Result<(), ConfigError> {
@@ -800,6 +831,39 @@ impl SaugraConfig {
         Ok(())
     }
 
+    fn resolve_threat_path_catalogs(&mut self) -> Result<(), ConfigError> {
+        if let Some(catalog_path) = self.behavior.probe_path_catalog.as_deref() {
+            if catalog_path.trim().is_empty() {
+                return Err(ConfigError::InvalidBehaviorProbePathCatalog);
+            }
+            let catalog = load_threat_path_catalog(catalog_path)?;
+            self.behavior.probe_paths.clear();
+            merge_unique_paths(&mut self.behavior.probe_paths, catalog.behavior_probe_paths);
+        }
+        merge_unique_paths(
+            &mut self.behavior.probe_paths,
+            self.behavior.probe_paths_extra.clone(),
+        );
+
+        if let Some(catalog_path) = self.bot_protection.scanner_path_catalog.as_deref() {
+            if catalog_path.trim().is_empty() {
+                return Err(ConfigError::InvalidBotProtectionScannerPathCatalog);
+            }
+            let catalog = load_threat_path_catalog(catalog_path)?;
+            self.bot_protection.scanner_paths.clear();
+            merge_unique_paths(
+                &mut self.bot_protection.scanner_paths,
+                catalog.bot_scanner_paths,
+            );
+        }
+        merge_unique_paths(
+            &mut self.bot_protection.scanner_paths,
+            self.bot_protection.scanner_paths_extra.clone(),
+        );
+
+        Ok(())
+    }
+
     fn validate_behavior(&self) -> Result<(), ConfigError> {
         if parse_duration_seconds(&self.behavior.score_window).is_none() {
             return Err(ConfigError::InvalidBehaviorScoreWindow);
@@ -856,8 +920,18 @@ impl SaugraConfig {
 
         if self
             .behavior
+            .probe_path_catalog
+            .as_deref()
+            .is_some_and(|path| path.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidBehaviorProbePathCatalog);
+        }
+
+        if self
+            .behavior
             .probe_paths
             .iter()
+            .chain(self.behavior.probe_paths_extra.iter())
             .any(|path| path.trim().is_empty())
         {
             return Err(ConfigError::InvalidBehaviorProbePath);
@@ -907,8 +981,18 @@ impl SaugraConfig {
 
         if self
             .bot_protection
+            .scanner_path_catalog
+            .as_deref()
+            .is_some_and(|path| path.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidBotProtectionScannerPathCatalog);
+        }
+
+        if self
+            .bot_protection
             .scanner_paths
             .iter()
+            .chain(self.bot_protection.scanner_paths_extra.iter())
             .any(|path| path.trim().is_empty())
         {
             return Err(ConfigError::InvalidBotProtectionScannerPath);
@@ -1214,35 +1298,39 @@ fn default_bot_protection_owasp_category() -> Option<String> {
     Some("A06:2025-Insecure Design".to_string())
 }
 
+const BUILTIN_THREAT_PATH_CATALOG: &str = include_str!("../configs/intelligence/scanner-paths.yml");
+
+fn load_builtin_threat_path_catalog() -> ThreatPathCatalog {
+    serde_yaml::from_str(BUILTIN_THREAT_PATH_CATALOG)
+        .expect("bundled threat path catalog must be valid YAML")
+}
+
+fn load_threat_path_catalog(path: &str) -> Result<ThreatPathCatalog, ConfigError> {
+    if path == "builtin" {
+        return Ok(load_builtin_threat_path_catalog());
+    }
+
+    let contents = fs::read_to_string(path)?;
+    serde_yaml::from_str(&contents).map_err(|source| ConfigError::InvalidThreatPathCatalog {
+        path: path.to_string(),
+        source,
+    })
+}
+
+fn merge_unique_paths(paths: &mut Vec<String>, additions: Vec<String>) {
+    for addition in additions {
+        if !paths.iter().any(|path| path == &addition) {
+            paths.push(addition);
+        }
+    }
+}
+
 fn default_probe_paths() -> Vec<String> {
-    [
-        "/.env",
-        "/wp-admin",
-        "/wp-login.php",
-        "/phpmyadmin",
-        "/admin",
-        "/.git",
-        "/server-status",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
+    load_builtin_threat_path_catalog().behavior_probe_paths
 }
 
 fn default_scanner_paths() -> Vec<String> {
-    [
-        "/.env",
-        "/wp-admin",
-        "/wp-login.php",
-        "/phpmyadmin",
-        "/admin",
-        "/.git",
-        "/server-status",
-        "/vendor/phpunit",
-    ]
-    .into_iter()
-    .map(str::to_string)
-    .collect()
+    load_builtin_threat_path_catalog().bot_scanner_paths
 }
 
 fn default_ai_mode() -> String {
@@ -1299,6 +1387,72 @@ mod tests {
 
         assert!(config.validate().is_ok());
         assert_eq!(config.max_body_size_bytes().unwrap(), 2 * 1024 * 1024);
+    }
+
+    #[test]
+    fn from_file_merges_threat_path_catalogs_and_extra_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let catalog_path = dir.path().join("scanner-paths.yml");
+        let config_path = dir.path().join("saugra.yml");
+        std::fs::write(
+            &catalog_path,
+            r#"
+behavior_probe_paths:
+  - /catalog-probe
+bot_scanner_paths:
+  - /catalog-scanner
+"#,
+        )
+        .unwrap();
+        std::fs::write(
+            &config_path,
+            format!(
+                r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+behavior:
+  probe_path_catalog: {}
+  probe_paths_extra:
+    - /custom-probe
+bot_protection:
+  scanner_path_catalog: {}
+  scanner_paths_extra:
+    - /custom-scanner
+"#,
+                catalog_path.display(),
+                catalog_path.display()
+            ),
+        )
+        .unwrap();
+
+        let config = SaugraConfig::from_file(&config_path).unwrap();
+
+        config.validate().unwrap();
+        assert!(config
+            .behavior
+            .probe_paths
+            .contains(&"/catalog-probe".to_string()));
+        assert!(config
+            .behavior
+            .probe_paths
+            .contains(&"/custom-probe".to_string()));
+        assert!(!config.behavior.probe_paths.contains(&"/.env".to_string()));
+        assert!(config
+            .bot_protection
+            .scanner_paths
+            .contains(&"/catalog-scanner".to_string()));
+        assert!(config
+            .bot_protection
+            .scanner_paths
+            .contains(&"/custom-scanner".to_string()));
+        assert!(!config
+            .bot_protection
+            .scanner_paths
+            .contains(&"/vendor/phpunit".to_string()));
     }
 
     #[test]
@@ -1624,7 +1778,7 @@ upstreams:
         .unwrap();
 
         config.validate().unwrap();
-        assert!(!config.behavior.enabled);
+        assert!(config.behavior.enabled);
         assert_eq!(config.behavior.mode, BehaviorMode::Monitor);
         assert_eq!(config.behavior.backend, BehaviorBackend::Local);
         assert_eq!(
@@ -1827,7 +1981,7 @@ upstreams:
         .unwrap();
 
         config.validate().unwrap();
-        assert!(!config.bot_protection.enabled);
+        assert!(config.bot_protection.enabled);
         assert_eq!(config.bot_protection.mode, BehaviorMode::Monitor);
         assert_eq!(config.bot_protection.backend, BehaviorBackend::Local);
         assert_eq!(config.bot_protection.monitor_threshold, 40);

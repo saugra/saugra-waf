@@ -14,7 +14,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-ReadWritePaths=/var/log/saugra
+StateDirectory=saugra
+LogsDirectory=saugra
+ReadWritePaths=/var/log/saugra /var/lib/saugra
 
 [Install]
 WantedBy=multi-user.target

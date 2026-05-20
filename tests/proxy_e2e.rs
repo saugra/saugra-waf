@@ -488,6 +488,7 @@ async fn behavior_monitor_mode_records_score_and_still_forwards() {
         block_threshold: 80,
         ..BehaviorConfig::default()
     };
+    config.bot_protection.enabled = false;
     let state = ProxyState::with_transport(
         config,
         fake_upstream.clone(),
@@ -900,7 +901,10 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
             backend: BehaviorBackend::Memory,
             ..BehaviorConfig::default()
         },
-        bot_protection: Default::default(),
+        bot_protection: BotProtectionConfig {
+            backend: BehaviorBackend::Memory,
+            ..BotProtectionConfig::default()
+        },
         ai: AiConfig::default(),
         logging: LoggingConfig::default(),
         websocket: Default::default(),
