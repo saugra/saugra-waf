@@ -274,12 +274,15 @@ async fn block_mode_returns_safe_json_response_for_attack_request() {
     let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
 
     assert_eq!(status, StatusCode::FORBIDDEN);
-    assert_eq!(json["action"], "block");
-    assert_eq!(json["risk_score"], 80);
-    assert_eq!(json["owasp_category"], "A05:2025-Injection");
-    assert_eq!(json["owasp_categories"][0], "A05:2025-Injection");
-    assert_eq!(json["matched_rules"][0]["rule_id"], "SAUGRA-SQLI-001");
-    assert!(json["request_id"].as_str().is_some());
+    assert_eq!(json["message"], "Denied");
+    assert!(json["reference"].as_str().is_some());
+    assert!(json.get("action").is_none());
+    assert!(json.get("request_id").is_none());
+    assert!(json.get("risk_score").is_none());
+    assert!(json.get("owasp_category").is_none());
+    assert!(json.get("owasp_categories").is_none());
+    assert!(json.get("matched_rules").is_none());
+    assert!(json.get("explanation").is_none());
 }
 
 #[tokio::test]
@@ -447,10 +450,21 @@ async fn rate_limit_blocks_and_persists_event_before_forwarding() {
     let response = proxy_request(State(state), second_request)
         .await
         .unwrap_err();
+    let status = response.status();
+    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
     let events = event_store::tail(&event_log_path, retention, 10).unwrap();
     let recorded = fake_upstream.requests.lock().unwrap();
 
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(json["message"], "Denied");
+    assert!(json["reference"].as_str().is_some());
+    assert!(json.get("action").is_none());
+    assert!(json.get("request_id").is_none());
+    assert!(json.get("retry_after_seconds").is_none());
+    assert!(json.get("risk_score").is_none());
+    assert!(json.get("matched_rules").is_none());
+    assert!(json.get("explanation").is_none());
     assert_eq!(recorded.len(), 1);
     assert_eq!(events.len(), 2);
     assert_eq!(events[1].upstream.as_ref().unwrap().name, "app");
@@ -805,7 +819,7 @@ async fn websocket_rate_limit_blocks_handshake_before_forwarding() {
     let response = proxy_request(State(state), second).await.unwrap_err();
     let events = event_store::tail(&event_log_path, retention, 10).unwrap();
 
-    assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
     assert!(fake_upstream.requests.lock().unwrap().is_empty());
     assert_eq!(events[1].decision.action, WafAction::Block);
     assert_eq!(

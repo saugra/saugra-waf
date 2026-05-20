@@ -24,7 +24,6 @@ use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use crate::{
-    ai,
     behavior::{self, BehaviorRequest, BehaviorStore},
     bot::{self, BotProtectionRequest, BotProtectionStore},
     config::{RouteRateLimitConfig, SaugraConfig, UpstreamConfig, WafMode},
@@ -265,7 +264,7 @@ pub async fn proxy_request(
             );
 
             if decision.action == WafAction::Block {
-                return Err(rate_limit_response(&decision, exceeded.retry_after_seconds));
+                return Err(blocked_response(&decision));
             }
         }
     }
@@ -349,20 +348,7 @@ pub async fn proxy_request(
     );
 
     if decision.action == WafAction::Block {
-        return Err(json_response(
-            StatusCode::FORBIDDEN,
-            json!({
-                "request_id": request_id,
-                "action": "block",
-                "risk_score": decision.risk_score,
-                "owasp_category": &decision.owasp_category,
-                "owasp_categories": &decision.owasp_categories,
-                "matched_rules": &decision.matched_rules,
-                "behavior": &decision.behavior,
-                "bot_protection": &decision.bot_protection,
-                "explanation": ai::explain(&decision)
-            }),
-        ));
+        return Err(blocked_response(&decision));
     }
 
     let upstream_uri = build_upstream_uri(&upstream.target, &parts.uri).map_err(|error| {
@@ -489,18 +475,7 @@ async fn proxy_websocket_handshake(
     );
 
     if decision.action == WafAction::Block {
-        return Err(json_response(
-            StatusCode::FORBIDDEN,
-            json!({
-                "request_id": request_id,
-                "action": "block",
-                "risk_score": decision.risk_score,
-                "matched_rules": &decision.matched_rules,
-                "behavior": &decision.behavior,
-                "bot_protection": &decision.bot_protection,
-                "explanation": ai::explain(&decision)
-            }),
-        ));
+        return Err(blocked_response(&decision));
     }
 
     let Some(client_upgrade) = client_upgrade else {
@@ -1098,26 +1073,14 @@ fn json_response(status: StatusCode, body: serde_json::Value) -> Response<Body> 
     (status, Json(body)).into_response()
 }
 
-fn rate_limit_response(decision: &WafDecision, retry_after_seconds: u64) -> Response<Body> {
-    let mut response = json_response(
-        StatusCode::TOO_MANY_REQUESTS,
+fn blocked_response(decision: &WafDecision) -> Response<Body> {
+    json_response(
+        StatusCode::FORBIDDEN,
         json!({
-            "request_id": decision.request_id,
-            "action": "block",
-            "risk_score": decision.risk_score,
-            "matched_rules": &decision.matched_rules,
-            "behavior": &decision.behavior,
-            "bot_protection": &decision.bot_protection,
-            "explanation": ai::explain(decision),
-            "retry_after_seconds": retry_after_seconds
+            "message": "Denied",
+            "reference": &decision.request_id
         }),
-    );
-
-    if let Ok(value) = retry_after_seconds.to_string().parse() {
-        response.headers_mut().insert(header::RETRY_AFTER, value);
-    }
-
-    response
+    )
 }
 
 #[allow(dead_code)]
