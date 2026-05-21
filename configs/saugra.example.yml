@@ -131,11 +131,15 @@ logging:
   timezone: UTC
 
 websocket:
+  # Set to false if your application does not use WebSockets.
   enabled: true
-  # Empty allowlists only inspect the handshake with normal WAF rules.
-  # Add exact public origins and hosts before routing production /ws/ traffic.
+  # allowed_origins checks the browser Origin header during the WebSocket
+  # handshake. Use exact public site origins, for example:
+  # - https://test.conference.ke
   allowed_origins:
     - https://example.com
+  # allowed_hosts checks the public Host header used for WebSocket requests.
+  # This should normally match the domain users connect to.
   allowed_hosts:
     - example.com
 

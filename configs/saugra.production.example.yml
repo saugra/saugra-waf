@@ -197,10 +197,15 @@ logging:
 
 # WebSocket handshakes are inspected before Saugra upgrades and tunnels traffic.
 websocket:
+  # Set to false if your application does not use WebSockets.
   enabled: true
-  # Configure exact public browser origins before routing /ws/ through Saugra.
+  # allowed_origins checks the browser Origin header during the WebSocket
+  # handshake. Use exact public site origins, for example:
+  # - https://test.conference.ke
   allowed_origins:
     - https://example.com
+  # allowed_hosts checks the public Host header used for WebSocket requests.
+  # This should normally match the domain users connect to.
   allowed_hosts:
     - example.com
 

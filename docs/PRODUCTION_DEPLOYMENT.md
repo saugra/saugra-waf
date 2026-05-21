@@ -16,10 +16,93 @@ switch to `block` after tuning.
 - Nginx or Apache as the public web server
 - Writable event log directory, for example `/var/log/saugra`
 
-## Install Saugra on Ubuntu
+## Install Saugra on Ubuntu or Debian
 
-Today, the supported install path is from Git/source. Packaged binary releases
-and Ubuntu apt repositories should be added later when release packaging exists.
+The recommended production install path is the `.deb` package from a tagged
+Saugra release. Source installs remain useful for development and testing.
+
+### Install From A Downloaded `.deb`
+
+If the package is already on the server, install it with `apt` so dependencies
+are handled correctly:
+
+```bash
+cd /opt
+apt install ./saugra_1.0.1-1_amd64.deb
+```
+
+The package installs:
+
+- `/usr/bin/saugra`
+- `/lib/systemd/system/saugra.service`
+- `/etc/saugra/saugra.yml` when missing
+- bundled rule packs under `/etc/saugra/rules/` when missing
+- bundled standards data under `/etc/saugra/standards/` when missing
+- bundled scanner catalogs under `/etc/saugra/intelligence/` when missing
+- writable runtime paths under `/var/log/saugra` and `/var/lib/saugra`
+
+Confirm the binary and generated service are available:
+
+```bash
+saugra --help
+systemctl status saugra
+```
+
+Edit the production config for your real backend and public host:
+
+```bash
+editor /etc/saugra/saugra.yml
+```
+
+At minimum, set the upstream host and target:
+
+```yaml
+server:
+  listen: 127.0.0.1:8787
+  mode: monitor
+
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8080
+
+routes:
+  - path_prefix: /
+    upstream: app
+```
+
+Validate the installed config:
+
+```bash
+saugra test-config --config /etc/saugra/saugra.yml
+```
+
+Start Redis and Saugra:
+
+```bash
+systemctl enable --now redis-server
+systemctl enable --now saugra
+systemctl status saugra
+```
+
+Check Saugra locally before changing Nginx or Apache:
+
+```bash
+curl -i http://127.0.0.1:8787/_saugra/health
+curl -i -H "Host: example.com" http://127.0.0.1:8787/
+```
+
+Watch service logs and security events:
+
+```bash
+journalctl -u saugra -f
+saugra logs tail --config /etc/saugra/saugra.yml
+```
+
+Keep `server.mode: monitor` first. After normal traffic is confirmed and false
+positives are tuned, move to `block` mode.
+
+### Install From Source
 
 Install system dependencies:
 
@@ -248,14 +331,14 @@ curl -i "http://example.com/comment?text=%3Cscript%3Ealert(1)%3C/script%3E"
 Review recent events:
 
 ```bash
-cargo run -- logs tail --config configs/saugra.production.example.yml --limit 20
-cargo run -- logs summary --config configs/saugra.production.example.yml --limit 200
+saugra logs tail --config /etc/saugra/saugra.yml --limit 20
+saugra logs summary --config /etc/saugra/saugra.yml --limit 200
 ```
 
 Explain a request:
 
 ```bash
-cargo run -- explain <request-id> --config configs/saugra.production.example.yml
+saugra explain <request-id> --config /etc/saugra/saugra.yml
 ```
 
 ## Safe First Rollout
@@ -311,10 +394,21 @@ logging:
 - Start in `monitor` mode.
 - Review false positives before switching to `block`.
 
-## Upgrade From Source
+## Upgrade Saugra
 
-Until packaged releases exist, upgrade by rebuilding from Git and restarting the
-service:
+For package installs, download the newer `.deb`, then install it with `apt`:
+
+```bash
+apt install ./saugra_<version>_amd64.deb
+saugra test-config --config /etc/saugra/saugra.yml
+systemctl restart saugra
+```
+
+The package seeds missing config and rule files, but it does not overwrite
+operator-edited files under `/etc/saugra`.
+
+For source installs, upgrade by rebuilding from Git and restarting the service:
+
 
 ```bash
 cd /opt/saugra
