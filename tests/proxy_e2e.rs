@@ -15,13 +15,14 @@ use saugra::{
     config::{
         AiConfig, BehaviorBackend, BehaviorConfig, BehaviorMode, BotProtectionConfig,
         BotProtectionLists, LoggingConfig, ProxyRouteConfig, RateLimitBackend, RateLimitConfig,
-        RuleExclusionConfig, RuleSettings, SaugraConfig, SecurityConfig, ServerConfig,
-        UpstreamConfig, WafMode,
+        RuleExclusionConfig, RuleSettings, RuntimeAllowlistEffect, RuntimePolicyConfig,
+        SaugraConfig, SecurityConfig, ServerConfig, UpstreamConfig, WafMode,
     },
     decision::WafAction,
     event_store::{self, EventLogRetention},
     proxy::{proxy_request, ProxyState, UpstreamTransport},
     rate_limit::MemoryRateLimitStore,
+    runtime_policy,
 };
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -660,6 +661,171 @@ async fn bot_protection_blocklist_blocks_and_persists_event_shape() {
 }
 
 #[tokio::test]
+async fn runtime_allowlist_bypasses_bot_block_without_restart() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let runtime_policy_file = tempfile::NamedTempFile::new().unwrap();
+    let retention = test_retention();
+    runtime_policy::add_ip_entry(
+        runtime_policy_file.path(),
+        "198.51.100.71",
+        Some(3600),
+        "admin verification",
+        "test",
+    )
+    .unwrap();
+
+    let mut config = test_config(WafMode::Block, 120);
+    config.runtime_policy = RuntimePolicyConfig {
+        enabled: true,
+        path: runtime_policy_file.path().to_path_buf(),
+        ..RuntimePolicyConfig::default()
+    };
+    config.bot_protection = BotProtectionConfig {
+        enabled: true,
+        mode: BehaviorMode::Block,
+        backend: BehaviorBackend::Memory,
+        blocklists: BotProtectionLists {
+            ip_ranges: vec!["198.51.100.71".to_string()],
+            user_agents: Vec::new(),
+        },
+        ..BotProtectionConfig::default()
+    };
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/")
+        .header("user-agent", "Mozilla/5.0")
+        .header("x-real-ip", "198.51.100.71")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Allow);
+    assert!(events[0].decision.bot_protection.is_none());
+    assert_eq!(
+        events[0]
+            .decision
+            .runtime_allowlist
+            .as_ref()
+            .map(|allowlist| allowlist.value.as_str()),
+        Some("198.51.100.71/32")
+    );
+}
+
+#[tokio::test]
+async fn runtime_monitor_all_downgrades_waf_rule_block_without_restart() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let runtime_policy_file = tempfile::NamedTempFile::new().unwrap();
+    let retention = test_retention();
+    runtime_policy::add_ip_entry(
+        runtime_policy_file.path(),
+        "198.51.100.72",
+        Some(3600),
+        "admin verification",
+        "test",
+    )
+    .unwrap();
+
+    let mut config = test_config(WafMode::Block, 120);
+    config.runtime_policy = RuntimePolicyConfig {
+        enabled: true,
+        path: runtime_policy_file.path().to_path_buf(),
+        allowlist_effect: RuntimeAllowlistEffect::MonitorAll,
+        ..RuntimePolicyConfig::default()
+    };
+    config.bot_protection.enabled = false;
+    config.behavior.enabled = false;
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/search?q=%27%20OR%201%3D1--")
+        .header("x-real-ip", "198.51.100.72")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(fake_upstream.requests.lock().unwrap().len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    assert!(events[0]
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-SQLI-001"));
+}
+
+#[tokio::test]
+async fn runtime_blocklist_blocks_clean_request_without_restart() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let runtime_policy_file = tempfile::NamedTempFile::new().unwrap();
+    let retention = test_retention();
+    runtime_policy::add_block_ip_entry(
+        runtime_policy_file.path(),
+        "198.51.100.73",
+        Some(3600),
+        "emergency deny",
+        "test",
+    )
+    .unwrap();
+
+    let mut config = test_config(WafMode::Monitor, 120);
+    config.runtime_policy = RuntimePolicyConfig {
+        enabled: true,
+        path: runtime_policy_file.path().to_path_buf(),
+        ..RuntimePolicyConfig::default()
+    };
+    config.bot_protection.enabled = false;
+    config.behavior.enabled = false;
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/")
+        .header("x-real-ip", "198.51.100.73")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(fake_upstream.requests.lock().unwrap().is_empty());
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert!(events[0]
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-RUNTIME-BLOCKLIST-001"));
+}
+
+#[tokio::test]
 async fn websocket_handshake_is_inspected_forwarded_and_tunneled() {
     let upstream = spawn_raw_websocket_upstream().await;
     let event_log_path = test_event_log_path();
@@ -905,6 +1071,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
             backend: BehaviorBackend::Memory,
             ..BotProtectionConfig::default()
         },
+        runtime_policy: Default::default(),
         ai: AiConfig::default(),
         logging: LoggingConfig::default(),
         websocket: Default::default(),

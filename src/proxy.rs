@@ -26,11 +26,12 @@ use uuid::Uuid;
 use crate::{
     behavior::{self, BehaviorRequest, BehaviorStore},
     bot::{self, BotProtectionRequest, BotProtectionStore},
-    config::{RouteRateLimitConfig, SaugraConfig, UpstreamConfig, WafMode},
+    config::{RouteRateLimitConfig, RuntimeAllowlistEffect, SaugraConfig, UpstreamConfig, WafMode},
     decision::{WafAction, WafDecision},
     event_store::{self, EventLogRetention, SecurityEvent, UpstreamEvent, WebSocketEvent},
     rate_limit::{self, RateLimitExceeded, RateLimitPolicy, RateLimitStore},
     rules::{self, RequestParts, RuleMatch, RuleSet, RuleSeverity, RuleTarget},
+    runtime_policy::RuntimePolicyHandle,
 };
 
 #[derive(Clone)]
@@ -42,6 +43,7 @@ pub struct ProxyState {
     rate_limit_store: Arc<dyn RateLimitStore>,
     behavior_store: Arc<dyn BehaviorStore>,
     bot_protection_store: Arc<dyn BotProtectionStore>,
+    runtime_policy: Arc<RuntimePolicyHandle>,
     event_log_path: PathBuf,
     event_log_retention: EventLogRetention,
     rule_set: Arc<RuleSet>,
@@ -70,6 +72,7 @@ impl ProxyState {
         let rule_set = Arc::new(rules::load_rule_set(&config.rules)?);
         let behavior_store = Arc::from(behavior::build_store(&config.behavior)?);
         let bot_protection_store = Arc::from(bot::build_store(&config.bot_protection)?);
+        let runtime_policy = Arc::new(RuntimePolicyHandle::open(config.runtime_policy.clone()));
 
         Ok(Self {
             config,
@@ -79,6 +82,7 @@ impl ProxyState {
             rate_limit_store,
             behavior_store,
             bot_protection_store,
+            runtime_policy,
             event_log_path,
             event_log_retention,
             rule_set,
@@ -769,7 +773,44 @@ fn decision_with_behavior_and_bot(
     headers: &str,
     user_agent: &str,
 ) -> WafDecision {
-    let bot_outcome = if state.config.bot_protection.enabled {
+    if let Some(runtime_blocklist) = state.runtime_policy.match_blocked_ip(client_ip) {
+        let mut decision = WafDecision::from_matches_with_blocking_paranoia(
+            request_id,
+            WafMode::Strict,
+            vec![runtime_blocklist_match(&runtime_blocklist)],
+            state.config.rules.inbound_anomaly_threshold,
+            state.config.rules.blocking_paranoia_level(),
+        );
+        decision.action = WafAction::Block;
+        return decision.with_runtime_allowlist(runtime_blocklist);
+    }
+
+    let runtime_allowlist = state.runtime_policy.match_ip(client_ip);
+    let allowlist_effect = runtime_allowlist.as_ref().map(|allowlist| allowlist.effect);
+    let skip_bot_and_behavior = matches!(
+        allowlist_effect,
+        Some(
+            RuntimeAllowlistEffect::SkipBotAndBehaviorBlock
+                | RuntimeAllowlistEffect::MonitorAll
+                | RuntimeAllowlistEffect::AllowAll
+        )
+    );
+
+    if allowlist_effect == Some(RuntimeAllowlistEffect::AllowAll) {
+        let mut decision = WafDecision::from_matches_with_blocking_paranoia(
+            request_id,
+            WafMode::Off,
+            Vec::new(),
+            state.config.rules.inbound_anomaly_threshold,
+            state.config.rules.blocking_paranoia_level(),
+        );
+        if let Some(runtime_allowlist) = runtime_allowlist {
+            decision = decision.with_runtime_allowlist(runtime_allowlist);
+        }
+        return decision;
+    }
+
+    let bot_outcome = if state.config.bot_protection.enabled && !skip_bot_and_behavior {
         match state.bot_protection_store.evaluate(
             &state.config.bot_protection,
             BotProtectionRequest {
@@ -796,7 +837,7 @@ fn decision_with_behavior_and_bot(
         }
     }
 
-    let behavior_outcome = if state.config.behavior.enabled {
+    let behavior_outcome = if state.config.behavior.enabled && !skip_bot_and_behavior {
         match state.behavior_store.evaluate(
             &state.config.behavior,
             BehaviorRequest {
@@ -822,9 +863,14 @@ fn decision_with_behavior_and_bot(
         }
     }
 
+    let decision_mode = if allowlist_effect == Some(RuntimeAllowlistEffect::MonitorAll) {
+        WafMode::Monitor
+    } else {
+        state.config.server.mode
+    };
     let decision = WafDecision::from_matches_with_blocking_paranoia(
         request_id,
-        state.config.server.mode,
+        decision_mode,
         matches,
         state.config.rules.inbound_anomaly_threshold,
         state.config.rules.blocking_paranoia_level(),
@@ -843,13 +889,38 @@ fn decision_with_behavior_and_bot(
     };
 
     if let Some(outcome) = bot_outcome {
-        if outcome.action == WafAction::Block && state.config.server.mode != WafMode::Off {
+        if outcome.action == WafAction::Block
+            && state.config.server.mode != WafMode::Off
+            && runtime_allowlist.is_none()
+        {
             decision.action = WafAction::Block;
         }
         decision = decision.with_bot_protection(outcome);
     }
 
+    if let Some(runtime_allowlist) = runtime_allowlist {
+        decision = decision.with_runtime_allowlist(runtime_allowlist);
+    }
+
     decision
+}
+
+fn runtime_blocklist_match(
+    runtime_match: &crate::runtime_policy::RuntimeAllowlistMatch,
+) -> RuleMatch {
+    RuleMatch {
+        rule_id: "SAUGRA-RUNTIME-BLOCKLIST-001".to_string(),
+        rule_name: "Runtime Policy Blocklist".to_string(),
+        category: "runtime_policy".to_string(),
+        severity: RuleSeverity::High,
+        matched_target: RuleTarget::Headers,
+        paranoia_level: 1,
+        explanation: format!(
+            "Client matched runtime blocklist entry {} for {}. Reason: {}.",
+            runtime_match.id, runtime_match.value, runtime_match.reason
+        ),
+        owasp_category: Some("A06:2025-Insecure Design".to_string()),
+    }
 }
 
 fn is_hop_by_hop_header(name: &HeaderName) -> bool {
@@ -1270,6 +1341,7 @@ mod tests {
             rules: Default::default(),
             behavior: Default::default(),
             bot_protection: Default::default(),
+            runtime_policy: Default::default(),
             ai: Default::default(),
             logging: Default::default(),
             websocket: Default::default(),

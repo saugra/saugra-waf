@@ -13,7 +13,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 6 core complete — Behavior scoring and threshold-based blocking**
+Current phase: **Phase 7 in progress — Operator workflows and scheduled security summaries**
 
 The repository has a working Rust foundation:
 
@@ -32,13 +32,17 @@ The repository has a working Rust foundation:
 - Local and remote verification scripts
 - WebSocket handshake inspection with upgrade tunneling
 - Route-based multi-upstream HTTP and WebSocket forwarding
+- No-restart runtime allow/block policy for local IP and CIDR entries
+- Operator admin guide for commands, troubleshooting, allowlisting, blocking,
+  logs, explanations, and rollout recovery
 - Example config at `configs/saugra.example.yml`
 
 ## Verified Commands
 
 ```bash
 cargo fmt --check
-cargo test
+cargo check --all-targets
+cargo test --locked --all-targets --all-features
 cargo run -- test-config --config configs/saugra.example.yml
 cargo run -- rules list --config configs/saugra.example.yml
 ```
@@ -46,7 +50,7 @@ cargo run -- rules list --config configs/saugra.example.yml
 Current test status:
 
 ```txt
-161 passed; 0 failed
+168 passed; 0 failed
 ```
 
 ## Production-Ready Product Principle
@@ -394,6 +398,97 @@ Future Saugra Pro/cloud behavior scoring may add distributed/fleet-wide
 reputation, multi-instance correlation, adaptive route baselines, external
 threat feeds, alert routing, and team investigation workflows. Those features
 should extend the public behavior scoring model rather than replace it.
+
+### Runtime Allowlisting Without Restart
+
+Runtime allowlisting is a community-edition operational safety feature. It
+allows administrators to recover from false positives and temporary bot or
+behavior blocks without restarting Saugra.
+
+Initial scope:
+
+- [x] Add a `runtime_policy` config section with an enabled flag, policy path,
+      reload interval, default duration, and allowlist effect.
+- [x] Store local runtime policy in `/var/lib/saugra/runtime-policy.json`.
+- [x] Add `saugra allowlist add/list/remove/prune` commands for IP and CIDR
+      entries.
+- [x] Add runtime blocklist support with `saugra allowlist block add`.
+- [x] Reload the runtime policy file without restarting Saugra.
+- [x] Apply runtime IP/CIDR allowlists before bot and behavior threshold
+      blocking.
+- [x] Support runtime policy effects that can keep deterministic WAF rules
+      active, downgrade them to monitor, or bypass them for trusted rollout
+      cases.
+- [x] Emit runtime allowlist match metadata in security events and
+      `saugra explain`.
+- [x] Add tests for expiry, atomic CLI writes, bot/behavior bypass,
+      deterministic WAF downgrade, and runtime blocklist enforcement.
+- [ ] Add explicit malformed-policy reload test that keeps the last known good
+      policy.
+- [ ] Add explicit no-restart reload integration test that mutates the policy
+      file after Saugra starts.
+- [ ] Add optional reset commands for local behavior and bot state by client ID.
+
+See `docs/RUNTIME_ALLOWLIST.md` for the design.
+
+### Admin Guide and Operator Runbooks
+
+- [x] Add a single admin guide for service commands, troubleshooting,
+      allowlisting, blocking, logs, explanations, rollout recovery, Redis
+      checks, and useful production file paths.
+- [x] Link the admin guide from README and production deployment docs.
+- [ ] Add example incident workflows for common false positives, scanner bursts,
+      upstream outages, Redis outages, and WebSocket routing failures.
+
+## Phase 7 — Scheduled Security Summaries
+
+Saugra should help small teams review security activity without requiring them
+to watch logs continuously. The community edition should support local scheduled
+summary generation from durable WAF event logs.
+
+Initial scope:
+
+- [ ] Add a `security_summary` config section with enabled flag, schedule time,
+      timezone, lookback window, recipients, and delivery channel.
+- [ ] Support a local daily summary over the last 24 hours by default.
+- [ ] Summarize total security events, blocked events, monitored events,
+      allowed runtime-policy events, top attack categories, top matched rules,
+      top source IPs, top targeted paths, rate-limit events, bot events, and
+      behavior-threshold events.
+- [ ] Include sample request IDs for the most important blocked events so admins
+      can run `saugra explain <request-id>`.
+- [ ] Add `saugra summary daily --config /etc/saugra/saugra.yml` to generate a
+      summary on demand.
+- [ ] Add `saugra summary send --config /etc/saugra/saugra.yml` for manual
+      delivery testing.
+- [ ] Add a scheduler loop or documented systemd timer path for sending the
+      report at a configured time, for example 08:00 local time.
+- [ ] Support file output first, for example
+      `/var/log/saugra/saugra-security-summary-YYYY-MM-DD.json`.
+- [ ] Add email delivery after file output is stable. Email config should avoid
+      hard-coded secrets and support environment variables or secret files.
+- [ ] Make failures observable in journald and local admin events.
+- [ ] Add tests for 24-hour filtering, summary shape, empty-day summaries, top
+      category/rule/path/IP aggregation, timezone handling, and delivery
+      failure reporting.
+
+Example target config:
+
+```yaml
+security_summary:
+  enabled: true
+  schedule: daily
+  send_time: "08:00"
+  timezone: Africa/Nairobi
+  lookback: 24h
+  output_path: /var/log/saugra/saugra-security-summary.json
+  channels:
+    - type: file
+    # Future:
+    # - type: email
+    #   to:
+    #     - security@example.com
+```
 
 ## Production Readiness Gate
 

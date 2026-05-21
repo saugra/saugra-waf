@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     behavior::BehaviorOutcome, bot::BotProtectionOutcome, config::WafMode, rules::RuleMatch,
+    runtime_policy::RuntimeAllowlistMatch,
 };
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -32,6 +33,8 @@ pub struct WafDecision {
     pub behavior: Option<BehaviorOutcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot_protection: Option<BotProtectionOutcome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime_allowlist: Option<RuntimeAllowlistMatch>,
 }
 
 fn default_blocking_paranoia_level() -> u8 {
@@ -77,6 +80,7 @@ impl WafDecision {
                 owasp_categories: Vec::new(),
                 behavior: None,
                 bot_protection: None,
+                runtime_allowlist: None,
             };
         }
 
@@ -138,6 +142,7 @@ impl WafDecision {
             owasp_categories,
             behavior: None,
             bot_protection: None,
+            runtime_allowlist: None,
         }
     }
 
@@ -148,6 +153,11 @@ impl WafDecision {
 
     pub fn with_bot_protection(mut self, bot_protection: BotProtectionOutcome) -> Self {
         self.bot_protection = Some(bot_protection);
+        self
+    }
+
+    pub fn with_runtime_allowlist(mut self, runtime_allowlist: RuntimeAllowlistMatch) -> Self {
+        self.runtime_allowlist = Some(runtime_allowlist);
         self
     }
 }

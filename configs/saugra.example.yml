@@ -96,6 +96,13 @@ bot_protection:
     explanation: Bot protection score reached the configured threshold.
     owasp_category: A06:2025-Insecure Design
 
+runtime_policy:
+  enabled: true
+  path: logs/runtime-policy.json
+  reload_interval: 5s
+  default_duration: 2h
+  allowlist_effect: skip_bot_and_behavior_block
+
 rules:
   owasp_crs: true
   paranoia_level: 1

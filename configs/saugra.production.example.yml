@@ -141,6 +141,16 @@ bot_protection:
     explanation: Bot protection score reached the configured threshold.
     owasp_category: A06:2025-Insecure Design
 
+# Runtime policy lets local operators add short-lived IP/CIDR allowlist entries
+# without restarting Saugra. The default effect bypasses bot and behavior
+# threshold blocks while keeping deterministic WAF rules active.
+runtime_policy:
+  enabled: true
+  path: /var/lib/saugra/runtime-policy.json
+  reload_interval: 5s
+  default_duration: 2h
+  allowlist_effect: skip_bot_and_behavior_block
+
 # Rule settings control built-in rule packs, anomaly scoring, and false-positive
 # exclusions. Rules remain data-driven so behavior can be tuned without code
 # changes.

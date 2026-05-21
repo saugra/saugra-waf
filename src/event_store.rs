@@ -679,6 +679,7 @@ mod tests {
             owasp_categories: Vec::new(),
             behavior: None,
             bot_protection: None,
+            runtime_allowlist: None,
         }
     }
 }

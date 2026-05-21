@@ -102,10 +102,13 @@ Public docs:
 - `docs/ARCHITECTURE.md` — technical architecture
 - `docs/PRODUCT_SPEC.md` — product specification
 - `docs/PRODUCTION_DEPLOYMENT.md` — Nginx/Apache production deployment guide
+- `docs/ADMIN_GUIDE.md` — operator commands, troubleshooting, allowlisting,
+  blocking, logs, and explanations
 - `docs/OWASP_TOP_10_STRATEGY.md` — layered OWASP Top 10 coverage strategy
 - `docs/CRS_IMPORT.md` — OWASP CRS conversion support and limitations
 - `docs/DEBIAN_PACKAGING.md` — `.deb` build and GitHub Release publishing guide
 - `docs/RELEASE_PROCESS.md` — maintainer release checklist
+- `docs/RUNTIME_ALLOWLIST.md` — no-restart local runtime allowlisting design
 
 Install status:
 

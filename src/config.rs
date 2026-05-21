@@ -1,6 +1,6 @@
 use std::{fs, net::SocketAddr, path::Path, path::PathBuf};
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::rules::RuleSeverity;
@@ -88,6 +88,12 @@ pub enum ConfigError {
     InvalidBotProtectionRule,
     #[error("bot_protection.rule.paranoia_level must be greater than zero")]
     InvalidBotProtectionRuleParanoiaLevel,
+    #[error("runtime_policy.path must not be blank when runtime policy is enabled")]
+    InvalidRuntimePolicyPath,
+    #[error("runtime_policy.reload_interval must be a positive duration, for example 5s")]
+    InvalidRuntimePolicyReloadInterval,
+    #[error("runtime_policy.default_duration must be a positive duration, for example 2h")]
+    InvalidRuntimePolicyDefaultDuration,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
     #[error("rules.inbound_anomaly_threshold must be greater than zero")]
@@ -137,6 +143,8 @@ pub struct SaugraConfig {
     pub behavior: BehaviorConfig,
     #[serde(default)]
     pub bot_protection: BotProtectionConfig,
+    #[serde(default)]
+    pub runtime_policy: RuntimePolicyConfig,
     #[serde(default)]
     pub rules: RuleSettings,
     #[serde(default)]
@@ -317,6 +325,52 @@ pub enum BehaviorBackend {
     Memory,
     #[default]
     Local,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct RuntimePolicyConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_runtime_policy_path")]
+    pub path: PathBuf,
+    #[serde(default = "default_runtime_policy_reload_interval")]
+    pub reload_interval: String,
+    #[serde(default = "default_runtime_policy_default_duration")]
+    pub default_duration: String,
+    #[serde(default)]
+    pub allowlist_effect: RuntimeAllowlistEffect,
+}
+
+impl Default for RuntimePolicyConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            path: default_runtime_policy_path(),
+            reload_interval: default_runtime_policy_reload_interval(),
+            default_duration: default_runtime_policy_default_duration(),
+            allowlist_effect: RuntimeAllowlistEffect::SkipBotAndBehaviorBlock,
+        }
+    }
+}
+
+impl RuntimePolicyConfig {
+    pub fn reload_interval_seconds(&self) -> u64 {
+        parse_duration_seconds(&self.reload_interval).unwrap_or(5)
+    }
+
+    pub fn default_duration_seconds(&self) -> u64 {
+        parse_duration_seconds(&self.default_duration).unwrap_or(2 * 60 * 60)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeAllowlistEffect {
+    #[default]
+    SkipBotAndBehaviorBlock,
+    MonitorAll,
+    AllowAll,
+    Block,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -729,6 +783,7 @@ impl SaugraConfig {
 
         self.validate_behavior()?;
         self.validate_bot_protection()?;
+        self.validate_runtime_policy()?;
 
         if self.ai.enabled && self.ai.mode != "explain_only" {
             return Err(ConfigError::InvalidAiMode);
@@ -1019,6 +1074,22 @@ impl SaugraConfig {
         Ok(())
     }
 
+    fn validate_runtime_policy(&self) -> Result<(), ConfigError> {
+        if self.runtime_policy.enabled && self.runtime_policy.path.as_os_str().is_empty() {
+            return Err(ConfigError::InvalidRuntimePolicyPath);
+        }
+
+        if parse_duration_seconds(&self.runtime_policy.reload_interval).is_none() {
+            return Err(ConfigError::InvalidRuntimePolicyReloadInterval);
+        }
+
+        if parse_duration_seconds(&self.runtime_policy.default_duration).is_none() {
+            return Err(ConfigError::InvalidRuntimePolicyDefaultDuration);
+        }
+
+        Ok(())
+    }
+
     pub fn listen_addr(&self) -> Result<SocketAddr, ConfigError> {
         self.server
             .listen
@@ -1043,7 +1114,7 @@ impl SaugraConfig {
             .join(",");
 
         format!(
-            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, behavior_enabled={}, behavior_mode={:?}, behavior_backend={:?}, behavior_state_path={}, behavior_score_window={}, behavior_decay_window={}, behavior_monitor_threshold={}, behavior_block_threshold={}, behavior_route_overrides={}, behavior_category_overrides={}, bot_protection_enabled={}, bot_protection_mode={:?}, bot_protection_backend={:?}, bot_protection_state_path={}, bot_protection_monitor_threshold={}, bot_protection_block_threshold={}, bot_protection_routes={}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
+            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, behavior_enabled={}, behavior_mode={:?}, behavior_backend={:?}, behavior_state_path={}, behavior_score_window={}, behavior_decay_window={}, behavior_monitor_threshold={}, behavior_block_threshold={}, behavior_route_overrides={}, behavior_category_overrides={}, bot_protection_enabled={}, bot_protection_mode={:?}, bot_protection_backend={:?}, bot_protection_state_path={}, bot_protection_monitor_threshold={}, bot_protection_block_threshold={}, bot_protection_routes={}, runtime_policy_enabled={}, runtime_policy_path={}, runtime_policy_reload_interval={}, runtime_policy_allowlist_effect={:?}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
             self.server.listen,
             self.server.mode,
             upstreams,
@@ -1071,6 +1142,10 @@ impl SaugraConfig {
             self.bot_protection.monitor_threshold,
             self.bot_protection.block_threshold,
             self.bot_protection.routes.len(),
+            self.runtime_policy.enabled,
+            self.runtime_policy.path.display(),
+            self.runtime_policy.reload_interval,
+            self.runtime_policy.allowlist_effect,
             self.security.inspect_json_body,
             self.websocket.enabled,
             self.websocket.allowed_origins.len(),
@@ -1240,6 +1315,18 @@ fn default_behavior_state_path() -> PathBuf {
 
 fn default_bot_protection_state_path() -> PathBuf {
     PathBuf::from("logs/saugra-bot-state.json")
+}
+
+fn default_runtime_policy_path() -> PathBuf {
+    PathBuf::from("logs/runtime-policy.json")
+}
+
+fn default_runtime_policy_reload_interval() -> String {
+    "5s".to_string()
+}
+
+fn default_runtime_policy_default_duration() -> String {
+    "2h".to_string()
 }
 
 fn default_behavior_decay_window() -> String {

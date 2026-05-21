@@ -1,6 +1,8 @@
 # Saugra Production Deployment
 
 This guide shows the intended production shape for a single-node deployment.
+For day-to-day commands, troubleshooting, runtime allowlisting, runtime
+blocking, logs, and explanations, use `docs/ADMIN_GUIDE.md`.
 
 ```txt
 Client -> Nginx/Apache -> Saugra on 127.0.0.1:8787 -> Backend app
@@ -101,6 +103,19 @@ saugra logs tail --config /etc/saugra/saugra.yml
 
 Keep `server.mode: monitor` first. After normal traffic is confirmed and false
 positives are tuned, move to `block` mode.
+
+If a trusted administrator is blocked by bot or behavior scoring during rollout,
+add a short-lived runtime allowlist entry without restarting Saugra:
+
+```bash
+saugra allowlist add ip 203.0.113.10 --duration 2h --reason "admin rollout verification" --config /etc/saugra/saugra.yml
+saugra allowlist list --config /etc/saugra/saugra.yml
+```
+
+Runtime policy reloads from `/var/lib/saugra/runtime-policy.json` while Saugra
+is running. The default effect bypasses bot and behavior threshold blocks for
+the matching IP. Use `allowlist_effect: monitor_all` or `allow_all` only when a
+trusted rollout policy should also affect deterministic WAF rule blocks.
 
 ### Install From Source
 
@@ -354,6 +369,8 @@ saugra explain <request-id> --config /etc/saugra/saugra.yml
 9. Tune route limits and rule exclusions for false positives.
 10. Switch to `server.mode: block` during a low-traffic window.
 11. Keep watching `logs tail` and `logs summary` after block mode is enabled.
+12. Use short-lived runtime allowlist entries for trusted admin IPs when bot or
+    behavior scoring blocks rollout verification traffic.
 
 Recommended first-production defaults:
 
@@ -374,6 +391,13 @@ rate_limit:
   redis_password: null
   requests_per_minute: 120
   burst: 30
+
+runtime_policy:
+  enabled: true
+  path: /var/lib/saugra/runtime-policy.json
+  reload_interval: 5s
+  default_duration: 2h
+  allowlist_effect: skip_bot_and_behavior_block
 
 logging:
   format: json

@@ -1,6 +1,17 @@
 use crate::decision::WafDecision;
 
 pub fn explain(decision: &WafDecision) -> String {
+    let allowlist_context = decision
+        .runtime_allowlist
+        .as_ref()
+        .map(|allowlist| {
+            format!(
+                " Runtime allowlist entry {} matched {} with effect {:?}.",
+                allowlist.id, allowlist.value, allowlist.effect
+            )
+        })
+        .unwrap_or_default();
+
     if decision.matched_rules.is_empty() {
         if let Some(bot_protection) = &decision.bot_protection {
             return format!(
@@ -10,7 +21,7 @@ pub fn explain(decision: &WafDecision) -> String {
                 bot_protection.score,
                 bot_protection.block_threshold,
                 bot_protection.contributors.len()
-            );
+            ) + &allowlist_context;
         }
         if let Some(behavior) = &decision.behavior {
             return format!(
@@ -19,9 +30,10 @@ pub fn explain(decision: &WafDecision) -> String {
                 behavior.monitor_threshold,
                 behavior.score,
                 behavior.block_threshold
-            );
+            ) + &allowlist_context;
         }
-        return "No rules matched this request, so Saugra allowed it.".to_string();
+        return "No rules matched this request, so Saugra allowed it.".to_string()
+            + &allowlist_context;
     }
 
     let rule = &decision.matched_rules[0];
@@ -74,6 +86,7 @@ pub fn explain(decision: &WafDecision) -> String {
         decision.anomaly_threshold
     ) + &behavior_context
         + &bot_context
+        + &allowlist_context
 }
 
 #[cfg(test)]

@@ -262,6 +262,22 @@ thresholds, storage backend, allowlist/blocklist status, and temporary block
 duration. CAPTCHA remains out of scope; Saugra should block or monitor based on
 observable request and behavior evidence, not interactive challenges.
 
+### 5.7. Runtime Policy
+
+Responsible for local no-restart operational policy such as emergency IP/CIDR
+allowlisting.
+
+The first runtime policy target is a file-backed allow/block policy stored at
+`/var/lib/saugra/runtime-policy.json`. Saugra should reload this file while
+running and apply active entries before final decision enforcement. Runtime
+allowlist effects can bypass bot/behavior blocking, downgrade all findings to
+monitor, or allow all traffic for a matching client. Runtime blocklist entries
+force a deterministic block.
+
+Runtime policy changes must be observable. Security events and
+`explain <request-id>` should show when an allowlist entry affected the
+decision. The detailed plan lives in `docs/RUNTIME_ALLOWLIST.md`.
+
 ### 6. Decision Engine
 
 Responsible for converting rule matches and rate-limit results into a final action.

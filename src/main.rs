@@ -4,7 +4,7 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use saugra::{
     ai, config::SaugraConfig, crs_convert, event_store, event_store::EventLogRetention, logging,
-    owasp, posture, proxy, reports, rules, standards,
+    owasp, posture, proxy, reports, rules, runtime_policy, standards,
 };
 
 #[derive(Debug, Parser)]
@@ -62,6 +62,11 @@ enum Commands {
     Reports {
         #[command(subcommand)]
         command: ReportsCommand,
+    },
+    /// Manage local runtime allowlists without restarting Saugra.
+    Allowlist {
+        #[command(subcommand)]
+        command: AllowlistCommand,
     },
 }
 
@@ -129,6 +134,74 @@ enum PostureCommand {
 enum ReportsCommand {
     /// Normalize and summarize configured local security reports.
     Summary {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AllowlistCommand {
+    /// Add an IP or CIDR runtime allowlist entry.
+    Add {
+        #[command(subcommand)]
+        target: AllowlistAddTarget,
+    },
+    /// Remove a runtime allowlist entry by ID.
+    Remove {
+        id: String,
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+    /// List runtime allowlist entries.
+    List {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+    /// Remove expired runtime allowlist entries.
+    Prune {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+    /// Manage runtime blocklist entries.
+    Block {
+        #[command(subcommand)]
+        command: BlocklistCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AllowlistAddTarget {
+    /// Add a single IP address.
+    Ip {
+        value: String,
+        #[arg(short, long)]
+        duration: Option<String>,
+        #[arg(short, long)]
+        reason: String,
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+    /// Add a CIDR range.
+    Cidr {
+        value: String,
+        #[arg(short, long)]
+        duration: Option<String>,
+        #[arg(short, long)]
+        reason: String,
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum BlocklistCommand {
+    /// Add an IP or CIDR runtime blocklist entry.
+    Add {
+        value: String,
+        #[arg(short, long)]
+        duration: Option<String>,
+        #[arg(short, long)]
+        reason: String,
         #[arg(short, long, default_value = "configs/saugra.example.yml")]
         config: PathBuf,
     },
@@ -260,6 +333,91 @@ async fn main() -> anyhow::Result<()> {
                 let config = load_valid_config(&config)?;
                 let summary = reports::load_configured_reports(&config)?;
                 print_security_report_summary(&summary);
+                Ok(())
+            }
+        },
+        Commands::Allowlist { command } => handle_allowlist(command),
+    }
+}
+
+fn handle_allowlist(command: AllowlistCommand) -> anyhow::Result<()> {
+    match command {
+        AllowlistCommand::Add { target } => {
+            let (value, duration, reason, config_path) = match target {
+                AllowlistAddTarget::Ip {
+                    value,
+                    duration,
+                    reason,
+                    config,
+                }
+                | AllowlistAddTarget::Cidr {
+                    value,
+                    duration,
+                    reason,
+                    config,
+                } => (value, duration, reason, config),
+            };
+            let config = load_valid_config(&config_path)?;
+            let duration_seconds = if let Some(duration) = duration.as_deref() {
+                runtime_policy::parse_duration_seconds(duration)
+                    .with_context(|| "allowlist duration must look like 30m, 2h, or 1d")?
+            } else {
+                config.runtime_policy.default_duration_seconds()
+            };
+            let entry = runtime_policy::add_ip_entry(
+                &config.runtime_policy.path,
+                &value,
+                Some(duration_seconds),
+                &reason,
+                "cli",
+            )?;
+            println!("{}", serde_json::to_string_pretty(&entry)?);
+            Ok(())
+        }
+        AllowlistCommand::Remove { id, config } => {
+            let config = load_valid_config(&config)?;
+            let removed = runtime_policy::remove_entry(&config.runtime_policy.path, &id)?;
+            if removed {
+                println!("removed allowlist entry {id}");
+            } else {
+                println!("allowlist entry not found: {id}");
+            }
+            Ok(())
+        }
+        AllowlistCommand::List { config } => {
+            let config = load_valid_config(&config)?;
+            let policy = runtime_policy::list_policy(&config.runtime_policy.path)?;
+            println!("{}", serde_json::to_string_pretty(&policy)?);
+            Ok(())
+        }
+        AllowlistCommand::Prune { config } => {
+            let config = load_valid_config(&config)?;
+            let pruned = runtime_policy::prune_expired(&config.runtime_policy.path)?;
+            println!("pruned {pruned} expired allowlist entrie(s)");
+            Ok(())
+        }
+        AllowlistCommand::Block { command } => match command {
+            BlocklistCommand::Add {
+                value,
+                duration,
+                reason,
+                config,
+            } => {
+                let config = load_valid_config(&config)?;
+                let duration_seconds = if let Some(duration) = duration.as_deref() {
+                    runtime_policy::parse_duration_seconds(duration)
+                        .with_context(|| "blocklist duration must look like 30m, 2h, or 1d")?
+                } else {
+                    config.runtime_policy.default_duration_seconds()
+                };
+                let entry = runtime_policy::add_block_ip_entry(
+                    &config.runtime_policy.path,
+                    &value,
+                    Some(duration_seconds),
+                    &reason,
+                    "cli",
+                )?;
+                println!("{}", serde_json::to_string_pretty(&entry)?);
                 Ok(())
             }
         },
