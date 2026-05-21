@@ -1,4 +1,4 @@
-# Saugra WAF
+# Saugra Web Application Firewall
 
 [![CI](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml?query=branch%3Amain)
 [![codecov](https://codecov.io/github/ewanyonyi/saugra/graph/badge.svg?token=P6XZ7GGVJ8)](https://codecov.io/github/ewanyonyi/saugra)
