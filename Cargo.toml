@@ -5,6 +5,33 @@ edition = "2021"
 description = "A lightweight rule-based + AI-assisted Web Application Firewall."
 license = "AGPL-3.0-only"
 
+[package.metadata.deb]
+maintainer = "Emanuel Wanyonyi <wanyonyi.d.emanuel@gmail.com>"
+license-file = ["LICENSE", "0"]
+extended-description = """
+Saugra is a rule-based and AI-assisted Web Application Firewall that runs as a
+reverse proxy, inspects HTTP traffic, writes structured security events, and
+supports monitor-first rollout.
+"""
+depends = "$auto, adduser, systemd"
+section = "net"
+priority = "optional"
+assets = [
+  ["target/release/saugra", "usr/bin/saugra", "755"],
+  ["configs/saugra.production.example.yml", "usr/share/saugra/saugra.production.example.yml", "644"],
+  ["configs/rules/*.yml", "usr/share/saugra/rules/", "644"],
+  ["configs/standards/*.yml", "usr/share/saugra/standards/", "644"],
+  ["configs/intelligence/*.yml", "usr/share/saugra/intelligence/", "644"],
+  ["configs/saugra.production.example.yml", "usr/share/doc/saugra/saugra.production.example.yml", "644"],
+  ["configs/nginx.production.example.conf", "usr/share/doc/saugra/nginx.production.example.conf", "644"],
+  ["configs/apache.production.example.conf", "usr/share/doc/saugra/apache.production.example.conf", "644"],
+  ["packaging/systemd/saugra.service", "lib/systemd/system/saugra.service", "644"],
+  ["README.md", "usr/share/doc/saugra/README.md", "644"],
+  ["docs/PRODUCTION_DEPLOYMENT.md", "usr/share/doc/saugra/PRODUCTION_DEPLOYMENT.md", "644"],
+  ["docs/DEBIAN_PACKAGING.md", "usr/share/doc/saugra/DEBIAN_PACKAGING.md", "644"],
+]
+maintainer-scripts = "packaging/debian"
+
 [dependencies]
 anyhow = "1.0"
 async-trait = "0.1"

@@ -1,0 +1,22 @@
+[Unit]
+Description=Saugra Web Application Firewall
+After=network-online.target redis-server.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=saugra
+Group=saugra
+ExecStart=/usr/bin/saugra run --config /etc/saugra/saugra.yml
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+StateDirectory=saugra
+LogsDirectory=saugra
+ReadWritePaths=/var/log/saugra /var/lib/saugra
+
+[Install]
+WantedBy=multi-user.target

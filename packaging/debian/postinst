@@ -1,0 +1,63 @@
+#!/bin/sh
+set -e
+
+ensure_dir() {
+  path="$1"
+  owner="$2"
+  group="$3"
+  mode="$4"
+
+  install -d -o "$owner" -g "$group" -m "$mode" "$path"
+}
+
+copy_if_missing() {
+  source="$1"
+  target="$2"
+  mode="$3"
+  owner="$4"
+  group="$5"
+
+  if [ ! -f "$target" ]; then
+    cp "$source" "$target"
+    chown "$owner:$group" "$target"
+    chmod "$mode" "$target"
+  fi
+}
+
+if ! getent group saugra >/dev/null; then
+  addgroup --system saugra
+fi
+
+if ! getent passwd saugra >/dev/null; then
+  adduser --system --ingroup saugra --home /var/lib/saugra --no-create-home saugra
+fi
+
+ensure_dir /etc/saugra root saugra 0750
+ensure_dir /etc/saugra/rules root saugra 0750
+ensure_dir /etc/saugra/standards root saugra 0750
+ensure_dir /etc/saugra/intelligence root saugra 0750
+ensure_dir /var/lib/saugra saugra saugra 0750
+ensure_dir /var/log/saugra saugra adm 0750
+
+copy_if_missing /usr/share/saugra/saugra.production.example.yml /etc/saugra/saugra.yml 0640 root saugra
+
+for rule in /usr/share/saugra/rules/*.yml; do
+  [ -e "$rule" ] || continue
+  copy_if_missing "$rule" "/etc/saugra/rules/$(basename "$rule")" 0640 root saugra
+done
+
+for standard in /usr/share/saugra/standards/*.yml; do
+  [ -e "$standard" ] || continue
+  copy_if_missing "$standard" "/etc/saugra/standards/$(basename "$standard")" 0640 root saugra
+done
+
+for catalog in /usr/share/saugra/intelligence/*.yml; do
+  [ -e "$catalog" ] || continue
+  copy_if_missing "$catalog" "/etc/saugra/intelligence/$(basename "$catalog")" 0640 root saugra
+done
+
+if command -v systemctl >/dev/null; then
+  systemctl daemon-reload || true
+fi
+
+exit 0

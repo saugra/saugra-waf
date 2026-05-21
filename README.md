@@ -104,11 +104,15 @@ Public docs:
 - `docs/PRODUCTION_DEPLOYMENT.md` — Nginx/Apache production deployment guide
 - `docs/OWASP_TOP_10_STRATEGY.md` — layered OWASP Top 10 coverage strategy
 - `docs/CRS_IMPORT.md` — OWASP CRS conversion support and limitations
+- `docs/DEBIAN_PACKAGING.md` — `.deb` build and GitHub Release publishing guide
+- `docs/RELEASE_PROCESS.md` — maintainer release checklist
 
 Install status:
 
 - Supported today: build from Git/source and run with systemd.
-- Planned later: packaged binary releases and Ubuntu apt repository.
+- Supported today: build `.deb` packages with `cargo-deb` and publish them to
+  GitHub Releases.
+- Planned later: signed Ubuntu/Debian apt repository.
 
 ## Quick Start
 
@@ -246,6 +250,20 @@ Check the service:
 ```bash
 curl -i http://127.0.0.1:8787/_saugra/health
 ```
+
+## Build A Debian Package
+
+Saugra can be packaged as a `.deb` for Debian and Ubuntu:
+
+```bash
+cargo install cargo-deb --version 3.6.0 --locked
+cargo test --locked --all-targets --all-features
+cargo deb --locked
+```
+
+The package artifact is written under `target/debian/`. See
+`docs/DEBIAN_PACKAGING.md` for the local install test and GitHub Release
+publishing flow.
 
 ## Verify A Deployment
 
