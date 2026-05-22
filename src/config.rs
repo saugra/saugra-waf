@@ -1769,6 +1769,132 @@ mod tests {
     }
 
     #[test]
+    fn accepts_storage_cleanup_config() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+storage_cleanup:
+  enabled: true
+  dry_run: false
+  schedule: daily
+  run_time: "03:30"
+  targets:
+    - name: summaries
+      directory: /var/lib/saugra/reports
+      filename_prefix: saugra-security-summary-
+      filename_suffix: .json
+      older_than: 14d
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert!(config.storage_cleanup.enabled);
+        assert!(!config.storage_cleanup.dry_run);
+        assert_eq!(config.storage_cleanup.targets[0].older_than, "14d");
+    }
+
+    #[test]
+    fn rejects_invalid_storage_cleanup_schedule() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+storage_cleanup:
+  schedule: hourly
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidStorageCleanupSchedule)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_storage_cleanup_run_time() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+storage_cleanup:
+  run_time: "25:00"
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidStorageCleanupRunTime)
+        ));
+    }
+
+    #[test]
+    fn rejects_storage_cleanup_target_without_pattern() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+storage_cleanup:
+  targets:
+    - name: unsafe
+      directory: /var/log/saugra
+      older_than: 30d
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidStorageCleanupTargetPattern)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_storage_cleanup_older_than() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+storage_cleanup:
+  targets:
+    - name: summaries
+      directory: /var/lib/saugra/reports
+      filename_suffix: .json
+      older_than: forever
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidStorageCleanupOlderThan)
+        ));
+    }
+
+    #[test]
     fn from_file_merges_threat_path_catalogs_and_extra_paths() {
         let dir = tempfile::tempdir().unwrap();
         let catalog_path = dir.path().join("scanner-paths.yml");

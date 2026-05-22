@@ -184,7 +184,7 @@ fn unix_seconds_now() -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{path::Path, thread, time::Duration};
+    use std::path::Path;
 
     #[test]
     fn dry_run_reports_stale_matching_files_without_deleting() {
@@ -193,10 +193,9 @@ mod tests {
             .path()
             .join("saugra-security-summary-2026-05-01.json");
         fs::write(&stale, b"summary").unwrap();
-        thread::sleep(Duration::from_secs(2));
         let target = test_target(temp_dir.path(), "1s");
 
-        let report = run(&[target], true, unix_seconds_now()).unwrap();
+        let report = run(&[target], true, unix_seconds_now() + 2).unwrap();
 
         assert_eq!(report.matched_files, 1);
         assert_eq!(report.removed_files, 0);
@@ -213,15 +212,59 @@ mod tests {
         let other = temp_dir.path().join("keep-me.json");
         fs::write(&stale, b"summary").unwrap();
         fs::write(&other, b"other").unwrap();
-        thread::sleep(Duration::from_secs(2));
         let target = test_target(temp_dir.path(), "1s");
 
-        let report = run(&[target], false, unix_seconds_now()).unwrap();
+        let report = run(&[target], false, unix_seconds_now() + 2).unwrap();
 
         assert_eq!(report.matched_files, 1);
         assert_eq!(report.removed_files, 1);
         assert!(!stale.exists());
         assert!(other.exists());
+    }
+
+    #[test]
+    fn fresh_matching_files_are_reported_as_skipped() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let fresh = temp_dir
+            .path()
+            .join("saugra-security-summary-2026-05-22.json");
+        fs::write(&fresh, b"summary").unwrap();
+        let target = test_target(temp_dir.path(), "30d");
+
+        let report = run(&[target], false, unix_seconds_now()).unwrap();
+
+        assert_eq!(report.matched_files, 1);
+        assert_eq!(report.removed_files, 0);
+        assert_eq!(report.skipped_files, 1);
+        assert_eq!(report.files[0].action, StorageCleanupAction::Skipped);
+        assert!(fresh.exists());
+    }
+
+    #[test]
+    fn missing_target_directory_is_ignored() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let target = test_target(&temp_dir.path().join("missing"), "1s");
+
+        let report = run(&[target], false, unix_seconds_now()).unwrap();
+
+        assert_eq!(report.scanned_targets, 1);
+        assert_eq!(report.matched_files, 0);
+        assert_eq!(report.removed_files, 0);
+    }
+
+    #[test]
+    fn prefix_only_target_matches_stale_files() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let stale = temp_dir.path().join("saugra-access.log.1");
+        fs::write(&stale, b"log").unwrap();
+        let mut target = test_target(temp_dir.path(), "1s");
+        target.filename_prefix = Some("saugra-".to_string());
+        target.filename_suffix = None;
+
+        let report = run(&[target], true, unix_seconds_now() + 2).unwrap();
+
+        assert_eq!(report.matched_files, 1);
+        assert_eq!(report.files[0].action, StorageCleanupAction::WouldRemove);
     }
 
     fn test_target(directory: &Path, older_than: &str) -> StorageCleanupTargetConfig {
