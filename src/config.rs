@@ -146,6 +146,16 @@ pub enum ConfigError {
     InvalidStorageCleanupTargetPattern,
     #[error("storage_cleanup.targets older_than must be a positive duration, for example 30d")]
     InvalidStorageCleanupOlderThan,
+    #[error("forwarded_headers.trusted_proxies entries must not be blank")]
+    InvalidForwardedHeadersTrustedProxy,
+    #[error("forwarded_headers.real_ip_header must be a valid HTTP header name")]
+    InvalidForwardedHeadersRealIpHeader,
+    #[error("forwarded_headers.proto_header must be a valid HTTP header name")]
+    InvalidForwardedHeadersProtoHeader,
+    #[error("forwarded_headers.expected_proto must be http or https")]
+    InvalidForwardedHeadersExpectedProto,
+    #[error("forwarded_headers.insecure_proto_score must be greater than zero")]
+    InvalidForwardedHeadersInsecureProtoScore,
     #[error("websocket.allowed_origins entries must not be blank")]
     InvalidWebSocketAllowedOrigin,
     #[error("websocket.allowed_hosts entries must not be blank")]
@@ -165,6 +175,8 @@ pub struct SaugraConfig {
     pub routes: Vec<ProxyRouteConfig>,
     #[serde(default)]
     pub security: SecurityConfig,
+    #[serde(default)]
+    pub forwarded_headers: ForwardedHeadersConfig,
     #[serde(default)]
     pub rate_limit: RateLimitConfig,
     #[serde(default)]
@@ -242,6 +254,35 @@ impl Default for SecurityConfig {
             enable_rate_limiting: true,
             block_suspicious_user_agents: true,
             inspect_json_body: true,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ForwardedHeadersConfig {
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+    #[serde(default = "default_trusted_proxies")]
+    pub trusted_proxies: Vec<String>,
+    #[serde(default = "default_real_ip_header")]
+    pub real_ip_header: String,
+    #[serde(default = "default_proto_header")]
+    pub proto_header: String,
+    #[serde(default = "default_expected_proto")]
+    pub expected_proto: String,
+    #[serde(default = "default_insecure_proto_score")]
+    pub insecure_proto_score: u16,
+}
+
+impl Default for ForwardedHeadersConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            trusted_proxies: default_trusted_proxies(),
+            real_ip_header: default_real_ip_header(),
+            proto_header: default_proto_header(),
+            expected_proto: default_expected_proto(),
+            insecure_proto_score: default_insecure_proto_score(),
         }
     }
 }
@@ -915,6 +956,7 @@ impl SaugraConfig {
         self.validate_behavior()?;
         self.validate_bot_protection()?;
         self.validate_runtime_policy()?;
+        self.validate_forwarded_headers()?;
 
         if self.ai.enabled && self.ai.mode != "explain_only" {
             return Err(ConfigError::InvalidAiMode);
@@ -1015,6 +1057,38 @@ impl SaugraConfig {
             .any(|host| host.trim().is_empty())
         {
             return Err(ConfigError::InvalidWebSocketAllowedHost);
+        }
+
+        Ok(())
+    }
+
+    fn validate_forwarded_headers(&self) -> Result<(), ConfigError> {
+        if self
+            .forwarded_headers
+            .trusted_proxies
+            .iter()
+            .any(|proxy| proxy.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidForwardedHeadersTrustedProxy);
+        }
+
+        if !is_valid_header_name(&self.forwarded_headers.real_ip_header) {
+            return Err(ConfigError::InvalidForwardedHeadersRealIpHeader);
+        }
+
+        if !is_valid_header_name(&self.forwarded_headers.proto_header) {
+            return Err(ConfigError::InvalidForwardedHeadersProtoHeader);
+        }
+
+        if !matches!(
+            self.forwarded_headers.expected_proto.trim(),
+            "http" | "https"
+        ) {
+            return Err(ConfigError::InvalidForwardedHeadersExpectedProto);
+        }
+
+        if self.forwarded_headers.insecure_proto_score == 0 {
+            return Err(ConfigError::InvalidForwardedHeadersInsecureProtoScore);
         }
 
         Ok(())
@@ -1492,12 +1566,59 @@ fn bot_list_has_blank(list: &BotProtectionLists) -> bool {
         .any(|value| value.trim().is_empty())
 }
 
+fn is_valid_header_name(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && value.bytes().all(|byte| {
+            matches!(
+                byte,
+                b'!' | b'#'
+                    | b'$'
+                    | b'%'
+                    | b'&'
+                    | b'\''
+                    | b'*'
+                    | b'+'
+                    | b'-'
+                    | b'.'
+                    | b'^'
+                    | b'_'
+                    | b'`'
+                    | b'|'
+                    | b'~'
+                    | b'0'..=b'9'
+                    | b'a'..=b'z'
+                    | b'A'..=b'Z'
+            )
+        })
+}
+
 fn default_true() -> bool {
     true
 }
 
 fn default_max_body_size() -> String {
     "2mb".to_string()
+}
+
+fn default_trusted_proxies() -> Vec<String> {
+    vec!["127.0.0.1/32".to_string(), "::1".to_string()]
+}
+
+fn default_real_ip_header() -> String {
+    "X-Forwarded-For".to_string()
+}
+
+fn default_proto_header() -> String {
+    "X-Forwarded-Proto".to_string()
+}
+
+fn default_expected_proto() -> String {
+    "https".to_string()
+}
+
+fn default_insecure_proto_score() -> u16 {
+    10
 }
 
 fn default_paranoia_level() -> u8 {
@@ -1797,6 +1918,78 @@ storage_cleanup:
         assert!(config.storage_cleanup.enabled);
         assert!(!config.storage_cleanup.dry_run);
         assert_eq!(config.storage_cleanup.targets[0].older_than, "14d");
+    }
+
+    #[test]
+    fn accepts_forwarded_headers_config() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+forwarded_headers:
+  enabled: true
+  trusted_proxies:
+    - 127.0.0.1/32
+    - 10.0.0.0/8
+  real_ip_header: X-Forwarded-For
+  proto_header: X-Forwarded-Proto
+  expected_proto: https
+  insecure_proto_score: 15
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.forwarded_headers.trusted_proxies.len(), 2);
+        assert_eq!(config.forwarded_headers.insecure_proto_score, 15);
+    }
+
+    #[test]
+    fn rejects_invalid_forwarded_header_name() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+forwarded_headers:
+  proto_header: "X Forwarded Proto"
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidForwardedHeadersProtoHeader)
+        ));
+    }
+
+    #[test]
+    fn rejects_invalid_forwarded_expected_proto() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+forwarded_headers:
+  expected_proto: ftp
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidForwardedHeadersExpectedProto)
+        ));
     }
 
     #[test]

@@ -349,6 +349,7 @@ mod tests {
             }],
             routes: Vec::new(),
             security: SecurityConfig::default(),
+            forwarded_headers: Default::default(),
             rate_limit: RateLimitConfig::default(),
             rules: RuleSettings::default(),
             behavior: Default::default(),

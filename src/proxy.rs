@@ -1,10 +1,14 @@
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use anyhow::Context;
 use async_trait::async_trait;
 use axum::{
     body::{to_bytes, Body},
-    extract::State,
+    extract::{ConnectInfo, State},
     http::{
         header::{self, HeaderName},
         HeaderMap, Method, Request, Response, StatusCode, Uri,
@@ -26,7 +30,10 @@ use uuid::Uuid;
 use crate::{
     behavior::{self, BehaviorRequest, BehaviorStore},
     bot::{self, BotProtectionRequest, BotProtectionStore},
-    config::{RouteRateLimitConfig, RuntimeAllowlistEffect, SaugraConfig, UpstreamConfig, WafMode},
+    config::{
+        ForwardedHeadersConfig, RouteRateLimitConfig, RuntimeAllowlistEffect, SaugraConfig,
+        UpstreamConfig, WafMode,
+    },
     decision::{WafAction, WafDecision},
     event_store::{self, EventLogRetention, SecurityEvent, UpstreamEvent, WebSocketEvent},
     rate_limit::{self, RateLimitExceeded, RateLimitPolicy, RateLimitStore},
@@ -166,12 +173,16 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/_saugra/health", get(health))
-        .fallback(proxy_request)
+        .fallback(proxy_request_with_connect_info)
         .with_state(state);
 
     let listener = tokio::net::TcpListener::bind(listen_addr).await?;
     info!("Saugra listening on http://{}", listen_addr);
-    axum::serve(listener, app).await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await?;
     Ok(())
 }
 
@@ -186,9 +197,31 @@ pub async fn proxy_request(
     State(state): State<ProxyState>,
     request: Request<Body>,
 ) -> Result<Response<Body>, Response<Body>> {
+    proxy_request_inner(state, None, request).await
+}
+
+async fn proxy_request_with_connect_info(
+    State(state): State<ProxyState>,
+    ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
+    request: Request<Body>,
+) -> Result<Response<Body>, Response<Body>> {
+    proxy_request_inner(state, Some(peer_addr), request).await
+}
+
+async fn proxy_request_inner(
+    state: ProxyState,
+    peer_addr: Option<SocketAddr>,
+    request: Request<Body>,
+) -> Result<Response<Body>, Response<Body>> {
     let request_id = Uuid::new_v4().to_string();
     let (mut parts, body) = request.into_parts();
-    let client_ip = client_id_from_headers(&parts.headers);
+    let trusted_forwarded_headers =
+        forwarded_headers_are_trusted(peer_addr, &state.config.forwarded_headers, true);
+    let client_ip = client_id_from_headers(
+        &parts.headers,
+        &state.config.forwarded_headers,
+        trusted_forwarded_headers,
+    );
     let upstream = state
         .select_upstream(parts.uri.path())
         .cloned()
@@ -281,6 +314,7 @@ pub async fn proxy_request(
             client_upgrade,
             request_id,
             client_ip,
+            trusted_forwarded_headers,
         )
         .await;
     }
@@ -321,12 +355,15 @@ pub async fn proxy_request(
         .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
     let decision = decision_with_behavior_and_bot(
         &state,
-        request_id.clone(),
-        matches,
-        &client_ip,
-        &path,
-        &headers,
-        &user_agent,
+        DecisionRequest {
+            request_id: request_id.clone(),
+            matches,
+            client_ip: &client_ip,
+            path: &path,
+            headers: &headers,
+            user_agent: &user_agent,
+            trusted_forwarded_headers,
+        },
     );
 
     log_decision(
@@ -412,6 +449,7 @@ async fn proxy_websocket_handshake(
     client_upgrade: Option<OnUpgrade>,
     request_id: String,
     client_ip: String,
+    trusted_forwarded_headers: bool,
 ) -> Result<Response<Body>, Response<Body>> {
     let path = parts.uri.path().to_string();
     let query = parts.uri.query().unwrap_or_default().to_string();
@@ -437,12 +475,15 @@ async fn proxy_websocket_handshake(
 
     let decision = decision_with_behavior_and_bot(
         &state,
-        request_id.clone(),
-        matches,
-        &client_ip,
-        &path,
-        &headers,
-        &user_agent,
+        DecisionRequest {
+            request_id: request_id.clone(),
+            matches,
+            client_ip: &client_ip,
+            path: &path,
+            headers: &headers,
+            user_agent: &user_agent,
+            trusted_forwarded_headers,
+        },
     );
     let event = websocket_event(
         &upstream,
@@ -682,22 +723,96 @@ fn header_value_eq(headers: &HeaderMap, name: HeaderName, expected: &str) -> boo
         .unwrap_or(false)
 }
 
-fn client_id_from_headers(headers: &HeaderMap) -> String {
+fn client_id_from_headers(
+    headers: &HeaderMap,
+    forwarded_headers: &ForwardedHeadersConfig,
+    trusted_forwarded_headers: bool,
+) -> String {
+    if forwarded_headers.enabled && trusted_forwarded_headers {
+        if let Some(client_ip) = configured_header_value(headers, &forwarded_headers.real_ip_header)
+            .and_then(|value| value.split(',').next())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return client_ip.to_string();
+        }
+    }
+
     headers
-        .get("x-forwarded-for")
+        .get("x-real-ip")
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .or_else(|| {
-            headers
-                .get("x-real-ip")
-                .and_then(|value| value.to_str().ok())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-        })
         .unwrap_or("unknown")
         .to_string()
+}
+
+fn configured_header_value<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.iter().find_map(|(header_name, value)| {
+        if header_name.as_str().eq_ignore_ascii_case(name.trim()) {
+            value.to_str().ok()
+        } else {
+            None
+        }
+    })
+}
+
+fn forwarded_headers_are_trusted(
+    peer_addr: Option<SocketAddr>,
+    config: &ForwardedHeadersConfig,
+    trust_when_peer_unavailable: bool,
+) -> bool {
+    if !config.enabled {
+        return false;
+    }
+
+    let Some(peer_addr) = peer_addr else {
+        return trust_when_peer_unavailable;
+    };
+
+    config
+        .trusted_proxies
+        .iter()
+        .any(|entry| ip_matches_proxy_entry(peer_addr.ip(), entry))
+}
+
+fn ip_matches_proxy_entry(ip: IpAddr, entry: &str) -> bool {
+    let entry = entry.trim();
+    if entry.eq_ignore_ascii_case("any") {
+        return true;
+    }
+
+    if let Ok(entry_ip) = entry.parse::<IpAddr>() {
+        return entry_ip == ip;
+    }
+
+    let IpAddr::V4(ip) = ip else {
+        return false;
+    };
+
+    ipv4_cidr_contains(entry, ip)
+}
+
+fn ipv4_cidr_contains(cidr: &str, ip: Ipv4Addr) -> bool {
+    let Some((network, prefix)) = cidr.split_once('/') else {
+        return false;
+    };
+    let Ok(prefix) = prefix.parse::<u32>() else {
+        return false;
+    };
+    if prefix > 32 {
+        return false;
+    }
+    let Ok(network) = network.parse::<Ipv4Addr>() else {
+        return false;
+    };
+
+    let mask = if prefix == 0 {
+        0
+    } else {
+        u32::MAX << (32 - prefix)
+    };
+    (u32::from(network) & mask) == (u32::from(ip) & mask)
 }
 
 struct SelectedRateLimit {
@@ -764,15 +879,27 @@ fn rate_limit_match(exceeded: &RateLimitExceeded) -> RuleMatch {
     }
 }
 
-fn decision_with_behavior_and_bot(
-    state: &ProxyState,
+struct DecisionRequest<'a> {
     request_id: String,
-    mut matches: Vec<RuleMatch>,
-    client_ip: &str,
-    path: &str,
-    headers: &str,
-    user_agent: &str,
-) -> WafDecision {
+    matches: Vec<RuleMatch>,
+    client_ip: &'a str,
+    path: &'a str,
+    headers: &'a str,
+    user_agent: &'a str,
+    trusted_forwarded_headers: bool,
+}
+
+fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'_>) -> WafDecision {
+    let DecisionRequest {
+        request_id,
+        mut matches,
+        client_ip,
+        path,
+        headers,
+        user_agent,
+        trusted_forwarded_headers,
+    } = request;
+
     if let Some(runtime_blocklist) = state.runtime_policy.match_blocked_ip(client_ip) {
         let mut decision = WafDecision::from_matches_with_blocking_paranoia(
             request_id,
@@ -818,6 +945,8 @@ fn decision_with_behavior_and_bot(
                 path,
                 headers,
                 user_agent,
+                forwarded_headers: &state.config.forwarded_headers,
+                trusted_forwarded_headers,
                 server_mode: state.config.server.mode,
             },
         ) {
@@ -1189,7 +1318,36 @@ mod tests {
         let mut headers = HeaderMap::new();
         headers.insert("x-forwarded-for", "203.0.113.10, 10.0.0.1".parse().unwrap());
 
-        assert_eq!(client_id_from_headers(&headers), "203.0.113.10");
+        assert_eq!(
+            client_id_from_headers(&headers, &ForwardedHeadersConfig::default(), true),
+            "203.0.113.10"
+        );
+    }
+
+    #[test]
+    fn ignores_forwarded_client_id_from_untrusted_proxy() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-forwarded-for", "203.0.113.10, 10.0.0.1".parse().unwrap());
+        headers.insert("x-real-ip", "198.51.100.20".parse().unwrap());
+
+        assert_eq!(
+            client_id_from_headers(&headers, &ForwardedHeadersConfig::default(), false),
+            "198.51.100.20"
+        );
+    }
+
+    #[test]
+    fn matches_trusted_proxy_cidr() {
+        assert!(forwarded_headers_are_trusted(
+            Some("127.0.0.1:4321".parse().unwrap()),
+            &ForwardedHeadersConfig::default(),
+            false
+        ));
+        assert!(!forwarded_headers_are_trusted(
+            Some("203.0.113.10:4321".parse().unwrap()),
+            &ForwardedHeadersConfig::default(),
+            false
+        ));
     }
 
     #[test]
@@ -1330,6 +1488,7 @@ mod tests {
                 enable_rate_limiting: true,
                 ..Default::default()
             },
+            forwarded_headers: Default::default(),
             rate_limit: crate::config::RateLimitConfig {
                 backend: crate::config::RateLimitBackend::Memory,
                 redis_url: None,

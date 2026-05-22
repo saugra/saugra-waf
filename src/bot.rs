@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     behavior::BehaviorContributor,
-    config::{BehaviorBackend, BehaviorMode, BotProtectionConfig, WafMode},
+    config::{BehaviorBackend, BehaviorMode, BotProtectionConfig, ForwardedHeadersConfig, WafMode},
     decision::WafAction,
     rules::{RuleMatch, RuleTarget},
 };
@@ -38,6 +38,8 @@ pub struct BotProtectionRequest<'a> {
     pub path: &'a str,
     pub headers: &'a str,
     pub user_agent: &'a str,
+    pub forwarded_headers: &'a ForwardedHeadersConfig,
+    pub trusted_forwarded_headers: bool,
     pub server_mode: WafMode,
 }
 
@@ -385,7 +387,6 @@ fn contributors_for_request(
 ) -> Vec<BehaviorContributor> {
     let mut contributors = Vec::new();
     let user_agent = request.user_agent.trim().to_ascii_lowercase();
-    let headers = request.headers.to_ascii_lowercase();
 
     if user_agent.is_empty() {
         contributors.push(contributor("missing_user_agent", 20));
@@ -412,11 +413,41 @@ fn contributors_for_request(
         contributors.push(contributor("scanner_path_probe", 25));
     }
 
-    if headers.contains("x-forwarded-proto: http") {
-        contributors.push(contributor("insecure_forwarded_proto", 10));
+    if request.forwarded_headers.enabled
+        && request.trusted_forwarded_headers
+        && forwarded_proto_is_insecure(request.headers, request.forwarded_headers)
+    {
+        contributors.push(contributor(
+            "insecure_forwarded_proto",
+            request.forwarded_headers.insecure_proto_score,
+        ));
     }
 
     contributors
+}
+
+fn forwarded_proto_is_insecure(headers: &str, config: &ForwardedHeadersConfig) -> bool {
+    let Some(value) = normalized_header_value(headers, &config.proto_header) else {
+        return false;
+    };
+    value
+        .trim()
+        .split(',')
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .is_some_and(|value| !value.eq_ignore_ascii_case(config.expected_proto.trim()))
+}
+
+fn normalized_header_value<'a>(headers: &'a str, name: &str) -> Option<&'a str> {
+    headers.lines().find_map(|line| {
+        let (header_name, value) = line.split_once(':')?;
+        if header_name.trim().eq_ignore_ascii_case(name.trim()) {
+            Some(value.trim())
+        } else {
+            None
+        }
+    })
 }
 
 fn contributor(reason: &str, score_delta: u16) -> BehaviorContributor {
@@ -554,13 +585,7 @@ mod tests {
         let outcome = store
             .evaluate(
                 &config,
-                BotProtectionRequest {
-                    client_id: "203.0.113.10",
-                    path: "/.env",
-                    headers: "",
-                    user_agent: "curl/8.0",
-                    server_mode: WafMode::Monitor,
-                },
+                test_request("203.0.113.10", "/.env", "", "curl/8.0", WafMode::Monitor),
             )
             .unwrap();
 
@@ -585,13 +610,7 @@ mod tests {
         let outcome = store
             .evaluate(
                 &config,
-                BotProtectionRequest {
-                    client_id: "203.0.113.10",
-                    path: "/",
-                    headers: "",
-                    user_agent: "Mozilla/5.0",
-                    server_mode: WafMode::Block,
-                },
+                test_request("203.0.113.10", "/", "", "Mozilla/5.0", WafMode::Block),
             )
             .unwrap();
 
@@ -616,13 +635,7 @@ mod tests {
         let outcome = store
             .evaluate(
                 &config,
-                BotProtectionRequest {
-                    client_id: "203.0.113.10",
-                    path: "/.env",
-                    headers: "",
-                    user_agent: "curl/8.0",
-                    server_mode: WafMode::Block,
-                },
+                test_request("203.0.113.10", "/.env", "", "curl/8.0", WafMode::Block),
             )
             .unwrap();
 
@@ -650,13 +663,7 @@ mod tests {
                 .unwrap()
                 .evaluate(
                     &config,
-                    BotProtectionRequest {
-                        client_id: "203.0.113.10",
-                        path: "/.env",
-                        headers: "",
-                        user_agent: "curl/8.0",
-                        server_mode: WafMode::Block,
-                    },
+                    test_request("203.0.113.10", "/.env", "", "curl/8.0", WafMode::Block),
                 )
                 .unwrap();
         }
@@ -665,13 +672,7 @@ mod tests {
             .unwrap()
             .evaluate(
                 &config,
-                BotProtectionRequest {
-                    client_id: "203.0.113.10",
-                    path: "/",
-                    headers: "",
-                    user_agent: "Mozilla/5.0",
-                    server_mode: WafMode::Block,
-                },
+                test_request("203.0.113.10", "/", "", "Mozilla/5.0", WafMode::Block),
             )
             .unwrap();
 
@@ -698,13 +699,7 @@ mod tests {
                 .unwrap()
                 .evaluate(
                     &config,
-                    BotProtectionRequest {
-                        client_id,
-                        path: "/.env",
-                        headers: "",
-                        user_agent: "curl/8.0",
-                        server_mode: WafMode::Monitor,
-                    },
+                    test_request(client_id, "/.env", "", "curl/8.0", WafMode::Monitor),
                 )
                 .unwrap();
         }
@@ -735,13 +730,7 @@ mod tests {
 
         let outcome = evaluate_with_state(
             &config,
-            BotProtectionRequest {
-                client_id: "203.0.113.10",
-                path: "/",
-                headers: "",
-                user_agent: "Mozilla/5.0",
-                server_mode: WafMode::Block,
-            },
+            test_request("203.0.113.10", "/", "", "Mozilla/5.0", WafMode::Block),
             &mut state,
             "memory",
         );
@@ -769,13 +758,7 @@ mod tests {
         let outcome = store
             .evaluate(
                 &config,
-                BotProtectionRequest {
-                    client_id: "203.0.113.10",
-                    path: "/login",
-                    headers: "",
-                    user_agent: "",
-                    server_mode: WafMode::Monitor,
-                },
+                test_request("203.0.113.10", "/login", "", "", WafMode::Monitor),
             )
             .unwrap();
 
@@ -798,13 +781,13 @@ mod tests {
         let outcome = store
             .evaluate(
                 &config,
-                BotProtectionRequest {
-                    client_id: "203.0.113.10",
-                    path: "/custom-scanner/run",
-                    headers: "",
-                    user_agent: "Mozilla/5.0",
-                    server_mode: WafMode::Monitor,
-                },
+                test_request(
+                    "203.0.113.10",
+                    "/custom-scanner/run",
+                    "",
+                    "Mozilla/5.0",
+                    WafMode::Monitor,
+                ),
             )
             .unwrap();
 
@@ -813,6 +796,62 @@ mod tests {
             .contributors
             .iter()
             .any(|contributor| contributor.reason == "scanner_path_probe"));
+    }
+
+    #[test]
+    fn trusted_forwarded_proto_policy_scores_unexpected_proto() {
+        let store = MemoryBotProtectionStore::new();
+        let config = BotProtectionConfig {
+            enabled: true,
+            backend: BehaviorBackend::Memory,
+            monitor_threshold: 10,
+            block_threshold: 80,
+            ..BotProtectionConfig::default()
+        };
+
+        let outcome = store
+            .evaluate(
+                &config,
+                test_request(
+                    "203.0.113.10",
+                    "/",
+                    "x-forwarded-proto: http",
+                    "Mozilla/5.0",
+                    WafMode::Monitor,
+                ),
+            )
+            .unwrap();
+
+        assert_eq!(outcome.action, WafAction::Monitor);
+        assert!(outcome
+            .contributors
+            .iter()
+            .any(|contributor| contributor.reason == "insecure_forwarded_proto"));
+    }
+
+    #[test]
+    fn untrusted_forwarded_proto_header_is_not_scored() {
+        let store = MemoryBotProtectionStore::new();
+        let config = BotProtectionConfig {
+            enabled: true,
+            backend: BehaviorBackend::Memory,
+            monitor_threshold: 10,
+            block_threshold: 80,
+            ..BotProtectionConfig::default()
+        };
+
+        let mut request = test_request(
+            "203.0.113.10",
+            "/",
+            "x-forwarded-proto: http",
+            "Mozilla/5.0",
+            WafMode::Monitor,
+        );
+        request.trusted_forwarded_headers = false;
+        let outcome = store.evaluate(&config, request).unwrap();
+
+        assert_eq!(outcome.action, WafAction::Allow);
+        assert!(outcome.contributors.is_empty());
     }
 
     #[test]
@@ -847,4 +886,25 @@ mod tests {
         assert_eq!(rule_match.rule_name, "Custom Bot Threshold");
         assert_eq!(rule_match.category, "custom_bot");
     }
+
+    fn test_request<'a>(
+        client_id: &'a str,
+        path: &'a str,
+        headers: &'a str,
+        user_agent: &'a str,
+        server_mode: WafMode,
+    ) -> BotProtectionRequest<'a> {
+        BotProtectionRequest {
+            client_id,
+            path,
+            headers,
+            user_agent,
+            forwarded_headers: &DEFAULT_FORWARDED_HEADERS,
+            trusted_forwarded_headers: true,
+            server_mode,
+        }
+    }
+
+    static DEFAULT_FORWARDED_HEADERS: std::sync::LazyLock<ForwardedHeadersConfig> =
+        std::sync::LazyLock::new(ForwardedHeadersConfig::default);
 }

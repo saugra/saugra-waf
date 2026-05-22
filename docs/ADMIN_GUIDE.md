@@ -433,6 +433,28 @@ saugra test-config --config /etc/saugra/saugra.yml
 systemctl restart saugra
 ```
 
+### Forwarded Protocol Findings
+
+If events show `insecure_forwarded_proto`, confirm the request reached Saugra
+through a configured trusted proxy and that the proxy sends the expected
+protocol header:
+
+```yaml
+forwarded_headers:
+  trusted_proxies:
+    - 127.0.0.1/32
+  proto_header: X-Forwarded-Proto
+  expected_proto: https
+```
+
+For TLS-terminating Nginx, set the HTTPS server block to send
+`X-Forwarded-Proto: https`. After fixing the proxy, reset the affected bot state
+or wait for `bot_protection.score_window` to expire:
+
+```bash
+saugra state reset bot 203.0.113.10 --config /etc/saugra/saugra.yml
+```
+
 ### Scanner Bursts
 
 1. Summarize recent events and identify top IPs, paths, and rule IDs:

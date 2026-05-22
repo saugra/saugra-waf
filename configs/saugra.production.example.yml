@@ -47,6 +47,25 @@ security:
   block_suspicious_user_agents: true
   inspect_json_body: true
 
+# Forwarded headers are only trusted when the direct peer is in trusted_proxies.
+# Keep Saugra private behind Nginx/Apache/load balancers and list only those
+# local or private proxy addresses here. If TLS terminates at the proxy, ensure
+# it sends X-Forwarded-Proto: https on the public HTTPS server block.
+forwarded_headers:
+  enabled: true
+  trusted_proxies:
+    - 127.0.0.1/32
+    - ::1
+    # - 10.0.0.0/8
+    # - 172.16.0.0/12
+    # - 192.168.0.0/16
+  real_ip_header: X-Forwarded-For
+  proto_header: X-Forwarded-Proto
+  expected_proto: https
+  # Bot protection adds this score when a trusted proxy reports a protocol
+  # other than expected_proto. Keep this low enough for monitor-first rollout.
+  insecure_proto_score: 10
+
 # Rate limiting protects login, payment, API, and other abuse-sensitive routes.
 # Redis is recommended in production so limits survive restarts and work across
 # multiple Saugra instances.

@@ -1132,6 +1132,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
             enable_rate_limiting: true,
             ..Default::default()
         },
+        forwarded_headers: Default::default(),
         rate_limit: RateLimitConfig {
             backend: RateLimitBackend::Memory,
             redis_url: None,

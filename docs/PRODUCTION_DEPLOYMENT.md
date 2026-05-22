@@ -295,6 +295,29 @@ location /ws/ {
 }
 ```
 
+### Forwarded Header Trust
+
+Saugra trusts forwarded client IP and protocol headers only when the direct peer
+matches `forwarded_headers.trusted_proxies`. Keep Saugra private and list only
+your local reverse proxy or load balancer ranges:
+
+```yaml
+forwarded_headers:
+  enabled: true
+  trusted_proxies:
+    - 127.0.0.1/32
+    - ::1
+  real_ip_header: X-Forwarded-For
+  proto_header: X-Forwarded-Proto
+  expected_proto: https
+  insecure_proto_score: 10
+```
+
+If TLS terminates at Nginx or Apache, the public HTTPS virtual host should send
+`X-Forwarded-Proto: https`. If another load balancer terminates TLS before
+Nginx, do not rely on `$scheme`; set the header from the trusted upstream value
+or hard-code `https` on the HTTPS entrypoint.
+
 Configure Saugra with the public browser origins and hosts you expect:
 
 ```yaml

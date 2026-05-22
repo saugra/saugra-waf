@@ -1,6 +1,6 @@
 [package]
 name = "saugra"
-version = "1.0.2"
+version = "1.0.3"
 edition = "2021"
 description = "A lightweight rule-based + AI-assisted Web Application Firewall."
 license = "AGPL-3.0-only"

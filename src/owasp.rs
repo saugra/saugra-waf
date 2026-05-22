@@ -371,6 +371,7 @@ mod tests {
             }],
             routes: Vec::new(),
             security: SecurityConfig::default(),
+            forwarded_headers: Default::default(),
             rate_limit: RateLimitConfig {
                 backend: RateLimitBackend::Redis,
                 redis_url: Some("redis://127.0.0.1:6379".to_string()),

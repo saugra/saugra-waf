@@ -216,6 +216,8 @@ For production:
 
 - Keep Saugra on a private address such as `127.0.0.1:8787`.
 - Put Nginx or Apache in front for public TLS.
+- Configure `forwarded_headers.trusted_proxies` for the proxy addresses that
+  are allowed to supply client IP and protocol headers.
 - Use `rate_limit.backend: redis`.
 - Store events in a durable path such as `/var/log/saugra/saugra-events.jsonl`.
 - Configure exact WebSocket `allowed_origins` and `allowed_hosts` before routing
