@@ -258,7 +258,9 @@ security_summary:
 ```
 
 `YYYY-MM-DD` is replaced using the configured summary timezone. Email delivery
-uses a local sendmail-compatible command when configured:
+uses a local sendmail-compatible command when configured. Email summaries are
+sent as a formatted HTML body with a plain-text fallback; the local file output
+remains JSON for automation and archiving.
 
 ```yaml
 security_summary:

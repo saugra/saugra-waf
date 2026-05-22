@@ -6,6 +6,30 @@ All notable changes to Saugra are documented here.
 
 - Add follow-up changes here before tagging the next release.
 
+## 1.0.4 - 2026-05-22
+
+### Added
+
+- Professional HTML daily security summary emails with plain-text fallback.
+- App hostname branding in summary emails, for example `Saugra WAF -
+  CONFERENCE.KE`.
+- Optional `app_hostname` field in generated summary JSON when summaries are
+  produced from a configured upstream.
+
+### Changed
+
+- Security summary email delivery now sends the report in the email body
+  instead of sending raw JSON as the message content.
+- Summary email headers are centered for a cleaner operator-facing report.
+- Admin documentation clarifies that email summaries are HTML while file output
+  remains JSON for archiving and automation.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo check --all-targets`
+- Focused security summary email rendering test passes locally.
+
 ## 1.0.2 - 2026-05-22
 
 ### Added
