@@ -275,6 +275,13 @@ pub fn tail(
         .collect())
 }
 
+pub fn read_all(path: &Path, retention: EventLogRetention) -> anyhow::Result<Vec<SecurityEvent>> {
+    Ok(read_event_lines(path, retention)?
+        .into_iter()
+        .filter_map(|line| serde_json::from_str(&line).ok())
+        .collect())
+}
+
 pub fn find_by_request_id(
     path: &Path,
     retention: EventLogRetention,

@@ -205,6 +205,57 @@ logging:
   event_log_max_files: 30
   timezone: Africa/Nairobi
 
+# Security summaries are generated from the durable JSONL security event log.
+# They are intended for daily operator review without watching logs all day.
+#
+# Supported settings today:
+# - enabled: true or false. When false, manual commands can still be run after
+#   changing config, but scheduled delivery should not be installed.
+# - schedule: daily. This is the only supported schedule in the current
+#   community edition. Use a systemd timer for the actual clock trigger.
+# - send_time: 24-hour HH:MM local time used by the documented systemd timer,
+#   for example "08:00", "13:30", or "23:45".
+# - timezone: UTC, Africa/Nairobi, or a fixed offset such as +03:00. This is
+#   used for date-stamped output filenames and operator-facing summary context.
+# - lookback: positive duration such as 12h, 24h, 48h, or 7d. Daily production
+#   review should normally use 24h.
+# - output_path: file path for summary JSON. The token YYYY-MM-DD is replaced
+#   with the summary date in the configured timezone.
+# - channels: delivery targets. Supported channel types are file and email.
+#   Keep file enabled even when email is configured so there is always a local
+#   audit copy.
+#
+# Common alternatives:
+# - Morning daily review: send_time "08:00", lookback 24h.
+# - Shift handoff review: send_time "18:00", lookback 12h.
+# - Weekend catch-up: keep schedule daily but run
+#   `saugra summary daily --config /etc/saugra/saugra.yml` manually after
+#   temporarily setting lookback to 72h or 7d.
+# - File-only delivery: channels contains only `type: file`.
+# - File + email delivery: keep `type: file`, then add an email channel after
+#   local sendmail/postfix is configured.
+security_summary:
+  enabled: true
+  # Supported today: daily
+  schedule: daily
+  # 24-hour local time. Examples: "08:00", "13:30", "23:45"
+  send_time: "08:00"
+  # Supported: UTC, Africa/Nairobi, or fixed offsets such as +03:00
+  timezone: Africa/Nairobi
+  # Examples: 12h, 24h, 48h, 7d
+  lookback: 24h
+  # YYYY-MM-DD is replaced using security_summary.timezone.
+  output_path: /var/log/saugra/saugra-security-summary-YYYY-MM-DD.json
+  channels:
+    # Stable default: write local JSON summary.
+    - type: file
+    # Optional local email delivery after sendmail/postfix is configured:
+    # - type: email
+    #   from: saugra@example.com
+    #   to:
+    #     - security@example.com
+    #   sendmail_path: /usr/sbin/sendmail
+
 # WebSocket handshakes are inspected before Saugra upgrades and tunnels traffic.
 websocket:
   # Set to false if your application does not use WebSockets.

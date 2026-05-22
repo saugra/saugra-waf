@@ -216,6 +216,228 @@ Use `saugra allowlist list` to find the entry ID, then remove it with:
 saugra allowlist remove <entry-id> --config /etc/saugra/saugra.yml
 ```
 
+## Local State Reset
+
+When a single trusted client accumulates behavior or bot state during rollout,
+reset only that client instead of deleting the full state file:
+
+```bash
+saugra state reset behavior 203.0.113.10 --config /etc/saugra/saugra.yml
+saugra state reset bot 203.0.113.10 --config /etc/saugra/saugra.yml
+```
+
+This is for local behavior and bot-protection state. It does not remove durable
+security events from `/var/log/saugra/saugra-events.jsonl`.
+
+## Security Summaries
+
+Generate a local summary over the configured lookback window and print JSON:
+
+```bash
+saugra summary daily --config /etc/saugra/saugra.yml
+```
+
+Write the summary through configured delivery channels:
+
+```bash
+saugra summary send --config /etc/saugra/saugra.yml
+```
+
+The stable default is file output:
+
+```yaml
+security_summary:
+  enabled: true
+  schedule: daily
+  send_time: "08:00"
+  timezone: Africa/Nairobi
+  lookback: 24h
+  output_path: /var/log/saugra/saugra-security-summary-YYYY-MM-DD.json
+  channels:
+    - type: file
+```
+
+`YYYY-MM-DD` is replaced using the configured summary timezone. Email delivery
+uses a local sendmail-compatible command when configured:
+
+```yaml
+security_summary:
+  channels:
+    - type: file
+    - type: email
+      from: saugra@example.com
+      to:
+        - security@example.com
+      sendmail_path: /usr/sbin/sendmail
+```
+
+To schedule summaries with systemd, create a oneshot service:
+
+```ini
+[Unit]
+Description=Saugra daily security summary
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/saugra summary send --config /etc/saugra/saugra.yml
+User=saugra
+Group=saugra
+```
+
+Then create a timer:
+
+```ini
+[Unit]
+Description=Run Saugra daily security summary
+
+[Timer]
+OnCalendar=*-*-* 08:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable it with:
+
+```bash
+systemctl enable --now saugra-summary.timer
+systemctl list-timers --all | grep saugra-summary
+```
+
+Summary delivery failures are visible in `journalctl -u saugra-summary.service`
+or in the terminal when running `saugra summary send` manually. Saugra also
+records local summary admin events next to the configured output path:
+
+```bash
+tail -n 20 /var/log/saugra/saugra-security-summary-admin-events.jsonl
+```
+
+## Incident Workflows
+
+Use these workflows during production triage. Prefer short-lived runtime policy
+changes first, then make config or rule-pack changes after the incident is
+understood.
+
+### False Positive Blocks
+
+1. Get the request reference from the block response or recent event logs.
+2. Explain the decision:
+
+```bash
+saugra explain <request-id> --config /etc/saugra/saugra.yml
+```
+
+3. If the finding is bot or behavior scoring, add a short runtime allowlist
+   entry for the affected trusted IP:
+
+```bash
+saugra allowlist add ip 203.0.113.10 --duration 2h --reason "false positive triage" --config /etc/saugra/saugra.yml
+```
+
+4. If a deterministic rule is noisy for a valid route or parameter, keep the
+   server in monitor mode or add a scoped `rules.exclusions` entry after review.
+5. Validate and restart only when changing YAML config:
+
+```bash
+saugra test-config --config /etc/saugra/saugra.yml
+systemctl restart saugra
+```
+
+### Scanner Bursts
+
+1. Summarize recent events and identify top IPs, paths, and rule IDs:
+
+```bash
+saugra logs summary --config /etc/saugra/saugra.yml --limit 500
+```
+
+2. Explain a representative blocked or monitored request:
+
+```bash
+saugra explain <request-id> --config /etc/saugra/saugra.yml
+```
+
+3. Temporarily block clear abusive IPs or CIDRs:
+
+```bash
+saugra allowlist block add 198.51.100.44 --duration 2h --reason "scanner burst" --config /etc/saugra/saugra.yml
+```
+
+4. Check route-specific rate limits for login, signup, search, and expensive
+   API endpoints. Keep broader blocking changes in monitor mode until reviewed.
+
+### Upstream Outages
+
+1. Confirm Saugra is alive:
+
+```bash
+curl -i http://127.0.0.1:8787/_saugra/health
+```
+
+2. Test the configured backend directly:
+
+```bash
+curl -i -H "Host: example.com" http://127.0.0.1:8000/
+```
+
+3. Check the application process and listening ports:
+
+```bash
+systemctl status YOUR_APP_SERVICE --no-pager
+ss -ltnp
+```
+
+4. If the backend works directly but fails through Saugra, check `upstreams`,
+   `routes`, and recent Saugra logs.
+
+### Redis Outages
+
+1. Check Redis and restart it if needed:
+
+```bash
+systemctl status redis-server --no-pager
+systemctl restart redis-server
+```
+
+2. Restart Saugra after Redis is reachable so the Redis rate-limit store can
+   reconnect cleanly:
+
+```bash
+systemctl restart saugra
+```
+
+3. Watch for rate-limit backend errors:
+
+```bash
+journalctl -u saugra -f
+```
+
+Do not switch production rate limiting to `memory` as a permanent fix. Memory
+state resets on restart and does not coordinate across multiple Saugra
+instances.
+
+### WebSocket Routing Failures
+
+1. Confirm the public proxy routes `/ws/` through Saugra if Saugra should
+   inspect WebSocket handshakes.
+2. Confirm the Saugra route points `/ws/` to the WebSocket upstream.
+3. Check `websocket.allowed_origins` and `websocket.allowed_hosts` against the
+   browser's public `Origin` and `Host` headers.
+4. Tail events and explain a monitored or blocked handshake:
+
+```bash
+saugra logs tail --config /etc/saugra/saugra.yml --limit 20
+saugra explain <request-id> --config /etc/saugra/saugra.yml
+```
+
+5. For Nginx, preserve upgrade headers:
+
+```nginx
+proxy_set_header Upgrade $http_upgrade;
+proxy_set_header Connection $saugra_connection_upgrade;
+```
+
 ## Common Problems
 
 ### Browser Shows Denied

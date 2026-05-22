@@ -13,7 +13,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 7 in progress — Operator workflows and scheduled security summaries**
+Current phase: **Phase 7 complete — Operator workflows and scheduled security summaries**
 
 The repository has a working Rust foundation:
 
@@ -50,7 +50,9 @@ cargo run -- rules list --config configs/saugra.example.yml
 Current test status:
 
 ```txt
-168 passed; 0 failed
+176 tests expected in a normal local/CI environment.
+Current sandbox verification: 174 passed; 2 WebSocket raw-socket tests blocked
+by loopback bind permissions.
 ```
 
 ## Production-Ready Product Principle
@@ -423,11 +425,11 @@ Initial scope:
       `saugra explain`.
 - [x] Add tests for expiry, atomic CLI writes, bot/behavior bypass,
       deterministic WAF downgrade, and runtime blocklist enforcement.
-- [ ] Add explicit malformed-policy reload test that keeps the last known good
+- [x] Add explicit malformed-policy reload test that keeps the last known good
       policy.
-- [ ] Add explicit no-restart reload integration test that mutates the policy
+- [x] Add explicit no-restart reload integration test that mutates the policy
       file after Saugra starts.
-- [ ] Add optional reset commands for local behavior and bot state by client ID.
+- [x] Add optional reset commands for local behavior and bot state by client ID.
 
 See `docs/RUNTIME_ALLOWLIST.md` for the design.
 
@@ -437,7 +439,7 @@ See `docs/RUNTIME_ALLOWLIST.md` for the design.
       allowlisting, blocking, logs, explanations, rollout recovery, Redis
       checks, and useful production file paths.
 - [x] Link the admin guide from README and production deployment docs.
-- [ ] Add example incident workflows for common false positives, scanner bursts,
+- [x] Add example incident workflows for common false positives, scanner bursts,
       upstream outages, Redis outages, and WebSocket routing failures.
 
 ## Phase 7 — Scheduled Security Summaries
@@ -448,27 +450,27 @@ summary generation from durable WAF event logs.
 
 Initial scope:
 
-- [ ] Add a `security_summary` config section with enabled flag, schedule time,
+- [x] Add a `security_summary` config section with enabled flag, schedule time,
       timezone, lookback window, recipients, and delivery channel.
-- [ ] Support a local daily summary over the last 24 hours by default.
-- [ ] Summarize total security events, blocked events, monitored events,
+- [x] Support a local daily summary over the last 24 hours by default.
+- [x] Summarize total security events, blocked events, monitored events,
       allowed runtime-policy events, top attack categories, top matched rules,
       top source IPs, top targeted paths, rate-limit events, bot events, and
       behavior-threshold events.
-- [ ] Include sample request IDs for the most important blocked events so admins
+- [x] Include sample request IDs for the most important blocked events so admins
       can run `saugra explain <request-id>`.
-- [ ] Add `saugra summary daily --config /etc/saugra/saugra.yml` to generate a
+- [x] Add `saugra summary daily --config /etc/saugra/saugra.yml` to generate a
       summary on demand.
-- [ ] Add `saugra summary send --config /etc/saugra/saugra.yml` for manual
+- [x] Add `saugra summary send --config /etc/saugra/saugra.yml` for manual
       delivery testing.
-- [ ] Add a scheduler loop or documented systemd timer path for sending the
+- [x] Add a scheduler loop or documented systemd timer path for sending the
       report at a configured time, for example 08:00 local time.
-- [ ] Support file output first, for example
+- [x] Support file output first, for example
       `/var/log/saugra/saugra-security-summary-YYYY-MM-DD.json`.
-- [ ] Add email delivery after file output is stable. Email config should avoid
+- [x] Add email delivery after file output is stable. Email config should avoid
       hard-coded secrets and support environment variables or secret files.
-- [ ] Make failures observable in journald and local admin events.
-- [ ] Add tests for 24-hour filtering, summary shape, empty-day summaries, top
+- [x] Make failures observable in journald and local admin events.
+- [x] Add tests for 24-hour filtering, summary shape, empty-day summaries, top
       category/rule/path/IP aggregation, timezone handling, and delivery
       failure reporting.
 

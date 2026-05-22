@@ -142,6 +142,15 @@ pub fn build_store(config: &BehaviorConfig) -> anyhow::Result<Box<dyn BehaviorSt
     }
 }
 
+pub fn reset_client(path: &Path, client_id: &str) -> anyhow::Result<bool> {
+    let mut state = read_state(path)?;
+    let removed = state.clients.remove(client_id).is_some();
+    if removed {
+        write_state(path, &state)?;
+    }
+    Ok(removed)
+}
+
 pub fn behavior_rule_match(outcome: &BehaviorOutcome) -> Option<RuleMatch> {
     if outcome.action == WafAction::Allow {
         return None;
@@ -505,6 +514,40 @@ mod tests {
 
         assert_eq!(outcome.action, WafAction::Monitor);
         assert!(outcome.score >= 20);
+    }
+
+    #[test]
+    fn reset_client_removes_only_matching_local_behavior_state() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let path = temp_dir.path().join("behavior.json");
+        let config = BehaviorConfig {
+            enabled: true,
+            backend: BehaviorBackend::Local,
+            state_path: path.clone(),
+            ..BehaviorConfig::default()
+        };
+
+        for client_id in ["203.0.113.10", "203.0.113.11"] {
+            LocalBehaviorStore::open(&path)
+                .unwrap()
+                .evaluate(
+                    &config,
+                    BehaviorRequest {
+                        client_id,
+                        path: "/.env",
+                        rule_matches: &[],
+                        server_mode: WafMode::Monitor,
+                    },
+                )
+                .unwrap();
+        }
+
+        assert!(reset_client(&path, "203.0.113.10").unwrap());
+        assert!(!reset_client(&path, "203.0.113.12").unwrap());
+        let state = read_state(&path).unwrap();
+
+        assert!(!state.clients.contains_key("203.0.113.10"));
+        assert!(state.clients.contains_key("203.0.113.11"));
     }
 
     #[test]

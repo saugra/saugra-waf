@@ -137,6 +137,22 @@ logging:
   event_log_max_files: 10
   timezone: UTC
 
+security_summary:
+  enabled: true
+  schedule: daily
+  send_time: "08:00"
+  timezone: UTC
+  lookback: 24h
+  output_path: logs/saugra-security-summary-YYYY-MM-DD.json
+  channels:
+    - type: file
+    # Optional local email delivery after sendmail/postfix is configured:
+    # - type: email
+    #   from: saugra@example.com
+    #   to:
+    #     - security@example.com
+    #   sendmail_path: /usr/sbin/sendmail
+
 websocket:
   # Set to false if your application does not use WebSockets.
   enabled: true

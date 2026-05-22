@@ -360,6 +360,7 @@ mod tests {
             posture,
             reports: Default::default(),
             standards: Default::default(),
+            security_summary: Default::default(),
         }
     }
 }

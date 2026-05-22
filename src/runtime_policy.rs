@@ -442,4 +442,36 @@ mod tests {
 
         assert!(handle.match_ip("203.0.113.10").is_none());
     }
+
+    #[test]
+    fn malformed_reload_keeps_last_known_good_policy() {
+        let file = NamedTempFile::new().unwrap();
+        add_ip_entry(
+            file.path(),
+            "198.51.100.25",
+            Some(60),
+            "rollout safety",
+            "test",
+        )
+        .unwrap();
+        let handle = RuntimePolicyHandle::open(RuntimePolicyConfig {
+            enabled: true,
+            path: file.path().to_path_buf(),
+            reload_interval: "1s".to_string(),
+            ..RuntimePolicyConfig::default()
+        });
+
+        assert!(handle.match_ip("198.51.100.25").is_some());
+
+        fs::write(file.path(), b"{not-valid-json").unwrap();
+        {
+            let mut state = handle.state.lock().unwrap();
+            state.last_checked = Instant::now() - Duration::from_secs(2);
+        }
+
+        let runtime_match = handle.match_ip("198.51.100.25").unwrap();
+
+        assert_eq!(runtime_match.value, "198.51.100.25/32");
+        assert_eq!(runtime_match.reason, "rollout safety");
+    }
 }

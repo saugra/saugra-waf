@@ -1348,6 +1348,7 @@ mod tests {
             posture: Default::default(),
             reports: Default::default(),
             standards: Default::default(),
+            security_summary: Default::default(),
         }
     }
 }

@@ -13,4 +13,5 @@ pub mod rate_limit;
 pub mod reports;
 pub mod rules;
 pub mod runtime_policy;
+pub mod security_summary;
 pub mod standards;

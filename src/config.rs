@@ -118,6 +118,22 @@ pub enum ConfigError {
     InvalidReportPath,
     #[error("standards.owasp_catalog must not be blank when provided")]
     InvalidOwaspCatalogPath,
+    #[error("security_summary.schedule must be daily")]
+    InvalidSecuritySummarySchedule,
+    #[error("security_summary.send_time must use HH:MM 24-hour format")]
+    InvalidSecuritySummarySendTime,
+    #[error(
+        "security_summary.timezone must be UTC, Africa/Nairobi, or a fixed offset such as +03:00"
+    )]
+    InvalidSecuritySummaryTimezone,
+    #[error("security_summary.lookback must be a positive duration, for example 24h")]
+    InvalidSecuritySummaryLookback,
+    #[error("security_summary.output_path must not be blank")]
+    InvalidSecuritySummaryOutputPath,
+    #[error("security_summary.channels entries must use type file or email")]
+    InvalidSecuritySummaryChannel,
+    #[error("security_summary email channels must include at least one recipient")]
+    InvalidSecuritySummaryRecipient,
     #[error("websocket.allowed_origins entries must not be blank")]
     InvalidWebSocketAllowedOrigin,
     #[error("websocket.allowed_hosts entries must not be blank")]
@@ -159,6 +175,8 @@ pub struct SaugraConfig {
     pub reports: ReportConfig,
     #[serde(default)]
     pub standards: StandardsConfig,
+    #[serde(default)]
+    pub security_summary: SecuritySummaryConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -339,6 +357,67 @@ pub struct RuntimePolicyConfig {
     pub default_duration: String,
     #[serde(default)]
     pub allowlist_effect: RuntimeAllowlistEffect,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SecuritySummaryConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_security_summary_schedule")]
+    pub schedule: String,
+    #[serde(default = "default_security_summary_send_time")]
+    pub send_time: String,
+    #[serde(default = "default_logging_timezone")]
+    pub timezone: String,
+    #[serde(default = "default_security_summary_lookback")]
+    pub lookback: String,
+    #[serde(default = "default_security_summary_output_path")]
+    pub output_path: PathBuf,
+    #[serde(default = "default_security_summary_channels")]
+    pub channels: Vec<SecuritySummaryChannelConfig>,
+}
+
+impl Default for SecuritySummaryConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            schedule: default_security_summary_schedule(),
+            send_time: default_security_summary_send_time(),
+            timezone: default_logging_timezone(),
+            lookback: default_security_summary_lookback(),
+            output_path: default_security_summary_output_path(),
+            channels: default_security_summary_channels(),
+        }
+    }
+}
+
+impl SecuritySummaryConfig {
+    pub fn lookback_seconds(&self) -> u64 {
+        parse_duration_seconds(&self.lookback).unwrap_or(24 * 60 * 60)
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct SecuritySummaryChannelConfig {
+    #[serde(rename = "type")]
+    pub channel_type: String,
+    #[serde(default)]
+    pub to: Vec<String>,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default = "default_sendmail_path")]
+    pub sendmail_path: String,
+}
+
+impl Default for SecuritySummaryChannelConfig {
+    fn default() -> Self {
+        Self {
+            channel_type: "file".to_string(),
+            to: Vec::new(),
+            from: None,
+            sendmail_path: default_sendmail_path(),
+        }
+    }
 }
 
 impl Default for RuntimePolicyConfig {
@@ -865,6 +944,8 @@ impl SaugraConfig {
             return Err(ConfigError::InvalidOwaspCatalogPath);
         }
 
+        self.validate_security_summary()?;
+
         if self
             .websocket
             .allowed_origins
@@ -881,6 +962,51 @@ impl SaugraConfig {
             .any(|host| host.trim().is_empty())
         {
             return Err(ConfigError::InvalidWebSocketAllowedHost);
+        }
+
+        Ok(())
+    }
+
+    fn validate_security_summary(&self) -> Result<(), ConfigError> {
+        if self.security_summary.schedule.trim() != "daily" {
+            return Err(ConfigError::InvalidSecuritySummarySchedule);
+        }
+
+        if !is_valid_send_time(&self.security_summary.send_time) {
+            return Err(ConfigError::InvalidSecuritySummarySendTime);
+        }
+
+        if !crate::event_store::is_supported_timestamp_timezone(&self.security_summary.timezone) {
+            return Err(ConfigError::InvalidSecuritySummaryTimezone);
+        }
+
+        if parse_duration_seconds(&self.security_summary.lookback).is_none() {
+            return Err(ConfigError::InvalidSecuritySummaryLookback);
+        }
+
+        if self.security_summary.output_path.as_os_str().is_empty() {
+            return Err(ConfigError::InvalidSecuritySummaryOutputPath);
+        }
+
+        for channel in &self.security_summary.channels {
+            match channel.channel_type.trim() {
+                "file" => {}
+                "email" => {
+                    if channel.to.is_empty()
+                        || channel
+                            .to
+                            .iter()
+                            .any(|recipient| recipient.trim().is_empty())
+                        || channel
+                            .from
+                            .as_deref()
+                            .is_some_and(|from| from.trim().is_empty())
+                    {
+                        return Err(ConfigError::InvalidSecuritySummaryRecipient);
+                    }
+                }
+                _ => return Err(ConfigError::InvalidSecuritySummaryChannel),
+            }
         }
 
         Ok(())
@@ -1329,6 +1455,30 @@ fn default_runtime_policy_default_duration() -> String {
     "2h".to_string()
 }
 
+fn default_security_summary_schedule() -> String {
+    "daily".to_string()
+}
+
+fn default_security_summary_send_time() -> String {
+    "08:00".to_string()
+}
+
+fn default_security_summary_lookback() -> String {
+    "24h".to_string()
+}
+
+fn default_security_summary_output_path() -> PathBuf {
+    PathBuf::from("logs/saugra-security-summary.json")
+}
+
+fn default_security_summary_channels() -> Vec<SecuritySummaryChannelConfig> {
+    vec![SecuritySummaryChannelConfig::default()]
+}
+
+fn default_sendmail_path() -> String {
+    "/usr/sbin/sendmail".to_string()
+}
+
 fn default_behavior_decay_window() -> String {
     "30m".to_string()
 }
@@ -1461,6 +1611,23 @@ fn default_allowed_methods() -> Vec<String> {
 
 fn default_owasp_catalog() -> PathBuf {
     PathBuf::from("configs/standards/owasp-top-10-2025.yml")
+}
+
+fn is_valid_send_time(value: &str) -> bool {
+    let Some((hour, minute)) = value.split_once(':') else {
+        return false;
+    };
+    if hour.len() != 2 || minute.len() != 2 {
+        return false;
+    }
+    let Ok(hour) = hour.parse::<u8>() else {
+        return false;
+    };
+    let Ok(minute) = minute.parse::<u8>() else {
+        return false;
+    };
+
+    hour <= 23 && minute <= 59
 }
 
 #[cfg(test)]

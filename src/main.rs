@@ -3,8 +3,9 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use saugra::{
-    ai, config::SaugraConfig, crs_convert, event_store, event_store::EventLogRetention, logging,
-    owasp, posture, proxy, reports, rules, runtime_policy, standards,
+    ai, behavior, bot, config::SaugraConfig, crs_convert, event_store,
+    event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rules, runtime_policy,
+    security_summary, standards,
 };
 
 #[derive(Debug, Parser)]
@@ -67,6 +68,16 @@ enum Commands {
     Allowlist {
         #[command(subcommand)]
         command: AllowlistCommand,
+    },
+    /// Manage local Saugra state files.
+    State {
+        #[command(subcommand)]
+        command: StateCommand,
+    },
+    /// Generate or deliver local security summaries.
+    Summary {
+        #[command(subcommand)]
+        command: SummaryCommand,
     },
 }
 
@@ -207,6 +218,45 @@ enum BlocklistCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum StateCommand {
+    /// Reset local behavior or bot state for one client ID.
+    Reset {
+        #[command(subcommand)]
+        target: StateResetTarget,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum StateResetTarget {
+    /// Remove one client from local behavior scoring state.
+    Behavior {
+        client_id: String,
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+    /// Remove one client from local bot-protection state.
+    Bot {
+        client_id: String,
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum SummaryCommand {
+    /// Generate a daily summary over the configured lookback and print JSON.
+    Daily {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+    /// Generate and deliver a summary through configured channels.
+    Send {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -337,6 +387,60 @@ async fn main() -> anyhow::Result<()> {
             }
         },
         Commands::Allowlist { command } => handle_allowlist(command),
+        Commands::State { command } => handle_state(command),
+        Commands::Summary { command } => handle_summary(command),
+    }
+}
+
+fn handle_summary(command: SummaryCommand) -> anyhow::Result<()> {
+    match command {
+        SummaryCommand::Daily { config } => {
+            let config = load_valid_config(&config)?;
+            let summary = security_summary::generate_from_config(&config)?;
+            println!("{}", serde_json::to_string_pretty(&summary)?);
+            Ok(())
+        }
+        SummaryCommand::Send { config } => {
+            let config = load_valid_config(&config)?;
+            let report = security_summary::send_from_config(&config)?;
+            if let Some(path) = report.output_path {
+                println!("wrote security summary to {}", path.display());
+            }
+            if !report.email_recipients.is_empty() {
+                println!(
+                    "sent security summary email to {}",
+                    report.email_recipients.join(",")
+                );
+            }
+            Ok(())
+        }
+    }
+}
+
+fn handle_state(command: StateCommand) -> anyhow::Result<()> {
+    match command {
+        StateCommand::Reset { target } => match target {
+            StateResetTarget::Behavior { client_id, config } => {
+                let config = load_valid_config(&config)?;
+                let removed = behavior::reset_client(&config.behavior.state_path, &client_id)?;
+                print_reset_result("behavior", &client_id, removed);
+                Ok(())
+            }
+            StateResetTarget::Bot { client_id, config } => {
+                let config = load_valid_config(&config)?;
+                let removed = bot::reset_client(&config.bot_protection.state_path, &client_id)?;
+                print_reset_result("bot", &client_id, removed);
+                Ok(())
+            }
+        },
+    }
+}
+
+fn print_reset_result(state_name: &str, client_id: &str, removed: bool) {
+    if removed {
+        println!("reset {state_name} state for client {client_id}");
+    } else {
+        println!("no {state_name} state found for client {client_id}");
     }
 }
 

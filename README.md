@@ -168,6 +168,12 @@ Summarize recent security events by action and OWASP category:
 cargo run -- logs summary --config configs/saugra.example.yml --limit 200
 ```
 
+Generate a daily security summary from local event logs:
+
+```bash
+cargo run -- summary daily --config configs/saugra.example.yml
+```
+
 Explain a recorded request decision:
 
 ```bash
