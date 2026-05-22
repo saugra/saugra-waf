@@ -313,6 +313,95 @@ records local summary admin events next to the configured output path:
 tail -n 20 /var/log/saugra/saugra-security-summary-admin-events.jsonl
 ```
 
+## Storage Cleanup
+
+Saugra can remove stale generated files so `/var/log/saugra` and report
+directories do not grow forever. Event logs already rotate with
+`logging.event_log_max_size` and `logging.event_log_max_files`; storage cleanup
+is for generated summary files, summary admin events, and explicit report
+directories you opt in.
+
+Start with a dry run:
+
+```bash
+saugra cleanup run --dry-run --config /etc/saugra/saugra.yml
+```
+
+After reviewing the JSON report, allow deletion:
+
+```bash
+saugra cleanup run --execute --config /etc/saugra/saugra.yml
+```
+
+Example policy:
+
+```yaml
+storage_cleanup:
+  enabled: true
+  schedule: daily
+  run_time: "02:30"
+  dry_run: true
+  targets:
+    - name: security summary files
+      directory: /var/log/saugra
+      filename_prefix: saugra-security-summary-
+      filename_suffix: .json
+      older_than: 90d
+    - name: summary admin events
+      directory: /var/log/saugra
+      filename_prefix: saugra-security-summary-admin-events
+      filename_suffix: .jsonl
+      older_than: 180d
+```
+
+Cleanup only scans the configured target directories, only considers regular
+files matching the prefix/suffix pattern, and skips directories and symlinks.
+For report cleanup, use predictable file names and narrow patterns:
+
+```yaml
+storage_cleanup:
+  targets:
+    - name: dependency scan reports
+      directory: /var/lib/saugra/reports
+      filename_prefix: dependency-scan-
+      filename_suffix: .json
+      older_than: 90d
+```
+
+To schedule cleanup with systemd, create a oneshot service:
+
+```ini
+[Unit]
+Description=Saugra stale file cleanup
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/saugra cleanup run --execute --config /etc/saugra/saugra.yml
+User=saugra
+Group=saugra
+```
+
+Then create a timer:
+
+```ini
+[Unit]
+Description=Run Saugra stale file cleanup
+
+[Timer]
+OnCalendar=*-*-* 02:30:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Enable it with:
+
+```bash
+systemctl enable --now saugra-cleanup.timer
+systemctl list-timers --all | grep saugra-cleanup
+```
+
 ## Incident Workflows
 
 Use these workflows during production triage. Prefer short-lived runtime policy

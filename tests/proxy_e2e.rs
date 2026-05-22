@@ -1157,6 +1157,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
         reports: Default::default(),
         standards: Default::default(),
         security_summary: Default::default(),
+        storage_cleanup: Default::default(),
     }
 }
 

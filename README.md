@@ -174,6 +174,12 @@ Generate a daily security summary from local event logs:
 cargo run -- summary daily --config configs/saugra.example.yml
 ```
 
+Preview stale generated file cleanup:
+
+```bash
+cargo run -- cleanup run --dry-run --config configs/saugra.example.yml
+```
+
 Explain a recorded request decision:
 
 ```bash

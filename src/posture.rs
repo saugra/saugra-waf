@@ -361,6 +361,7 @@ mod tests {
             reports: Default::default(),
             standards: Default::default(),
             security_summary: Default::default(),
+            storage_cleanup: Default::default(),
         }
     }
 }

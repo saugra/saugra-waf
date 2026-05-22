@@ -153,6 +153,25 @@ security_summary:
     #     - security@example.com
     #   sendmail_path: /usr/sbin/sendmail
 
+storage_cleanup:
+  enabled: true
+  schedule: daily
+  run_time: "02:30"
+  # Start new deployments with dry_run true. Switch to false after reviewing
+  # `saugra cleanup run --dry-run --config configs/saugra.example.yml`.
+  dry_run: true
+  targets:
+    - name: local security summaries
+      directory: logs
+      filename_prefix: saugra-security-summary-
+      filename_suffix: .json
+      older_than: 30d
+    - name: local summary admin events
+      directory: logs
+      filename_prefix: saugra-security-summary-admin-events
+      filename_suffix: .jsonl
+      older_than: 90d
+
 websocket:
   # Set to false if your application does not use WebSockets.
   enabled: true

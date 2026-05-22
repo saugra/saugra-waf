@@ -134,6 +134,18 @@ pub enum ConfigError {
     InvalidSecuritySummaryChannel,
     #[error("security_summary email channels must include at least one recipient")]
     InvalidSecuritySummaryRecipient,
+    #[error("storage_cleanup.schedule must be daily")]
+    InvalidStorageCleanupSchedule,
+    #[error("storage_cleanup.run_time must use HH:MM 24-hour format")]
+    InvalidStorageCleanupRunTime,
+    #[error("storage_cleanup.targets entries must include a name")]
+    InvalidStorageCleanupTargetName,
+    #[error("storage_cleanup.targets entries must include a non-empty directory")]
+    InvalidStorageCleanupTargetDirectory,
+    #[error("storage_cleanup.targets entries must include filename_prefix or filename_suffix")]
+    InvalidStorageCleanupTargetPattern,
+    #[error("storage_cleanup.targets older_than must be a positive duration, for example 30d")]
+    InvalidStorageCleanupOlderThan,
     #[error("websocket.allowed_origins entries must not be blank")]
     InvalidWebSocketAllowedOrigin,
     #[error("websocket.allowed_hosts entries must not be blank")]
@@ -177,6 +189,8 @@ pub struct SaugraConfig {
     pub standards: StandardsConfig,
     #[serde(default)]
     pub security_summary: SecuritySummaryConfig,
+    #[serde(default)]
+    pub storage_cleanup: StorageCleanupConfig,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -407,6 +421,44 @@ pub struct SecuritySummaryChannelConfig {
     pub from: Option<String>,
     #[serde(default = "default_sendmail_path")]
     pub sendmail_path: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StorageCleanupConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default = "default_storage_cleanup_schedule")]
+    pub schedule: String,
+    #[serde(default = "default_storage_cleanup_run_time")]
+    pub run_time: String,
+    #[serde(default)]
+    pub dry_run: bool,
+    #[serde(default = "default_storage_cleanup_targets")]
+    pub targets: Vec<StorageCleanupTargetConfig>,
+}
+
+impl Default for StorageCleanupConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            schedule: default_storage_cleanup_schedule(),
+            run_time: default_storage_cleanup_run_time(),
+            dry_run: false,
+            targets: default_storage_cleanup_targets(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct StorageCleanupTargetConfig {
+    pub name: String,
+    pub directory: PathBuf,
+    #[serde(default)]
+    pub filename_prefix: Option<String>,
+    #[serde(default)]
+    pub filename_suffix: Option<String>,
+    #[serde(default = "default_storage_cleanup_older_than")]
+    pub older_than: String,
 }
 
 impl Default for SecuritySummaryChannelConfig {
@@ -945,6 +997,7 @@ impl SaugraConfig {
         }
 
         self.validate_security_summary()?;
+        self.validate_storage_cleanup()?;
 
         if self
             .websocket
@@ -962,6 +1015,56 @@ impl SaugraConfig {
             .any(|host| host.trim().is_empty())
         {
             return Err(ConfigError::InvalidWebSocketAllowedHost);
+        }
+
+        Ok(())
+    }
+
+    fn validate_storage_cleanup(&self) -> Result<(), ConfigError> {
+        if self.storage_cleanup.schedule.trim() != "daily" {
+            return Err(ConfigError::InvalidStorageCleanupSchedule);
+        }
+
+        if !is_valid_send_time(&self.storage_cleanup.run_time) {
+            return Err(ConfigError::InvalidStorageCleanupRunTime);
+        }
+
+        for target in &self.storage_cleanup.targets {
+            if target.name.trim().is_empty() {
+                return Err(ConfigError::InvalidStorageCleanupTargetName);
+            }
+
+            if target.directory.as_os_str().is_empty() {
+                return Err(ConfigError::InvalidStorageCleanupTargetDirectory);
+            }
+
+            let has_prefix = target
+                .filename_prefix
+                .as_deref()
+                .is_some_and(|prefix| !prefix.trim().is_empty());
+            let has_suffix = target
+                .filename_suffix
+                .as_deref()
+                .is_some_and(|suffix| !suffix.trim().is_empty());
+            if !has_prefix && !has_suffix {
+                return Err(ConfigError::InvalidStorageCleanupTargetPattern);
+            }
+
+            if target
+                .filename_prefix
+                .as_deref()
+                .is_some_and(|prefix| prefix.trim().is_empty())
+                || target
+                    .filename_suffix
+                    .as_deref()
+                    .is_some_and(|suffix| suffix.trim().is_empty())
+            {
+                return Err(ConfigError::InvalidStorageCleanupTargetPattern);
+            }
+
+            if parse_duration_seconds(&target.older_than).is_none() {
+                return Err(ConfigError::InvalidStorageCleanupOlderThan);
+            }
         }
 
         Ok(())
@@ -1473,6 +1576,28 @@ fn default_security_summary_output_path() -> PathBuf {
 
 fn default_security_summary_channels() -> Vec<SecuritySummaryChannelConfig> {
     vec![SecuritySummaryChannelConfig::default()]
+}
+
+fn default_storage_cleanup_schedule() -> String {
+    "daily".to_string()
+}
+
+fn default_storage_cleanup_run_time() -> String {
+    "02:30".to_string()
+}
+
+fn default_storage_cleanup_older_than() -> String {
+    "30d".to_string()
+}
+
+fn default_storage_cleanup_targets() -> Vec<StorageCleanupTargetConfig> {
+    vec![StorageCleanupTargetConfig {
+        name: "security summaries".to_string(),
+        directory: PathBuf::from("logs"),
+        filename_prefix: Some("saugra-security-summary-".to_string()),
+        filename_suffix: Some(".json".to_string()),
+        older_than: default_storage_cleanup_older_than(),
+    }]
 }
 
 fn default_sendmail_path() -> String {

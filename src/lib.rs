@@ -15,3 +15,4 @@ pub mod rules;
 pub mod runtime_policy;
 pub mod security_summary;
 pub mod standards;
+pub mod storage_cleanup;

@@ -202,7 +202,7 @@ logging:
   level: info
   event_log_path: /var/log/saugra/saugra-events.jsonl
   event_log_max_size: 100mb
-  event_log_max_files: 30
+  event_log_max_files: 10
   timezone: Africa/Nairobi
 
 # Security summaries are generated from the durable JSONL security event log.
@@ -255,6 +255,51 @@ security_summary:
     #   to:
     #     - security@example.com
     #   sendmail_path: /usr/sbin/sendmail
+
+# Storage cleanup removes stale generated files so local disks do not fill up.
+# Event logs already rotate through logging.event_log_max_size and
+# logging.event_log_max_files. Use storage_cleanup for generated summaries,
+# summary admin-event files, and any explicit local report/output directories
+# you choose to manage.
+#
+# Safety model:
+# - Only files in configured target directories are considered.
+# - Only regular files matching filename_prefix and/or filename_suffix are
+#   considered.
+# - Directories and symlinks are skipped.
+# - Start with dry_run: true and run `saugra cleanup run --dry-run` before
+#   enabling deletion.
+# - Use explicit filename patterns for report files. Do not point cleanup at a
+#   broad application upload directory.
+#
+# Supported settings today:
+# - schedule: daily. Use a systemd timer for the actual clock trigger.
+# - run_time: 24-hour HH:MM local time for the documented timer.
+# - dry_run: true reports what would be deleted; false allows deletion.
+# - targets[].older_than: positive duration such as 7d, 30d, 90d, or 180d.
+storage_cleanup:
+  enabled: true
+  schedule: daily
+  run_time: "02:30"
+  dry_run: true
+  targets:
+    - name: security summary files
+      directory: /var/log/saugra
+      filename_prefix: saugra-security-summary-
+      filename_suffix: .json
+      older_than: 90d
+    - name: summary admin events
+      directory: /var/log/saugra
+      filename_prefix: saugra-security-summary-admin-events
+      filename_suffix: .jsonl
+      older_than: 180d
+    # Optional cleanup for locally generated dependency or scanner reports.
+    # Keep this disabled until your report generator uses predictable names.
+    # - name: dependency scan reports
+    #   directory: /var/lib/saugra/reports
+    #   filename_prefix: dependency-scan-
+    #   filename_suffix: .json
+    #   older_than: 90d
 
 # WebSocket handshakes are inspected before Saugra upgrades and tunnels traffic.
 websocket:

@@ -521,6 +521,7 @@ mod tests {
                 }],
                 ..Default::default()
             },
+            storage_cleanup: Default::default(),
         };
 
         assert!(send_from_config(&config).is_err());

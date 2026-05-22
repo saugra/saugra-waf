@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand};
 use saugra::{
     ai, behavior, bot, config::SaugraConfig, crs_convert, event_store,
     event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rules, runtime_policy,
-    security_summary, standards,
+    security_summary, standards, storage_cleanup,
 };
 
 #[derive(Debug, Parser)]
@@ -78,6 +78,11 @@ enum Commands {
     Summary {
         #[command(subcommand)]
         command: SummaryCommand,
+    },
+    /// Remove stale generated files according to configured retention policy.
+    Cleanup {
+        #[command(subcommand)]
+        command: CleanupCommand,
     },
 }
 
@@ -257,6 +262,21 @@ enum SummaryCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum CleanupCommand {
+    /// Scan cleanup targets and optionally delete stale files.
+    Run {
+        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        config: PathBuf,
+        /// Preview removals without deleting files.
+        #[arg(long)]
+        dry_run: bool,
+        /// Delete stale files. Without this flag, cleanup uses config dry_run.
+        #[arg(long)]
+        execute: bool,
+    },
+}
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
@@ -389,6 +409,29 @@ async fn main() -> anyhow::Result<()> {
         Commands::Allowlist { command } => handle_allowlist(command),
         Commands::State { command } => handle_state(command),
         Commands::Summary { command } => handle_summary(command),
+        Commands::Cleanup { command } => handle_cleanup(command),
+    }
+}
+
+fn handle_cleanup(command: CleanupCommand) -> anyhow::Result<()> {
+    match command {
+        CleanupCommand::Run {
+            config,
+            dry_run,
+            execute,
+        } => {
+            let config = load_valid_config(&config)?;
+            let dry_run_override = if dry_run {
+                Some(true)
+            } else if execute {
+                Some(false)
+            } else {
+                None
+            };
+            let report = storage_cleanup::run_from_config(&config, dry_run_override)?;
+            println!("{}", serde_json::to_string_pretty(&report)?);
+            Ok(())
+        }
     }
 }
 
