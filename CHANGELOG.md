@@ -6,6 +6,37 @@ All notable changes to Saugra are documented here.
 
 - Add follow-up changes here before tagging the next release.
 
+## 1.0.2 - 2026-05-22
+
+### Added
+
+- Scheduled local security summaries generated from durable JSONL event logs.
+- `saugra summary daily` and `saugra summary send` commands for operator
+  reporting workflows.
+- File-based summary output with optional local sendmail-compatible email
+  delivery.
+- Local summary delivery failure events for operator troubleshooting.
+- `security_summary` configuration in example and production configs.
+- `saugra state reset behavior` and `saugra state reset bot` commands for
+  clearing one client's local scoring state without deleting all state.
+- Runtime policy reload regression tests for malformed JSON and no-restart
+  policy mutation.
+- `storage_cleanup` configuration and `saugra cleanup run` for removing stale
+  generated summary/admin/report files after a configured retention window.
+- Production admin workflows for false positives, scanner bursts, upstream
+  outages, Redis outages, WebSocket routing failures, summary scheduling, and
+  stale-file cleanup.
+
+### Verified
+
+- Formatting and clippy pass locally.
+- Example config validates with `saugra test-config`.
+- Focused tests for security summaries, runtime policy reloads, state reset,
+  and storage cleanup pass locally.
+- Full local test run passes all unit tests and all non-raw-socket proxy e2e
+  tests; two WebSocket tunnel tests are blocked in this sandbox by loopback bind
+  permissions and are expected to run in normal CI.
+
 ## 1.0.1 - 2026-05-21
 
 ### Added
