@@ -379,6 +379,9 @@ Explain a request:
 saugra explain <request-id> --config /etc/saugra/saugra.yml
 ```
 
+The output starts with request context, including the client IP, method, path,
+query when present, and upstream when recorded.
+
 ## Safe First Rollout
 
 1. Start Redis and confirm Saugra can connect to it.
@@ -387,7 +390,8 @@ saugra explain <request-id> --config /etc/saugra/saugra.yml
 4. Put Nginx or Apache in front of Saugra.
 5. Send normal traffic and confirm it reaches the backend.
 6. Send attack-shaped test requests and confirm they appear in `logs tail`.
-7. Review explanations for matched requests with `explain <request-id>`.
+7. Review explanations for matched requests with
+   `saugra explain <request-id> --config /etc/saugra/saugra.yml`.
 8. Use `logs summary` to check recent event volume by OWASP category.
 9. Tune route limits and rule exclusions for false positives.
 10. Switch to `server.mode: block` during a low-traffic window.

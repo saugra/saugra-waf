@@ -6,6 +6,22 @@ All notable changes to Saugra are documented here.
 
 - Add follow-up changes here before tagging the next release.
 
+## 1.0.5 - 2026-05-23
+
+### Changed
+
+- `saugra explain` now prints request context before the rule explanation,
+  including request ID, client IP, method, path, query when present, and
+  upstream metadata when recorded.
+- Summary email footer and production documentation now use the full
+  production command:
+  `saugra explain <request-id> --config /etc/saugra/saugra.yml`.
+
+### Verified
+
+- `cargo fmt --check`
+- Focused CLI explain regression test passes locally.
+
 ## 1.0.4 - 2026-05-22
 
 ### Added

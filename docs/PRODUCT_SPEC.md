@@ -611,7 +611,7 @@ saugra rules list
 saugra rules enable <rule-id>
 saugra rules disable <rule-id>
 saugra logs tail
-saugra explain <request-id>
+saugra explain <request-id> --config /etc/saugra/saugra.yml
 ```
 
 ## 14. Deployment Options

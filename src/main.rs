@@ -371,6 +371,19 @@ async fn main() -> anyhow::Result<()> {
             )?
             .with_context(|| format!("request ID not found: {request_id}"))?;
 
+            println!("Request ID: {}", event.decision.request_id);
+            println!("Client IP: {}", event.client_ip);
+            println!("Request: {} {}", event.method, event.path);
+            if !event.query.is_empty() {
+                println!("Query: {}", event.query);
+            }
+            if let Some(upstream) = &event.upstream {
+                println!(
+                    "Upstream: {}@{} -> {}",
+                    upstream.name, upstream.host, upstream.target
+                );
+            }
+            println!();
             println!("{}", ai::explain(&event.decision));
             println!("{}", serde_json::to_string_pretty(&event.decision)?);
             Ok(())

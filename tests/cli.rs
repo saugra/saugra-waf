@@ -95,7 +95,14 @@ fn cli_explain_reads_recorded_event() {
         Vec::new(),
         5,
     );
-    let event = SecurityEvent::new("GET", "/", "", decision);
+    let event = SecurityEvent::new_with_timezone(
+        "GET",
+        "/meetings/",
+        "page=1",
+        decision,
+        "203.0.113.10",
+        "UTC",
+    );
     event_store::append(
         &fixture.event_log_path,
         EventLogRetention {
@@ -110,6 +117,10 @@ fn cli_explain_reads_recorded_event() {
     let output = saugra_cmd(["explain", "cli-request-1", "--config", &config]);
 
     assert_success(&output);
+    assert!(stdout(&output).contains("Request ID: cli-request-1"));
+    assert!(stdout(&output).contains("Client IP: 203.0.113.10"));
+    assert!(stdout(&output).contains("Request: GET /meetings/"));
+    assert!(stdout(&output).contains("Query: page=1"));
     assert!(stdout(&output).contains("No security rules matched this request."));
     assert!(stdout(&output).contains("\"request_id\": \"cli-request-1\""));
 }

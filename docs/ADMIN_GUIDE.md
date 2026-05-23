@@ -98,6 +98,14 @@ Explain a denied or monitored request:
 saugra explain <request-id> --config /etc/saugra/saugra.yml
 ```
 
+The explanation output includes the request context before the rule analysis:
+
+```txt
+Request ID: 40651a2b-057e-41da-a740-23e488ed5752
+Client IP: 203.0.113.10
+Request: GET /meetings/
+```
+
 The browser block response uses `reference` as the request ID:
 
 ```json
@@ -107,7 +115,11 @@ The browser block response uses `reference` as the request ID:
 }
 ```
 
-Use that value with `saugra explain`.
+Use that value with the production config:
+
+```bash
+saugra explain 40651a2b-057e-41da-a740-23e488ed5752 --config /etc/saugra/saugra.yml
+```
 
 ## Safe Rollout
 

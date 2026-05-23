@@ -353,6 +353,9 @@ fn render_summary_text(summary: &SecuritySummary) -> String {
             text.push_str(&format!("- {request_id}\n"));
         }
     }
+    text.push_str(
+        "\nExplain a request on the server with: saugra explain <request-id> --config /etc/saugra/saugra.yml\n",
+    );
     text
 }
 
@@ -437,7 +440,7 @@ fn render_summary_html(summary: &SecuritySummary) -> String {
           {blocked_ids}
           <tr>
             <td style="padding:18px 28px 24px;color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;">
-              This report is generated from local Saugra security events. Use <code>saugra explain &lt;request-id&gt;</code> on the server for detailed analysis of a specific request.
+              This report is generated from local Saugra security events. Use <code>saugra explain &lt;request-id&gt; --config /etc/saugra/saugra.yml</code> on the server for detailed analysis of a specific request.
             </td>
           </tr>
         </table>
@@ -839,6 +842,10 @@ mod tests {
         assert!(message.contains("Content-Type: text/html; charset=UTF-8"));
         assert!(message.contains("Saugra WAF - CONFERENCE.KE"));
         assert!(message.contains("text-align:center"));
+        assert!(
+            message.contains("saugra explain &lt;request-id&gt; --config /etc/saugra/saugra.yml")
+        );
+        assert!(message.contains("saugra explain <request-id> --config /etc/saugra/saugra.yml"));
         assert!(message.contains("41,408"));
         assert!(message.contains("SAUGRA-BOT-PROTECTION-001"));
         assert!(!message.contains("Content-Type: application/json"));
