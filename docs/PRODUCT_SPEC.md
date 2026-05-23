@@ -604,6 +604,7 @@ Recommended commands:
 saugra init
 saugra init nginx
 saugra init apache
+saugra --version
 saugra test-config
 saugra run
 saugra reload

@@ -2,8 +2,19 @@ use std::{fs, path::PathBuf, process::Command};
 
 use saugra::{
     decision::WafDecision,
-    event_store::{self, EventLogRetention, SecurityEvent},
+    event_store::{self, EventLogRetention, SecurityEvent, UpstreamEvent},
 };
+
+#[test]
+fn cli_version_prints_package_version() {
+    let output = saugra_cmd(["--version"]);
+
+    assert_success(&output);
+    assert_eq!(
+        stdout(&output).trim(),
+        format!("saugra {}", env!("CARGO_PKG_VERSION"))
+    );
+}
 
 #[test]
 fn cli_cleanup_dry_run_prints_report_json() {
@@ -102,7 +113,12 @@ fn cli_explain_reads_recorded_event() {
         decision,
         "203.0.113.10",
         "UTC",
-    );
+    )
+    .with_upstream(UpstreamEvent {
+        name: "app".to_string(),
+        host: "conference.ke".to_string(),
+        target: "http://127.0.0.1:8000".to_string(),
+    });
     event_store::append(
         &fixture.event_log_path,
         EventLogRetention {
@@ -121,6 +137,7 @@ fn cli_explain_reads_recorded_event() {
     assert!(stdout(&output).contains("Client IP: 203.0.113.10"));
     assert!(stdout(&output).contains("Request: GET /meetings/"));
     assert!(stdout(&output).contains("Query: page=1"));
+    assert!(stdout(&output).contains("Upstream: app@conference.ke -> http://127.0.0.1:8000"));
     assert!(stdout(&output).contains("No security rules matched this request."));
     assert!(stdout(&output).contains("\"request_id\": \"cli-request-1\""));
 }

@@ -93,9 +93,12 @@ pub fn explain(decision: &WafDecision) -> String {
 mod tests {
     use super::*;
     use crate::{
-        config::WafMode,
-        decision::WafDecision,
+        behavior::{BehaviorContributor, BehaviorOutcome},
+        bot::BotProtectionOutcome,
+        config::{RuntimeAllowlistEffect, WafMode},
+        decision::{WafAction, WafDecision},
         rules::{RuleMatch, RuleSeverity, RuleTarget},
+        runtime_policy::RuntimeAllowlistMatch,
     };
 
     #[test]
@@ -120,5 +123,171 @@ mod tests {
 
         assert!(explanation.contains("A05:2025-Injection"));
         assert!(explanation.contains("Anomaly score is 5/5"));
+    }
+
+    #[test]
+    fn explanation_for_clean_request_reports_allow_decision() {
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Block, Vec::new(), 5);
+
+        let explanation = explain(&decision);
+
+        assert_eq!(
+            explanation,
+            "No rules matched this request, so Saugra allowed it."
+        );
+    }
+
+    #[test]
+    fn explanation_for_clean_request_includes_runtime_allowlist_context() {
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Block, Vec::new(), 5)
+                .with_runtime_allowlist(runtime_allowlist_match(RuntimeAllowlistEffect::AllowAll));
+
+        let explanation = explain(&decision);
+
+        assert!(explanation.contains("No rules matched this request"));
+        assert!(explanation.contains("Runtime allowlist entry admin-ip matched 203.0.113.10"));
+        assert!(explanation.contains("AllowAll"));
+    }
+
+    #[test]
+    fn explanation_for_bot_only_decision_reports_thresholds_and_contributors() {
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Block, Vec::new(), 5)
+                .with_bot_protection(bot_outcome());
+
+        let explanation = explain(&decision);
+
+        assert!(explanation.contains("No request rules matched."));
+        assert!(
+            explanation.contains("Bot protection score is 80/40 for monitor and 80/80 for block")
+        );
+        assert!(explanation.contains("with 2 contributor(s)"));
+    }
+
+    #[test]
+    fn explanation_for_behavior_only_decision_reports_thresholds() {
+        let decision =
+            WafDecision::from_matches("request-1".to_string(), WafMode::Block, Vec::new(), 5)
+                .with_behavior(behavior_outcome());
+
+        let explanation = explain(&decision);
+
+        assert!(explanation.contains("No request rules matched."));
+        assert!(explanation.contains("Behavior score is 93/40 for monitor and 93/80 for block."));
+    }
+
+    #[test]
+    fn explanation_for_unmapped_rule_says_no_specific_owasp_category() {
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Monitor,
+            vec![RuleMatch {
+                owasp_category: None,
+                ..rule_match()
+            }],
+            5,
+        );
+
+        let explanation = explain(&decision);
+
+        assert!(explanation.contains("It is not mapped to a specific OWASP category."));
+        assert!(explanation.contains("SAUGRA-TEST-001"));
+    }
+
+    #[test]
+    fn explanation_for_matched_rule_includes_behavior_bot_and_allowlist_context() {
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Block,
+            vec![rule_match()],
+            5,
+        )
+        .with_behavior(behavior_outcome())
+        .with_bot_protection(bot_outcome())
+        .with_runtime_allowlist(runtime_allowlist_match(
+            RuntimeAllowlistEffect::SkipBotAndBehaviorBlock,
+        ));
+
+        let explanation = explain(&decision);
+
+        assert!(explanation.contains("headers matched rule SAUGRA-TEST-001"));
+        assert!(explanation.contains(
+            "Behavior score is 93/40 for monitor and 93/80 for block with 2 contributor(s)."
+        ));
+        assert!(explanation.contains(
+            "Bot protection score is 80/40 for monitor and 80/80 for block with 2 contributor(s)."
+        ));
+        assert!(explanation.contains("Runtime allowlist entry admin-ip matched 203.0.113.10"));
+        assert!(explanation.contains("SkipBotAndBehaviorBlock"));
+    }
+
+    fn rule_match() -> RuleMatch {
+        RuleMatch {
+            rule_id: "SAUGRA-TEST-001".to_string(),
+            rule_name: "Test Rule".to_string(),
+            category: "test".to_string(),
+            severity: RuleSeverity::High,
+            matched_target: RuleTarget::Headers,
+            paranoia_level: 1,
+            explanation: "Test rule matched.".to_string(),
+            owasp_category: Some("A06:2025-Insecure Design".to_string()),
+        }
+    }
+
+    fn behavior_outcome() -> BehaviorOutcome {
+        BehaviorOutcome {
+            enabled: true,
+            action: WafAction::Monitor,
+            score: 93,
+            monitor_threshold: 40,
+            block_threshold: 80,
+            score_window_seconds: 600,
+            decay_window_seconds: 1_800,
+            storage_backend: "local".to_string(),
+            contributors: contributors(),
+        }
+    }
+
+    fn bot_outcome() -> BotProtectionOutcome {
+        BotProtectionOutcome {
+            enabled: true,
+            action: WafAction::Block,
+            score: 80,
+            monitor_threshold: 40,
+            block_threshold: 80,
+            score_window_seconds: 600,
+            temporary_block_duration_seconds: 900,
+            temporary_blocked_until: None,
+            storage_backend: "local".to_string(),
+            allowlisted: false,
+            blocklisted: false,
+            contributors: contributors(),
+        }
+    }
+
+    fn contributors() -> Vec<BehaviorContributor> {
+        vec![
+            BehaviorContributor {
+                reason: "scanner_path".to_string(),
+                score_delta: 40,
+            },
+            BehaviorContributor {
+                reason: "rule_match:bot_protection".to_string(),
+                score_delta: 40,
+            },
+        ]
+    }
+
+    fn runtime_allowlist_match(effect: RuntimeAllowlistEffect) -> RuntimeAllowlistMatch {
+        RuntimeAllowlistMatch {
+            id: "admin-ip".to_string(),
+            match_type: "ip".to_string(),
+            value: "203.0.113.10".to_string(),
+            effect,
+            reason: "admin access".to_string(),
+            expires_at_unix_seconds: None,
+        }
     }
 }

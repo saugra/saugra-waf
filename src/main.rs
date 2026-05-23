@@ -10,6 +10,7 @@ use saugra::{
 
 #[derive(Debug, Parser)]
 #[command(name = "saugra")]
+#[command(version)]
 #[command(about = "A lightweight rule-based + AI-assisted Web Application Firewall.")]
 struct Cli {
     #[command(subcommand)]

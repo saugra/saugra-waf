@@ -244,6 +244,7 @@ git clone https://github.com/ewanyonyi/saugra.git /opt/saugra
 cd /opt/saugra
 cargo build --release
 sudo install -m 0755 target/release/saugra /usr/local/bin/saugra
+saugra --version
 sudo useradd --system --home /var/lib/saugra --shell /usr/sbin/nologin saugra
 sudo mkdir -p /etc/saugra/rules /etc/saugra/standards /var/log/saugra /var/lib/saugra
 sudo cp configs/saugra.production.example.yml /etc/saugra/saugra.yml
