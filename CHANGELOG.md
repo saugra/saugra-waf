@@ -28,7 +28,7 @@ All notable changes to Saugra are documented here.
 
 - Professional HTML daily security summary emails with plain-text fallback.
 - App hostname branding in summary emails, for example `Saugra WAF -
-  CONFERENCE.KE`.
+  EXAMPLE.COM`.
 - Optional `app_hostname` field in generated summary JSON when summaries are
   produced from a configured upstream.
 

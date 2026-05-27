@@ -187,7 +187,7 @@ websocket:
   enabled: true
   # allowed_origins checks the browser Origin header during the WebSocket
   # handshake. Use exact public site origins, for example:
-  # - https://test.conference.ke
+  # - https://test.example.com
   allowed_origins:
     - https://example.com
   # allowed_hosts checks the public Host header used for WebSocket requests.

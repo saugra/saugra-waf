@@ -116,7 +116,7 @@ fn cli_explain_reads_recorded_event() {
     )
     .with_upstream(UpstreamEvent {
         name: "app".to_string(),
-        host: "conference.ke".to_string(),
+        host: "example.com".to_string(),
         target: "http://127.0.0.1:8000".to_string(),
     });
     event_store::append(
@@ -137,7 +137,7 @@ fn cli_explain_reads_recorded_event() {
     assert!(stdout(&output).contains("Client IP: 203.0.113.10"));
     assert!(stdout(&output).contains("Request: GET /meetings/"));
     assert!(stdout(&output).contains("Query: page=1"));
-    assert!(stdout(&output).contains("Upstream: app@conference.ke -> http://127.0.0.1:8000"));
+    assert!(stdout(&output).contains("Upstream: app@example.com -> http://127.0.0.1:8000"));
     assert!(stdout(&output).contains("No security rules matched this request."));
     assert!(stdout(&output).contains("\"request_id\": \"cli-request-1\""));
 }

@@ -8,7 +8,7 @@ scoring, where a trusted administrator can accidentally accumulate enough score
 to trigger a temporary block during production verification.
 
 The community edition should support a local, file-backed runtime allowlist.
-This is an operational safety feature, not a Pro-only capability.
+This is an operational safety feature for the community edition.
 
 ## Goals
 
@@ -175,8 +175,8 @@ security state is higher risk and should be visible.
   `allowlist_effect`.
 - Runtime policy matches should be logged so production investigations can
   explain why a request was allowed, monitored, or blocked.
-- Multi-node deployments need per-node files until a distributed or Pro policy
-  sync layer exists.
+- Multi-node deployments need per-node files until a distributed policy sync
+  layer exists.
 
 ## Implementation Steps
 
@@ -210,8 +210,8 @@ security state is higher risk and should be visible.
 - Security events include runtime allowlist metadata.
 - `saugra explain` mentions allowlist matches.
 
-## Future Pro Extension
+## Future Extension
 
-Saugra Pro can build on this same runtime policy model with an authenticated
+Future work can build on this same runtime policy model with an authenticated
 admin API, RBAC, audit trails, dashboard workflows, and fleet-wide policy sync.
-The community edition should remain local and file-backed.
+The current community edition remains local and file-backed.

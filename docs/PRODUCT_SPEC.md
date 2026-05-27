@@ -741,8 +741,7 @@ Recommended production scope:
 - Kubernetes support
 - Helm chart
 - Cloud deployment templates
-- Saugra Pro reporting
-- Paid hosted dashboard option
+- Advanced reporting
 
 ## 19. Differentiation
 
@@ -845,4 +844,4 @@ The strongest product direction is not pure AI blocking. The better and more tru
 Rules-first protection + rate limiting + behavior scoring + AI explanations
 ```
 
-This makes Saugra practical, safer, easier to trust, and more suitable for a serious cybersecurity business.
+This makes Saugra practical, safer, and easier for operators to trust.

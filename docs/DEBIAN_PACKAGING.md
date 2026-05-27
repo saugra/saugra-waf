@@ -60,3 +60,12 @@ git push origin v1.0.1
 
 The release workflow runs tests, installs `cargo-deb`, builds the package, and
 uploads `target/debian/*.deb` as release assets.
+
+## Signed APT Repository
+
+GitHub Release assets are the current `.deb` distribution path. The planned
+production package channel is a signed APT repository so operators can install
+and upgrade Saugra with normal `apt` workflows.
+
+See `docs/APT_REPOSITORY.md` for the repository layout, signing requirements,
+maintainer workflow, and CI publishing plan.

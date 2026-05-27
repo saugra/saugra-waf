@@ -1,7 +1,7 @@
 # Saugra Web Application Firewall
 
 [![CI](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/github/ewanyonyi/saugra/graph/badge.svg?token=P6XZ7GGVJ8)](https://codecov.io/github/ewanyonyi/saugra)
+[![codecov](https://codecov.io/github/ewanyonyi/saugra/graph/badge.svg)](https://codecov.io/github/ewanyonyi/saugra)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](Cargo.toml)
 
@@ -101,14 +101,18 @@ Public docs:
 
 - `docs/ARCHITECTURE.md` — technical architecture
 - `docs/PRODUCT_SPEC.md` — product specification
+- `docs/LICENSING.md` — licensing, commercial use, liability, and trademark
+  guidance
 - `docs/PRODUCTION_DEPLOYMENT.md` — Nginx/Apache production deployment guide
 - `docs/ADMIN_GUIDE.md` — operator commands, troubleshooting, allowlisting,
   blocking, logs, and explanations
 - `docs/OWASP_TOP_10_STRATEGY.md` — layered OWASP Top 10 coverage strategy
 - `docs/CRS_IMPORT.md` — OWASP CRS conversion support and limitations
 - `docs/DEBIAN_PACKAGING.md` — `.deb` build and GitHub Release publishing guide
+- `docs/APT_REPOSITORY.md` — signed Ubuntu/Debian APT repository plan
 - `docs/RELEASE_PROCESS.md` — maintainer release checklist
 - `docs/RUNTIME_ALLOWLIST.md` — no-restart local runtime allowlisting design
+- `TRADEMARKS.md` — Saugra name, logo, and branding policy
 
 Install status:
 
@@ -328,10 +332,11 @@ when the rule is intentionally disabled everywhere.
 
 ## Licensing
 
-Saugra WAF is licensed under the [GNU Affero General Public License v3.0 (AGPL-3.0)](LICENSE).
+Saugra WAF Community Edition is licensed under the [GNU Affero General Public
+License v3.0 only (AGPL-3.0-only)](LICENSE).
 
+See `docs/LICENSING.md` for guidance on commercial use, modified network
+deployments, warranty and liability limits, and trademark policy.
 
-### Saugra Pro
-Saugra follows an **Open-Core** model. While the core engine and rules are open-source under AGPL-3.0, we offer an enterprise-grade **Saugra Pro** version with additional features (SSO, SIEM integration, multi-node management, etc.) under a separate commercial license.
-
-For more information on Saugra Pro, please visit our [official website](https://saugra.io).
+For commercial licensing or support questions, contact the maintainers through
+the repository profile.

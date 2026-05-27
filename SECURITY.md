@@ -1,5 +1,13 @@
 # Security Policy
 
+Saugra is an additional security layer, not a guarantee that an application,
+service, network, or deployment is secure. Operators remain responsible for
+secure application development, configuration, monitoring, incident response,
+and compliance obligations.
+
+Saugra Community Edition is provided under AGPL-3.0-only without warranty, as
+described in `LICENSE`.
+
 ## Supported Versions
 
 The table below outlines which versions of the project are currently receiving security updates and patches.

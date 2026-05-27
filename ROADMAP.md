@@ -3,12 +3,9 @@
 This roadmap tracks public community-edition development for Saugra. Saugra is
 developed as a production-oriented WAF for real web applications.
 
-Saugra is developed with an open-core direction: this public repository focuses
-on the self-hosted WAF engine, reverse proxy, rules, local logs, CLI, local
-visibility, deployment examples, and basic explain-only AI summaries. Future
-Saugra Pro and cloud capabilities may include centralized management,
-organization-level controls, external integrations, and reporting. Commercial
-planning and private implementation details are tracked outside this public
+This public repository focuses on the self-hosted WAF engine, reverse proxy,
+rules, local logs, CLI, local visibility, deployment examples, and basic
+explain-only AI summaries. Private planning, if any, is tracked outside this
 repository.
 
 ## Current Status
@@ -88,11 +85,10 @@ The public edition should remain useful by itself:
 - Docker and deployment examples
 - Basic explain-only AI summaries
 
-## Open-Core Boundary
+## Public Edition Scope
 
 The public edition should provide real security value without requiring a paid
-or hosted service. Saugra Pro and cloud features should extend Saugra for larger
-teams and organizations, not replace the community WAF core.
+or hosted service.
 
 Public development should prioritize:
 
@@ -102,15 +98,6 @@ Public development should prioritize:
 - Safe structured logs
 - Practical deployment examples
 - Explainable findings
-
-Future Saugra Pro/cloud work may focus on:
-
-- Centralized dashboards
-- Multi-node management
-- Team access controls
-- External identity integrations
-- Alerting and security tool integrations
-- Organization-level reporting
 
 ## Next Public Development Work
 
@@ -396,10 +383,8 @@ bot_protection:
       block_threshold: 60
 ```
 
-Future Saugra Pro/cloud behavior scoring may add distributed/fleet-wide
-reputation, multi-instance correlation, adaptive route baselines, external
-threat feeds, alert routing, and team investigation workflows. Those features
-should extend the public behavior scoring model rather than replace it.
+Future behavior scoring work should extend the public behavior scoring model
+rather than replace it.
 
 ### Runtime Allowlisting Without Restart
 

@@ -27,6 +27,9 @@ assets = [
   ["configs/apache.production.example.conf", "usr/share/doc/saugra/apache.production.example.conf", "644"],
   ["packaging/systemd/saugra.service", "lib/systemd/system/saugra.service", "644"],
   ["README.md", "usr/share/doc/saugra/README.md", "644"],
+  ["NOTICE", "usr/share/doc/saugra/NOTICE", "644"],
+  ["TRADEMARKS.md", "usr/share/doc/saugra/TRADEMARKS.md", "644"],
+  ["docs/LICENSING.md", "usr/share/doc/saugra/LICENSING.md", "644"],
   ["docs/PRODUCTION_DEPLOYMENT.md", "usr/share/doc/saugra/PRODUCTION_DEPLOYMENT.md", "644"],
   ["docs/DEBIAN_PACKAGING.md", "usr/share/doc/saugra/DEBIAN_PACKAGING.md", "644"],
 ]

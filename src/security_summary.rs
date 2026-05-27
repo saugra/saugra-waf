@@ -799,7 +799,7 @@ mod tests {
     #[test]
     fn email_message_uses_html_body_instead_of_json_attachment_style() {
         let summary = SecuritySummary {
-            app_hostname: Some("conference.ke".to_string()),
+            app_hostname: Some("example.com".to_string()),
             generated_at_unix_seconds: rfc3339_to_unix_seconds("2026-05-22T08:00:00Z").unwrap(),
             timezone: "Africa/Nairobi".to_string(),
             lookback_seconds: 86_400,
@@ -840,7 +840,7 @@ mod tests {
 
         assert!(message.contains("Content-Type: multipart/alternative"));
         assert!(message.contains("Content-Type: text/html; charset=UTF-8"));
-        assert!(message.contains("Saugra WAF - CONFERENCE.KE"));
+        assert!(message.contains("Saugra WAF - EXAMPLE.COM"));
         assert!(message.contains("text-align:center"));
         assert!(
             message.contains("saugra explain &lt;request-id&gt; --config /etc/saugra/saugra.yml")
