@@ -63,9 +63,18 @@ uploads `target/debian/*.deb` as release assets.
 
 ## Signed APT Repository
 
-GitHub Release assets are the current `.deb` distribution path. The planned
-production package channel is a signed APT repository so operators can install
-and upgrade Saugra with normal `apt` workflows.
+GitHub Release assets are the fallback `.deb` distribution path. The production
+package channel is a signed APT repository published with GitHub Pages so
+operators can install and upgrade Saugra with normal `apt` workflows.
+
+Release CI builds an unsigned APT repository dry-run artifact to validate the
+Debian archive layout before publishing. Maintainers can run the same check
+locally:
+
+```bash
+sudo apt install apt-utils dpkg-dev
+scripts/build-apt-repository.sh --output apt-repo target/debian/saugra_*.deb
+```
 
 See `docs/APT_REPOSITORY.md` for the repository layout, signing requirements,
 maintainer workflow, and CI publishing plan.

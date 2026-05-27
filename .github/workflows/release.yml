@@ -7,11 +7,16 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  pages: write
 
 jobs:
   deb:
     name: Debian package
     runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
 
     steps:
       - name: Checkout
@@ -32,8 +37,101 @@ jobs:
       - name: Build Debian package
         run: cargo deb --locked
 
+      - name: Inspect Debian package
+        run: |
+          dpkg-deb -I target/debian/*.deb
+          dpkg-deb -c target/debian/*.deb
+
+      - name: Install-test package on Ubuntu
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            ubuntu:24.04 \
+            bash -euxo pipefail -c '
+              apt-get update
+              apt-get install -y ./target/debian/*.deb
+              saugra test-config --config /etc/saugra/saugra.yml
+              systemctl list-unit-files saugra.service || true
+            '
+
+      - name: Install-test package on Debian
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            debian:12 \
+            bash -euxo pipefail -c '
+              apt-get update
+              apt-get install -y ./target/debian/*.deb
+              saugra test-config --config /etc/saugra/saugra.yml
+              systemctl list-unit-files saugra.service || true
+            '
+
+      - name: Build unsigned APT repository artifact
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y apt-utils dpkg-dev
+          scripts/build-apt-repository.sh --output apt-repo target/debian/*.deb
+          test -s apt-repo/dists/stable/Release
+          test -s apt-repo/dists/stable/main/binary-amd64/Packages.gz
+
+      - name: Install-test unsigned APT repository on Ubuntu
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            ubuntu:24.04 \
+            bash -euxo pipefail -c '
+              printf "%s\n" "deb [trusted=yes] file:/workspace/apt-repo stable main" > /etc/apt/sources.list.d/saugra.list
+              apt-get update
+              apt-get install -y saugra
+              saugra test-config --config /etc/saugra/saugra.yml
+            '
+
+      - name: Upload unsigned APT repository dry-run artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: saugra-apt-repository-dry-run
+          path: apt-repo
+
       - name: Upload package to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: target/debian/*.deb
+
+      - name: Build signed GitHub Pages APT repository
+        env:
+          SAUGRA_APT_GPG_KEY_ID: ${{ secrets.SAUGRA_APT_GPG_KEY_ID }}
+          SAUGRA_APT_GPG_PASSPHRASE: ${{ secrets.SAUGRA_APT_GPG_PASSPHRASE }}
+          SAUGRA_APT_GPG_PRIVATE_KEY: ${{ secrets.SAUGRA_APT_GPG_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SAUGRA_APT_GPG_KEY_ID" ] || [ -z "$SAUGRA_APT_GPG_PRIVATE_KEY" ]; then
+            echo "SAUGRA_APT_GPG_KEY_ID and SAUGRA_APT_GPG_PRIVATE_KEY secrets are required for APT publishing" >&2
+            exit 1
+          fi
+
+          export GNUPGHOME="$RUNNER_TEMP/saugra-apt-gnupg"
+          install -d -m 700 "$GNUPGHOME"
+          printf '%s' "$SAUGRA_APT_GPG_PRIVATE_KEY" | gpg --batch --import
+
+          install -d site
+          gpg --batch --yes --armor --export "$SAUGRA_APT_GPG_KEY_ID" > site/saugra.gpg
+          scripts/build-apt-repository.sh \
+            --output site/apt \
+            --signing-key "$SAUGRA_APT_GPG_KEY_ID" \
+            target/debian/*.deb
+          touch site/.nojekyll
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload GitHub Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: Deploy GitHub Pages APT repository
+        id: deployment
+        uses: actions/deploy-pages@v4

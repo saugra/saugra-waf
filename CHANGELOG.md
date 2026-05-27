@@ -5,6 +5,8 @@ All notable changes to Saugra are documented here.
 ## Unreleased
 
 - Add follow-up changes here before tagging the next release.
+- Add APT repository dry-run tooling, GitHub Pages publishing, release
+  install-test coverage, and an official Debian archive release plan.
 
 ## 1.0.5 - 2026-05-23
 

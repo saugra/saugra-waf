@@ -33,6 +33,8 @@ The repository has a working Rust foundation:
 - Operator admin guide for commands, troubleshooting, allowlisting, blocking,
   logs, explanations, and rollout recovery
 - Example config at `configs/saugra.example.yml`
+- Debian package metadata for GitHub Release `.deb` artifacts
+- APT repository dry-run tooling for the Saugra-owned package repository
 
 ## Verified Commands
 
@@ -110,6 +112,34 @@ Public development should prioritize:
 - [x] In `block` mode, return a safe block response.
 - [x] Forward allowed traffic to the configured upstream.
 - [x] Add tests for monitor and block behavior.
+
+## Phase 8 — Package Distribution and Official Archive Preparation
+
+Saugra's near-term production install channel is a Saugra-owned signed APT
+repository. The long-term public distribution goal is official Debian archive
+inclusion, with Ubuntu sync where possible.
+
+- [x] Add production-oriented Debian package metadata for `cargo-deb`.
+- [x] Add maintainer scripts that preserve operator configuration and avoid
+      automatic service start.
+- [x] Add GitHub Release workflow for `.deb` artifacts.
+- [x] Add unsigned APT repository dry-run tooling.
+- [x] Add release CI install tests for standalone `.deb` packages.
+- [x] Add release CI install test coverage for the generated APT repository.
+- [x] Choose hosting for the Saugra-owned signed APT repository: GitHub Pages.
+- [ ] Create and document a dedicated APT repository signing key.
+- [x] Add GitHub Pages publishing for signed APT repository metadata.
+- [ ] Enable GitHub Pages with GitHub Actions as the Pages source.
+- [ ] Add APT repository signing secrets to GitHub Actions.
+- [ ] Optionally configure `repo.saugra.dev` as the Pages custom domain.
+- [ ] Add `arm64` package builds and install tests.
+- [ ] Run a Debian Rust dependency audit for official archive readiness.
+- [ ] Create Debian source packaging under `debian/`.
+- [ ] Build the official Debian source package without network access.
+- [ ] Run `lintian`, `sbuild` or `pbuilder`, and Debian policy checks.
+- [ ] File a Debian WNPP Intent to Package bug.
+- [ ] Upload to mentors.debian.net and request sponsorship.
+- [ ] Track Debian NEW review and Ubuntu sync after Debian acceptance.
 
 ## Phase 3 — Production-Ready Proxy Verification + Abuse Controls
 

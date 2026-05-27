@@ -110,6 +110,7 @@ Public docs:
 - `docs/CRS_IMPORT.md` — OWASP CRS conversion support and limitations
 - `docs/DEBIAN_PACKAGING.md` — `.deb` build and GitHub Release publishing guide
 - `docs/APT_REPOSITORY.md` — signed Ubuntu/Debian APT repository plan
+- `docs/OFFICIAL_DEBIAN_RELEASE.md` — official Debian archive release plan
 - `docs/RELEASE_PROCESS.md` — maintainer release checklist
 - `docs/RUNTIME_ALLOWLIST.md` — no-restart local runtime allowlisting design
 - `TRADEMARKS.md` — Saugra name, logo, and branding policy
@@ -119,7 +120,10 @@ Install status:
 - Supported today: build from Git/source and run with systemd.
 - Supported today: build `.deb` packages with `cargo-deb` and publish them to
   GitHub Releases.
-- Planned later: signed Ubuntu/Debian apt repository.
+- In progress: signed Saugra-owned Ubuntu/Debian APT repository published with
+  GitHub Pages.
+- Planned later: official Debian archive submission, then Ubuntu sync where
+  possible.
 
 ## Quick Start
 
