@@ -7,11 +7,11 @@ BACKEND_PORT="${SAUGRA_SMOKE_BACKEND_PORT:-18080}"
 SAUGRA_HOST="${SAUGRA_SMOKE_HOST:-127.0.0.1}"
 SAUGRA_PORT="${SAUGRA_SMOKE_PORT:-18787}"
 TIMEZONE="${SAUGRA_SMOKE_TIMEZONE:-Africa/Nairobi}"
-TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/saugra-smoke.XXXXXX")"
-CONFIG_PATH="${TMP_DIR}/saugra.yml"
-EVENT_LOG_PATH="${TMP_DIR}/saugra-events.jsonl"
+TMP_DIR="$(mktemp -d "${TMPDIR:-/tmp}/saugra-waf-smoke.XXXXXX")"
+CONFIG_PATH="${TMP_DIR}/saugra-waf.yml"
+EVENT_LOG_PATH="${TMP_DIR}/saugra-waf-events.jsonl"
 BACKEND_LOG_PATH="${TMP_DIR}/backend.log"
-SAUGRA_LOG_PATH="${TMP_DIR}/saugra.log"
+SAUGRA_LOG_PATH="${TMP_DIR}/saugra-waf.log"
 BACKEND_PID=""
 SAUGRA_PID=""
 FAILED=0
@@ -35,7 +35,7 @@ cleanup() {
     if [[ "${FAILED}" -eq 1 ]]; then
         echo "--- backend log ---" >&2
         sed -n '1,120p' "${BACKEND_LOG_PATH}" >&2 2>/dev/null || true
-        echo "--- saugra log ---" >&2
+        echo "--- saugra-waf log ---" >&2
         sed -n '1,160p' "${SAUGRA_LOG_PATH}" >&2 2>/dev/null || true
         echo "--- event log ---" >&2
         sed -n '1,120p' "${EVENT_LOG_PATH}" >&2 2>/dev/null || true

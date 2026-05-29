@@ -285,9 +285,9 @@ location / {
 Saugra CLI should support:
 
 ```bash
-saugra init nginx
-saugra test-config
-saugra reload
+saugra-waf init nginx
+saugra-waf test-config
+saugra-waf reload
 ```
 
 Production examples should be maintained in:
@@ -310,9 +310,9 @@ RequestHeader set X-Forwarded-Proto "https"
 Saugra CLI should support:
 
 ```bash
-saugra init apache
-saugra test-config
-saugra reload
+saugra-waf init apache
+saugra-waf test-config
+saugra-waf reload
 ```
 
 Production examples should be maintained in:
@@ -351,7 +351,7 @@ behavior:
   enabled: true
   mode: monitor
   backend: local
-  state_path: /var/lib/saugra/saugra-behavior-state.json
+  state_path: /var/lib/saugra-waf/saugra-waf-behavior-state.json
   score_window: 10m
   decay_window: 30m
   monitor_threshold: 40
@@ -373,7 +373,7 @@ bot_protection:
   enabled: true
   mode: monitor
   backend: local
-  state_path: /var/lib/saugra/saugra-bot-state.json
+  state_path: /var/lib/saugra-waf/saugra-waf-bot-state.json
   score_window: 10m
   monitor_threshold: 40
   block_threshold: 80
@@ -408,7 +408,7 @@ ai:
 logging:
   format: json
   level: info
-  event_log_path: /var/log/saugra/saugra-events.jsonl
+  event_log_path: /var/log/saugra-waf/saugra-waf-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 30
   timezone: Africa/Nairobi
@@ -564,7 +564,7 @@ Local event retention:
 - The event log path must be configurable.
 - The active event log must rotate when it reaches a configured maximum size.
 - Operators must be able to configure how many rotated files are retained.
-- `saugra logs tail` and `saugra explain <request-id>` should read across active
+- `saugra-waf logs tail` and `saugra-waf explain <request-id>` should read across active
   and rotated event files.
 
 ## 12. Developer Dashboard
@@ -601,18 +601,18 @@ Saugra should include a CLI for setup and management.
 Recommended commands:
 
 ```bash
-saugra init
-saugra init nginx
-saugra init apache
-saugra --version
-saugra test-config
-saugra run
-saugra reload
-saugra rules list
-saugra rules enable <rule-id>
-saugra rules disable <rule-id>
-saugra logs tail
-saugra explain <request-id> --config /etc/saugra/saugra.yml
+saugra-waf init
+saugra-waf init nginx
+saugra-waf init apache
+saugra-waf --version
+saugra-waf test-config
+saugra-waf run
+saugra-waf reload
+saugra-waf rules list
+saugra-waf rules enable <rule-id>
+saugra-waf rules disable <rule-id>
+saugra-waf logs tail
+saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 ## 14. Deployment Options
@@ -637,12 +637,12 @@ Example Docker Compose:
 
 ```yaml
 services:
-  saugra:
-    image: saugra/saugra:latest
+  saugra-waf:
+    image: saugra-waf/saugra-waf:latest
     ports:
       - "8787:8787"
     volumes:
-      - ./saugra.yml:/etc/saugra/saugra.yml
+      - ./saugra-waf.yml:/etc/saugra-waf/saugra-waf.yml
     depends_on:
       - app
 

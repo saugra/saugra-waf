@@ -145,7 +145,7 @@ impl RateLimitStore for RedisRateLimitStore {
         policy: RateLimitPolicy,
     ) -> anyhow::Result<Option<RateLimitExceeded>> {
         let mut connection = self.manager.clone();
-        let redis_key = format!("saugra:rate_limit:{key}");
+        let redis_key = format!("saugra-waf:rate_limit:{key}");
         let capacity = token_capacity(policy);
         let refill_per_millisecond = policy.requests_per_minute as f64 / 60_000.0;
         let ttl_milliseconds = (capacity / refill_per_millisecond).ceil() as u64;

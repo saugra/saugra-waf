@@ -189,7 +189,7 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
 async fn health() -> Json<serde_json::Value> {
     Json(json!({
         "status": "ok",
-        "service": "saugra"
+        "service": "saugra-waf"
     }))
 }
 
@@ -693,7 +693,7 @@ fn copy_forward_headers(
     }
 
     if let Ok(value) = request_id.parse() {
-        forwarded.insert("x-saugra-request-id", value);
+        forwarded.insert("x-saugra-waf-request-id", value);
     }
 }
 

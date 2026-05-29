@@ -32,7 +32,7 @@ The repository has a working Rust foundation:
 - No-restart runtime allow/block policy for local IP and CIDR entries
 - Operator admin guide for commands, troubleshooting, allowlisting, blocking,
   logs, explanations, and rollout recovery
-- Example config at `configs/saugra.example.yml`
+- Example config at `configs/saugra-waf.example.yml`
 - Debian package metadata for GitHub Release `.deb` artifacts
 - APT repository dry-run tooling for the Saugra-owned package repository
 
@@ -42,8 +42,8 @@ The repository has a working Rust foundation:
 cargo fmt --check
 cargo check --all-targets
 cargo test --locked --all-targets --all-features
-cargo run -- test-config --config configs/saugra.example.yml
-cargo run -- rules list --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
+cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 ```
 
 Current test status:
@@ -131,7 +131,7 @@ inclusion, with Ubuntu sync where possible.
 - [x] Add GitHub Pages publishing for signed APT repository metadata.
 - [ ] Enable GitHub Pages with GitHub Actions as the Pages source.
 - [ ] Add APT repository signing secrets to GitHub Actions.
-- [ ] Optionally configure `repo.saugra.dev` as the Pages custom domain.
+- [ ] Optionally configure `repo.saugra-waf.dev` as the Pages custom domain.
 - [ ] Add `arm64` package builds and install tests.
 - [ ] Run a Debian Rust dependency audit for official archive readiness.
 - [ ] Create Debian source packaging under `debian/`.
@@ -165,7 +165,7 @@ inclusion, with Ubuntu sync where possible.
 
 Saugra should scale beyond hardcoded Rust rules. The community rule engine will
 load validated YAML rule packs at startup, compile rule regexes before accepting
-traffic, and expose the same rules through `saugra rules list`.
+traffic, and expose the same rules through `saugra-waf rules list`.
 
 The rule-pack design is inspired by OWASP CRS operational concepts while
 remaining native to Saugra instead of copying ModSecurity syntax directly:
@@ -179,7 +179,7 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
 - [x] Compile and validate all rule regexes at startup.
 - [x] Support rule metadata: id, name, category, severity, targets,
       paranoia level, OWASP category, transforms, and explanation.
-- [x] Add an initial `saugra rules convert-crs` command for supported CRS
+- [x] Add an initial `saugra-waf rules convert-crs` command for supported CRS
       `@rx` rules.
 - [x] Support monitor-first rollout with CRS-style detection and blocking
       paranoia levels.
@@ -205,7 +205,7 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
       enforcement, and file upload rules.
 - [x] Document unsupported CRS features clearly so operators understand which
       converted rules are active, skipped, or partially represented.
-- [x] Document the import flow as `OWASP CRS .conf -> saugra rules convert-crs
+- [x] Document the import flow as `OWASP CRS .conf -> saugra-waf rules convert-crs
       -> Saugra YAML rule packs -> Saugra rule engine`.
 - [x] Keep bad rule files as clear startup/config errors, not silent weak
       protection.
@@ -260,10 +260,10 @@ risks. The implementation target is layered OWASP coverage:
 Planned work:
 
 - [x] Document the layered OWASP Top 10 strategy.
-- [x] Add `saugra owasp coverage` to report active controls and gaps by OWASP
+- [x] Add `saugra-waf owasp coverage` to report active controls and gaps by OWASP
       category.
 - [x] Add a `posture` config section for deployment assumptions.
-- [x] Add `saugra posture check` for local deterministic checks such as
+- [x] Add `saugra-waf posture check` for local deterministic checks such as
       expected external scheme, allowed methods, response security headers,
       secure cookies, and upload/body policy.
 - [x] Add normalized local report ingestion for SBOM and dependency scan
@@ -271,7 +271,7 @@ Planned work:
 - [x] Show OWASP category coverage in structured logs, security events, block
       responses, and explanations.
 - [x] Show OWASP category coverage in the local log viewer through
-      `saugra logs summary`.
+      `saugra-waf logs summary`.
 - [x] Support future standard mappings, such as `owasp-top-10:2026`, through
       YAML metadata and coverage mappings rather than proxy rewrites.
 
@@ -345,8 +345,8 @@ single Saugra node:
       before operators enable threshold-based blocking.
 - [x] Emit behavior score, score contributors, threshold, window, and storage
       backend in structured security events.
-- [x] Include behavior contributors in `saugra explain <request-id>` and
-      `saugra logs summary`.
+- [x] Include behavior contributors in `saugra-waf explain <request-id>` and
+      `saugra-waf logs summary`.
 - [x] Add tests for score accumulation, decay/window expiry, restart behavior,
       monitor thresholds, block thresholds, route overrides, and event shape.
 - [x] Document how behavior scoring differs from rule anomaly scoring and rate
@@ -384,8 +384,8 @@ Initial scope:
 - [x] Add configurable temporary blocking that emits a security event and
       records the score contributors, threshold, duration, storage backend, and
       route policy that caused the block.
-- [x] Include bot-protection contributors in `saugra explain <request-id>`,
-      `saugra logs tail`, and `saugra logs summary`.
+- [x] Include bot-protection contributors in `saugra-waf explain <request-id>`,
+      `saugra-waf logs tail`, and `saugra-waf logs summary`.
 - [x] Document a production rollout path: monitor first, review events, tune
       allowlists and route thresholds, then enable blocking for selected routes.
 - [x] Add tests for monitor-only bot scoring, threshold blocking, temporary
@@ -399,7 +399,7 @@ bot_protection:
   enabled: true
   mode: monitor
   backend: local
-  state_path: /var/lib/saugra/saugra-bot-state.json
+  state_path: /var/lib/saugra-waf/saugra-waf-bot-state.json
   score_window: 10m
   monitor_threshold: 40
   block_threshold: 80
@@ -426,10 +426,10 @@ Initial scope:
 
 - [x] Add a `runtime_policy` config section with an enabled flag, policy path,
       reload interval, default duration, and allowlist effect.
-- [x] Store local runtime policy in `/var/lib/saugra/runtime-policy.json`.
-- [x] Add `saugra allowlist add/list/remove/prune` commands for IP and CIDR
+- [x] Store local runtime policy in `/var/lib/saugra-waf/runtime-policy.json`.
+- [x] Add `saugra-waf allowlist add/list/remove/prune` commands for IP and CIDR
       entries.
-- [x] Add runtime blocklist support with `saugra allowlist block add`.
+- [x] Add runtime blocklist support with `saugra-waf allowlist block add`.
 - [x] Reload the runtime policy file without restarting Saugra.
 - [x] Apply runtime IP/CIDR allowlists before bot and behavior threshold
       blocking.
@@ -437,7 +437,7 @@ Initial scope:
       active, downgrade them to monitor, or bypass them for trusted rollout
       cases.
 - [x] Emit runtime allowlist match metadata in security events and
-      `saugra explain`.
+      `saugra-waf explain`.
 - [x] Add tests for expiry, atomic CLI writes, bot/behavior bypass,
       deterministic WAF downgrade, and runtime blocklist enforcement.
 - [x] Add explicit malformed-policy reload test that keeps the last known good
@@ -473,15 +473,15 @@ Initial scope:
       top source IPs, top targeted paths, rate-limit events, bot events, and
       behavior-threshold events.
 - [x] Include sample request IDs for the most important blocked events so admins
-      can run `saugra explain <request-id>`.
-- [x] Add `saugra summary daily --config /etc/saugra/saugra.yml` to generate a
+      can run `saugra-waf explain <request-id>`.
+- [x] Add `saugra-waf summary daily --config /etc/saugra-waf/saugra-waf.yml` to generate a
       summary on demand.
-- [x] Add `saugra summary send --config /etc/saugra/saugra.yml` for manual
+- [x] Add `saugra-waf summary send --config /etc/saugra-waf/saugra-waf.yml` for manual
       delivery testing.
 - [x] Add a scheduler loop or documented systemd timer path for sending the
       report at a configured time, for example 08:00 local time.
 - [x] Support file output first, for example
-      `/var/log/saugra/saugra-security-summary-YYYY-MM-DD.json`.
+      `/var/log/saugra-waf/saugra-waf-security-summary-YYYY-MM-DD.json`.
 - [x] Add email delivery after file output is stable. Email config should avoid
       hard-coded secrets and support environment variables or secret files.
 - [x] Make failures observable in journald and local admin events.
@@ -498,7 +498,7 @@ security_summary:
   send_time: "08:00"
   timezone: Africa/Nairobi
   lookback: 24h
-  output_path: /var/log/saugra/saugra-security-summary.json
+  output_path: /var/log/saugra-waf/saugra-waf-security-summary.json
   channels:
     - type: file
     # Future:

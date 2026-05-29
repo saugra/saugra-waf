@@ -43,7 +43,7 @@ rules:
 logging:
   format: json
   level: info
-  event_log_path: logs/django-channels-saugra-events.jsonl
+  event_log_path: logs/django-channels-saugra-waf-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 10
   timezone: UTC

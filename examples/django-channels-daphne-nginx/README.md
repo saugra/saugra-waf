@@ -16,7 +16,7 @@ daphne -b 127.0.0.1 -p 8001 myproject.asgi:application
 Start Saugra:
 
 ```bash
-cargo run -- run --config examples/django-channels-daphne-nginx/saugra.yml
+cargo run --bin saugra-waf -- run --config examples/django-channels-daphne-nginx/saugra-waf.yml
 ```
 
 Install the Nginx snippet from `nginx.conf`, adjust `server_name`, then reload

@@ -191,7 +191,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let stale = temp_dir
             .path()
-            .join("saugra-security-summary-2026-05-01.json");
+            .join("saugra-waf-security-summary-2026-05-01.json");
         fs::write(&stale, b"summary").unwrap();
         let target = test_target(temp_dir.path(), "1s");
 
@@ -208,7 +208,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let stale = temp_dir
             .path()
-            .join("saugra-security-summary-2026-05-01.json");
+            .join("saugra-waf-security-summary-2026-05-01.json");
         let other = temp_dir.path().join("keep-me.json");
         fs::write(&stale, b"summary").unwrap();
         fs::write(&other, b"other").unwrap();
@@ -227,7 +227,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let fresh = temp_dir
             .path()
-            .join("saugra-security-summary-2026-05-22.json");
+            .join("saugra-waf-security-summary-2026-05-22.json");
         fs::write(&fresh, b"summary").unwrap();
         let target = test_target(temp_dir.path(), "30d");
 
@@ -255,10 +255,10 @@ mod tests {
     #[test]
     fn prefix_only_target_matches_stale_files() {
         let temp_dir = tempfile::tempdir().unwrap();
-        let stale = temp_dir.path().join("saugra-access.log.1");
+        let stale = temp_dir.path().join("saugra-waf-access.log.1");
         fs::write(&stale, b"log").unwrap();
         let mut target = test_target(temp_dir.path(), "1s");
-        target.filename_prefix = Some("saugra-".to_string());
+        target.filename_prefix = Some("saugra-waf-".to_string());
         target.filename_suffix = None;
 
         let report = run(&[target], true, unix_seconds_now() + 2).unwrap();
@@ -271,7 +271,7 @@ mod tests {
         StorageCleanupTargetConfig {
             name: "summaries".to_string(),
             directory: directory.to_path_buf(),
-            filename_prefix: Some("saugra-security-summary-".to_string()),
+            filename_prefix: Some("saugra-waf-security-summary-".to_string()),
             filename_suffix: Some(".json".to_string()),
             older_than: older_than.to_string(),
         }

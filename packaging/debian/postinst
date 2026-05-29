@@ -24,36 +24,36 @@ copy_if_missing() {
   fi
 }
 
-if ! getent group saugra >/dev/null; then
-  addgroup --system saugra
+if ! getent group saugra-waf >/dev/null; then
+  addgroup --system saugra-waf
 fi
 
-if ! getent passwd saugra >/dev/null; then
-  adduser --system --ingroup saugra --home /var/lib/saugra --no-create-home saugra
+if ! getent passwd saugra-waf >/dev/null; then
+  adduser --system --ingroup saugra-waf --home /var/lib/saugra-waf --no-create-home saugra-waf
 fi
 
-ensure_dir /etc/saugra root saugra 0750
-ensure_dir /etc/saugra/rules root saugra 0750
-ensure_dir /etc/saugra/standards root saugra 0750
-ensure_dir /etc/saugra/intelligence root saugra 0750
-ensure_dir /var/lib/saugra saugra saugra 0750
-ensure_dir /var/log/saugra saugra adm 0750
+ensure_dir /etc/saugra-waf root saugra-waf 0750
+ensure_dir /etc/saugra-waf/rules root saugra-waf 0750
+ensure_dir /etc/saugra-waf/standards root saugra-waf 0750
+ensure_dir /etc/saugra-waf/intelligence root saugra-waf 0750
+ensure_dir /var/lib/saugra-waf saugra-waf saugra-waf 0750
+ensure_dir /var/log/saugra-waf saugra-waf adm 0750
 
-copy_if_missing /usr/share/saugra/saugra.production.example.yml /etc/saugra/saugra.yml 0640 root saugra
+copy_if_missing /usr/share/saugra-waf/saugra-waf.production.example.yml /etc/saugra-waf/saugra-waf.yml 0640 root saugra-waf
 
-for rule in /usr/share/saugra/rules/*.yml; do
+for rule in /usr/share/saugra-waf/rules/*.yml; do
   [ -e "$rule" ] || continue
-  copy_if_missing "$rule" "/etc/saugra/rules/$(basename "$rule")" 0640 root saugra
+  copy_if_missing "$rule" "/etc/saugra-waf/rules/$(basename "$rule")" 0640 root saugra-waf
 done
 
-for standard in /usr/share/saugra/standards/*.yml; do
+for standard in /usr/share/saugra-waf/standards/*.yml; do
   [ -e "$standard" ] || continue
-  copy_if_missing "$standard" "/etc/saugra/standards/$(basename "$standard")" 0640 root saugra
+  copy_if_missing "$standard" "/etc/saugra-waf/standards/$(basename "$standard")" 0640 root saugra-waf
 done
 
-for catalog in /usr/share/saugra/intelligence/*.yml; do
+for catalog in /usr/share/saugra-waf/intelligence/*.yml; do
   [ -e "$catalog" ] || continue
-  copy_if_missing "$catalog" "/etc/saugra/intelligence/$(basename "$catalog")" 0640 root saugra
+  copy_if_missing "$catalog" "/etc/saugra-waf/intelligence/$(basename "$catalog")" 0640 root saugra-waf
 done
 
 if command -v systemctl >/dev/null; then

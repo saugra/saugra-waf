@@ -86,7 +86,7 @@ if [ -n "$signing_key" ] && ! command -v gpg >/dev/null 2>&1; then
 fi
 
 if [ -e "$output_dir" ]; then
-  if [ ! -d "$output_dir" ] || [ ! -f "$output_dir/.saugra-apt-repository" ]; then
+  if [ ! -d "$output_dir" ] || [ ! -f "$output_dir/.saugra-waf-apt-repository" ]; then
     echo "refusing to overwrite unmarked output path: $output_dir" >&2
     echo "remove it manually or choose a different --output directory" >&2
     exit 1
@@ -94,12 +94,12 @@ if [ -e "$output_dir" ]; then
   find "$output_dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
 fi
 
-pool_dir="$output_dir/pool/main/s/saugra"
+pool_dir="$output_dir/pool/main/s/saugra-waf"
 binary_dir="$output_dir/dists/$codename/$component/binary-$arch"
 release_dir="$output_dir/dists/$codename"
 
 install -d "$pool_dir" "$binary_dir"
-touch "$output_dir/.saugra-apt-repository"
+touch "$output_dir/.saugra-waf-apt-repository"
 
 for package in "${packages[@]}"; do
   if [ ! -f "$package" ]; then

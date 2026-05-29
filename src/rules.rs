@@ -303,7 +303,7 @@ pub fn builtin_rules() -> Result<Vec<BuiltinRule>, RuleError> {
 
     for contents in DEFAULT_RULE_PACKS {
         let (mut pack_rules, _report) =
-            compile_rule_pack(contents, "<embedded saugra rule pack>", u8::MAX)?;
+            compile_rule_pack(contents, "<embedded saugra-waf rule pack>", u8::MAX)?;
         rules.append(&mut pack_rules);
     }
 

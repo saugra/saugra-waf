@@ -1,29 +1,29 @@
 use std::{fs, path::PathBuf, process::Command};
 
-use saugra::{
+use saugra_waf::{
     decision::WafDecision,
     event_store::{self, EventLogRetention, SecurityEvent, UpstreamEvent},
 };
 
 #[test]
 fn cli_version_prints_package_version() {
-    let output = saugra_cmd(["--version"]);
+    let output = saugra_waf_cmd(["--version"]);
 
     assert_success(&output);
     assert_eq!(
         stdout(&output).trim(),
-        format!("saugra {}", env!("CARGO_PKG_VERSION"))
+        format!("saugra-waf {}", env!("CARGO_PKG_VERSION"))
     );
 }
 
 #[test]
 fn cli_cleanup_dry_run_prints_report_json() {
-    let output = saugra_cmd([
+    let output = saugra_waf_cmd([
         "cleanup",
         "run",
         "--dry-run",
         "--config",
-        "configs/saugra.example.yml",
+        "configs/saugra-waf.example.yml",
     ]);
 
     assert_success(&output);
@@ -36,15 +36,15 @@ fn cli_cleanup_dry_run_prints_report_json() {
 
 #[test]
 fn cli_init_commands_print_starter_configs() {
-    let init = saugra_cmd(["init"]);
+    let init = saugra_waf_cmd(["init"]);
     assert_success(&init);
     assert!(stdout(&init).contains("forwarded_headers:"));
 
-    let nginx = saugra_cmd(["init", "nginx"]);
+    let nginx = saugra_waf_cmd(["init", "nginx"]);
     assert_success(&nginx);
     assert!(stdout(&nginx).contains("proxy_pass http://127.0.0.1:8787;"));
 
-    let apache = saugra_cmd(["init", "apache"]);
+    let apache = saugra_waf_cmd(["init", "apache"]);
     assert_success(&apache);
     assert!(stdout(&apache).contains("ProxyPass / http://127.0.0.1:8787/"));
 }
@@ -87,7 +87,7 @@ fn cli_read_only_inspection_commands_run() {
     ];
 
     for (args, expected) in cases {
-        let output = saugra_cmd(args);
+        let output = saugra_waf_cmd(args);
         assert_success(&output);
         assert!(
             stdout(&output).contains(expected),
@@ -102,7 +102,7 @@ fn cli_explain_reads_recorded_event() {
     let fixture = CliFixture::new();
     let decision = WafDecision::from_matches(
         "cli-request-1".to_string(),
-        saugra::config::WafMode::Monitor,
+        saugra_waf::config::WafMode::Monitor,
         Vec::new(),
         5,
     );
@@ -130,7 +130,7 @@ fn cli_explain_reads_recorded_event() {
     .unwrap();
 
     let config = fixture.config_arg();
-    let output = saugra_cmd(["explain", "cli-request-1", "--config", &config]);
+    let output = saugra_waf_cmd(["explain", "cli-request-1", "--config", &config]);
 
     assert_success(&output);
     assert!(stdout(&output).contains("Request ID: cli-request-1"));
@@ -147,7 +147,7 @@ fn cli_runtime_policy_and_state_commands_run() {
     let fixture = CliFixture::new();
     let config = fixture.config_arg();
 
-    let add = saugra_cmd([
+    let add = saugra_waf_cmd([
         "allowlist",
         "add",
         "ip",
@@ -161,15 +161,15 @@ fn cli_runtime_policy_and_state_commands_run() {
     let entry: serde_json::Value = serde_json::from_slice(&add.stdout).unwrap();
     let id = entry["id"].as_str().unwrap().to_string();
 
-    let list = saugra_cmd(["allowlist", "list", "--config", &config]);
+    let list = saugra_waf_cmd(["allowlist", "list", "--config", &config]);
     assert_success(&list);
     assert!(stdout(&list).contains("203.0.113.10"));
 
-    let remove = saugra_cmd(["allowlist", "remove", &id, "--config", &config]);
+    let remove = saugra_waf_cmd(["allowlist", "remove", &id, "--config", &config]);
     assert_success(&remove);
     assert!(stdout(&remove).contains("removed allowlist entry"));
 
-    let block = saugra_cmd([
+    let block = saugra_waf_cmd([
         "allowlist",
         "block",
         "add",
@@ -182,11 +182,11 @@ fn cli_runtime_policy_and_state_commands_run() {
     assert_success(&block);
     assert!(stdout(&block).contains("198.51.100.20"));
 
-    let prune = saugra_cmd(["allowlist", "prune", "--config", &config]);
+    let prune = saugra_waf_cmd(["allowlist", "prune", "--config", &config]);
     assert_success(&prune);
     assert!(stdout(&prune).contains("pruned"));
 
-    let behavior_reset = saugra_cmd([
+    let behavior_reset = saugra_waf_cmd([
         "state",
         "reset",
         "behavior",
@@ -197,7 +197,7 @@ fn cli_runtime_policy_and_state_commands_run() {
     assert_success(&behavior_reset);
     assert!(stdout(&behavior_reset).contains("no behavior state found"));
 
-    let bot_reset = saugra_cmd(["state", "reset", "bot", "203.0.113.10", "--config", &config]);
+    let bot_reset = saugra_waf_cmd(["state", "reset", "bot", "203.0.113.10", "--config", &config]);
     assert_success(&bot_reset);
     assert!(stdout(&bot_reset).contains("no bot state found"));
 }
@@ -211,7 +211,7 @@ struct CliFixture {
 impl CliFixture {
     fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let config_path = dir.path().join("saugra.yml");
+        let config_path = dir.path().join("saugra-waf.yml");
         let event_log_path = dir.path().join("events.jsonl");
         let runtime_policy_path = dir.path().join("runtime-policy.json");
         let behavior_state_path = dir.path().join("behavior-state.json");
@@ -266,7 +266,7 @@ storage_cleanup:
   targets:
     - name: test reports
       directory: {}
-      filename_prefix: saugra-
+      filename_prefix: saugra-waf-
       filename_suffix: .json
       older_than: 1d
 "#,
@@ -293,12 +293,12 @@ storage_cleanup:
     }
 }
 
-fn saugra_cmd<I, S>(args: I) -> std::process::Output
+fn saugra_waf_cmd<I, S>(args: I) -> std::process::Output
 where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
 {
-    Command::new(env!("CARGO_BIN_EXE_saugra"))
+    Command::new(env!("CARGO_BIN_EXE_saugra-waf"))
         .args(args)
         .output()
         .unwrap()

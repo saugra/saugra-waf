@@ -16,7 +16,7 @@ switch to `block` after tuning.
 - Saugra binary or service
 - Redis for production rate limiting
 - Nginx or Apache as the public web server
-- Writable event log directory, for example `/var/log/saugra`
+- Writable event log directory, for example `/var/log/saugra-waf`
 
 ## Install Saugra on Ubuntu or Debian
 
@@ -30,30 +30,30 @@ are handled correctly:
 
 ```bash
 cd /opt
-apt install ./saugra_1.0.1-1_amd64.deb
+apt install ./saugra-waf_1.0.1-1_amd64.deb
 ```
 
 The package installs:
 
-- `/usr/bin/saugra`
-- `/lib/systemd/system/saugra.service`
-- `/etc/saugra/saugra.yml` when missing
-- bundled rule packs under `/etc/saugra/rules/` when missing
-- bundled standards data under `/etc/saugra/standards/` when missing
-- bundled scanner catalogs under `/etc/saugra/intelligence/` when missing
-- writable runtime paths under `/var/log/saugra` and `/var/lib/saugra`
+- `/usr/bin/saugra-waf`
+- `/lib/systemd/system/saugra-waf.service`
+- `/etc/saugra-waf/saugra-waf.yml` when missing
+- bundled rule packs under `/etc/saugra-waf/rules/` when missing
+- bundled standards data under `/etc/saugra-waf/standards/` when missing
+- bundled scanner catalogs under `/etc/saugra-waf/intelligence/` when missing
+- writable runtime paths under `/var/log/saugra-waf` and `/var/lib/saugra-waf`
 
 Confirm the binary and generated service are available:
 
 ```bash
-saugra --help
-systemctl status saugra
+saugra-waf --help
+systemctl status saugra-waf
 ```
 
 Edit the production config for your real backend and public host:
 
 ```bash
-editor /etc/saugra/saugra.yml
+editor /etc/saugra-waf/saugra-waf.yml
 ```
 
 At minimum, set the upstream host and target:
@@ -76,15 +76,15 @@ routes:
 Validate the installed config:
 
 ```bash
-saugra test-config --config /etc/saugra/saugra.yml
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 Start Redis and Saugra:
 
 ```bash
 systemctl enable --now redis-server
-systemctl enable --now saugra
-systemctl status saugra
+systemctl enable --now saugra-waf
+systemctl status saugra-waf
 ```
 
 Check Saugra locally before changing Nginx or Apache:
@@ -97,8 +97,8 @@ curl -i -H "Host: example.com" http://127.0.0.1:8787/
 Watch service logs and security events:
 
 ```bash
-journalctl -u saugra -f
-saugra logs tail --config /etc/saugra/saugra.yml
+journalctl -u saugra-waf -f
+saugra-waf logs tail --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 Keep `server.mode: monitor` first. After normal traffic is confirmed and false
@@ -108,11 +108,11 @@ If a trusted administrator is blocked by bot or behavior scoring during rollout,
 add a short-lived runtime allowlist entry without restarting Saugra:
 
 ```bash
-saugra allowlist add ip 203.0.113.10 --duration 2h --reason "admin rollout verification" --config /etc/saugra/saugra.yml
-saugra allowlist list --config /etc/saugra/saugra.yml
+saugra-waf allowlist add ip 203.0.113.10 --duration 2h --reason "admin rollout verification" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist list --config /etc/saugra-waf/saugra-waf.yml
 ```
 
-Runtime policy reloads from `/var/lib/saugra/runtime-policy.json` while Saugra
+Runtime policy reloads from `/var/lib/saugra-waf/runtime-policy.json` while Saugra
 is running. The default effect bypasses bot and behavior threshold blocks for
 the matching IP. Use `allowlist_effect: monitor_all` or `allow_all` only when a
 trusted rollout policy should also affect deterministic WAF rule blocks.
@@ -136,27 +136,27 @@ curl https://sh.rustup.rs -sSf | sh
 Clone and build Saugra:
 
 ```bash
-git clone https://github.com/<your-org>/saugra.git /opt/saugra
-cd /opt/saugra
+git clone https://github.com/saugra/saugra-waf.git /opt/saugra-waf
+cd /opt/saugra-waf
 cargo build --release
-install -m 0755 target/release/saugra /usr/local/bin/saugra
+install -m 0755 target/release/saugra-waf /usr/local/bin/saugra-waf
 ```
 
 Create the service user and directories:
 
 ```bash
-useradd --system --home /var/lib/saugra --shell /usr/sbin/nologin saugra
-mkdir -p /etc/saugra/rules /etc/saugra/standards /var/log/saugra /var/lib/saugra
-chown -R saugra:saugra /var/log/saugra /var/lib/saugra
+useradd --system --home /var/lib/saugra-waf --shell /usr/sbin/nologin saugra-waf
+mkdir -p /etc/saugra-waf/rules /etc/saugra-waf/standards /var/log/saugra-waf /var/lib/saugra-waf
+chown -R saugra-waf:saugra-waf /var/log/saugra-waf /var/lib/saugra-waf
 ```
 
 Install the config:
 
 ```bash
-cp configs/saugra.production.example.yml /etc/saugra/saugra.yml
-cp configs/rules/REQUEST-*.yml /etc/saugra/rules/
-cp configs/standards/*.yml /etc/saugra/standards/
-editor /etc/saugra/saugra.yml
+cp configs/saugra-waf.production.example.yml /etc/saugra-waf/saugra-waf.yml
+cp configs/rules/REQUEST-*.yml /etc/saugra-waf/rules/
+cp configs/standards/*.yml /etc/saugra-waf/standards/
+editor /etc/saugra-waf/saugra-waf.yml
 ```
 
 For a local backend, set:
@@ -184,17 +184,17 @@ routes:
 Validate the installed config:
 
 ```bash
-saugra test-config --config /etc/saugra/saugra.yml
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 Install the systemd service:
 
 ```bash
-cp configs/saugra.service.example /etc/systemd/system/saugra.service
+cp configs/saugra-waf.service.example /etc/systemd/system/saugra-waf.service
 systemctl daemon-reload
 systemctl enable --now redis-server
-systemctl enable --now saugra
-systemctl status saugra
+systemctl enable --now saugra-waf
+systemctl status saugra-waf
 ```
 
 Check Saugra locally before changing Nginx:
@@ -208,7 +208,7 @@ curl -i http://127.0.0.1:8787/_saugra/health
 Start from:
 
 ```bash
-configs/saugra.production.example.yml
+configs/saugra-waf.production.example.yml
 ```
 
 Important production defaults:
@@ -236,20 +236,20 @@ development and single-process demos.
 Validate the config:
 
 ```bash
-cargo run -- test-config --config configs/saugra.production.example.yml
+cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.production.example.yml
 ```
 
 Run Saugra:
 
 ```bash
-cargo run -- run --config configs/saugra.production.example.yml
+cargo run --bin saugra-waf -- run --config configs/saugra-waf.production.example.yml
 ```
 
 On a server, prefer the systemd service:
 
 ```bash
-systemctl restart saugra
-journalctl -u saugra -f
+systemctl restart saugra-waf
+journalctl -u saugra-waf -f
 ```
 
 ## Nginx
@@ -275,7 +275,7 @@ long-lived connection.
 For Nginx, route `/ws/` through Saugra and preserve upgrade semantics:
 
 ```nginx
-map $http_upgrade $saugra_connection_upgrade {
+map $http_upgrade $saugra-waf_connection_upgrade {
     default upgrade;
     '' close;
 }
@@ -285,7 +285,7 @@ location /ws/ {
     proxy_http_version 1.1;
 
     proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $saugra_connection_upgrade;
+    proxy_set_header Connection $saugra-waf_connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header Origin $http_origin;
     proxy_set_header X-Real-IP $remote_addr;
@@ -369,14 +369,14 @@ curl -i "http://example.com/comment?text=%3Cscript%3Ealert(1)%3C/script%3E"
 Review recent events:
 
 ```bash
-saugra logs tail --config /etc/saugra/saugra.yml --limit 20
-saugra logs summary --config /etc/saugra/saugra.yml --limit 200
+saugra-waf logs tail --config /etc/saugra-waf/saugra-waf.yml --limit 20
+saugra-waf logs summary --config /etc/saugra-waf/saugra-waf.yml --limit 200
 ```
 
 Explain a request:
 
 ```bash
-saugra explain <request-id> --config /etc/saugra/saugra.yml
+saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 The output starts with request context, including the client IP, method, path,
@@ -391,7 +391,7 @@ query when present, and upstream when recorded.
 5. Send normal traffic and confirm it reaches the backend.
 6. Send attack-shaped test requests and confirm they appear in `logs tail`.
 7. Review explanations for matched requests with
-   `saugra explain <request-id> --config /etc/saugra/saugra.yml`.
+   `saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml`.
 8. Use `logs summary` to check recent event volume by OWASP category.
 9. Tune route limits and rule exclusions for false positives.
 10. Switch to `server.mode: block` during a low-traffic window.
@@ -421,7 +421,7 @@ rate_limit:
 
 runtime_policy:
   enabled: true
-  path: /var/lib/saugra/runtime-policy.json
+  path: /var/lib/saugra-waf/runtime-policy.json
   reload_interval: 5s
   default_duration: 2h
   allowlist_effect: skip_bot_and_behavior_block
@@ -450,22 +450,22 @@ logging:
 For package installs, download the newer `.deb`, then install it with `apt`:
 
 ```bash
-apt install ./saugra_<version>_amd64.deb
-saugra test-config --config /etc/saugra/saugra.yml
-systemctl restart saugra
+apt install ./saugra-waf_<version>_amd64.deb
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+systemctl restart saugra-waf
 ```
 
 The package seeds missing config and rule files, but it does not overwrite
-operator-edited files under `/etc/saugra`.
+operator-edited files under `/etc/saugra-waf`.
 
 For source installs, upgrade by rebuilding from Git and restarting the service:
 
 
 ```bash
-cd /opt/saugra
+cd /opt/saugra-waf
 git pull
 cargo build --release
-install -m 0755 target/release/saugra /usr/local/bin/saugra
-saugra test-config --config /etc/saugra/saugra.yml
-systemctl restart saugra
+install -m 0755 target/release/saugra-waf /usr/local/bin/saugra-waf
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+systemctl restart saugra-waf
 ```

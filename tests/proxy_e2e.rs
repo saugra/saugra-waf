@@ -11,7 +11,7 @@ use axum::{
     extract::State,
     http::{header, HeaderMap, Method, Request, Response, StatusCode, Uri},
 };
-use saugra::{
+use saugra_waf::{
     config::{
         AiConfig, BehaviorBackend, BehaviorConfig, BehaviorMode, BotProtectionConfig,
         BotProtectionLists, LoggingConfig, ProxyRouteConfig, RateLimitBackend, RateLimitConfig,
@@ -933,7 +933,7 @@ async fn websocket_handshake_is_inspected_forwarded_and_tunneled() {
         max_files: config.logging.event_log_max_files,
     };
 
-    let server = tokio::spawn(saugra::proxy::run(config));
+    let server = tokio::spawn(saugra_waf::proxy::run(config));
     let mut stream = connect_with_retry(&listen).await;
     stream
         .write_all(websocket_request("/ws/chat?room=main", "https://example.com").as_bytes())
@@ -989,7 +989,7 @@ async fn websocket_monitor_mode_records_attack_and_tunnels() {
         max_files: config.logging.event_log_max_files,
     };
 
-    let server = tokio::spawn(saugra::proxy::run(config));
+    let server = tokio::spawn(saugra_waf::proxy::run(config));
     let mut stream = connect_with_retry(&listen).await;
     stream
         .write_all(websocket_request("/ws/chat?q=--", "https://example.com").as_bytes())
@@ -1178,7 +1178,7 @@ fn websocket_axum_request(path: &str, origin: &str) -> Request<Body> {
 
 fn websocket_request(path: &str, origin: &str) -> String {
     format!(
-        "GET {path} HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: chat\r\nOrigin: {origin}\r\nUser-Agent: saugra-test\r\n\r\n"
+        "GET {path} HTTP/1.1\r\nHost: example.com\r\nConnection: Upgrade\r\nUpgrade: websocket\r\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\nSec-WebSocket-Protocol: chat\r\nOrigin: {origin}\r\nUser-Agent: saugra-waf-test\r\n\r\n"
     )
 }
 
@@ -1249,7 +1249,7 @@ async fn spawn_raw_websocket_upstream() -> RawWebSocketUpstream {
 }
 
 fn test_event_log_path() -> std::path::PathBuf {
-    std::env::temp_dir().join(format!("saugra-test-{}.jsonl", Uuid::new_v4()))
+    std::env::temp_dir().join(format!("saugra-waf-test-{}.jsonl", Uuid::new_v4()))
 }
 
 fn test_retention() -> EventLogRetention {
@@ -1260,7 +1260,7 @@ fn test_retention() -> EventLogRetention {
 }
 
 fn single_low_rule_file() -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!("saugra-low-rule-{}.yml", Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("saugra-waf-low-rule-{}.yml", Uuid::new_v4()));
     std::fs::write(
         &path,
         r#"
@@ -1280,7 +1280,7 @@ rules:
 }
 
 fn two_medium_rules_file() -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!("saugra-medium-rules-{}.yml", Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("saugra-waf-medium-rules-{}.yml", Uuid::new_v4()));
     std::fs::write(
         &path,
         r#"
@@ -1308,7 +1308,7 @@ rules:
 }
 
 fn single_high_paranoia_rule_file() -> std::path::PathBuf {
-    let path = std::env::temp_dir().join(format!("saugra-pl2-rule-{}.yml", Uuid::new_v4()));
+    let path = std::env::temp_dir().join(format!("saugra-waf-pl2-rule-{}.yml", Uuid::new_v4()));
     std::fs::write(
         &path,
         r#"

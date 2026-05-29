@@ -20,9 +20,9 @@ Saugra upstream release -> Debian source package -> sponsor upload -> Debian arc
 The package should install the same production-oriented runtime shape as the
 Saugra-owned `.deb` package:
 
-- `/usr/bin/saugra`
+- `/usr/bin/saugra-waf`
 - systemd unit
-- `/etc/saugra/saugra.yml` as operator-managed configuration
+- `/etc/saugra-waf/saugra-waf.yml` as operator-managed configuration
 - bundled rule, standards, and intelligence data under Debian-approved paths
 - durable event/log/state directories
 - no automatic service start or enablement on install
@@ -53,7 +53,7 @@ from the network during the package build.
 - [ ] Add `debian/watch` for upstream release tracking if suitable.
 - [ ] Add Debian changelog entries with Debian revision versions.
 - [ ] Validate maintainer scripts against Debian Policy expectations.
-- [ ] Confirm conffile handling preserves `/etc/saugra/saugra.yml`.
+- [ ] Confirm conffile handling preserves `/etc/saugra-waf/saugra-waf.yml`.
 - [ ] Confirm systemd integration follows Debian maintainer-script helpers.
 - [ ] Run `lintian` and resolve policy issues.
 - [ ] Build in a clean environment with `sbuild` or `pbuilder`.

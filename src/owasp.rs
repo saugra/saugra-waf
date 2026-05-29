@@ -386,7 +386,7 @@ mod tests {
             runtime_policy: Default::default(),
             ai: AiConfig::default(),
             logging: LoggingConfig {
-                event_log_path: "/var/log/saugra/saugra-events.jsonl".to_string(),
+                event_log_path: "/var/log/saugra-waf/saugra-waf-events.jsonl".to_string(),
                 event_log_max_files: 30,
                 ..LoggingConfig::default()
             },

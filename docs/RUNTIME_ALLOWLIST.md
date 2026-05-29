@@ -31,7 +31,7 @@ This is an operational safety feature for the community edition.
 Default path:
 
 ```txt
-/var/lib/saugra/runtime-policy.json
+/var/lib/saugra-waf/runtime-policy.json
 ```
 
 Example:
@@ -72,7 +72,7 @@ Target config shape:
 ```yaml
 runtime_policy:
   enabled: true
-  path: /var/lib/saugra/runtime-policy.json
+  path: /var/lib/saugra-waf/runtime-policy.json
   reload_interval: 5s
   default_duration: 2h
   allowlist_effect: skip_bot_and_behavior_block
@@ -92,12 +92,12 @@ Supported `allowlist_effect` values:
 Target commands:
 
 ```bash
-saugra allowlist add ip 203.0.113.10 --duration 2h --reason "admin testing"
-saugra allowlist add cidr 203.0.113.0/24 --duration 30m --reason "office NAT"
-saugra allowlist block add 198.51.100.44 --duration 2h --reason "active scanner"
-saugra allowlist remove local-admin-20260521
-saugra allowlist list
-saugra allowlist prune
+saugra-waf allowlist add ip 203.0.113.10 --duration 2h --reason "admin testing"
+saugra-waf allowlist add cidr 203.0.113.0/24 --duration 30m --reason "office NAT"
+saugra-waf allowlist block add 198.51.100.44 --duration 2h --reason "active scanner"
+saugra-waf allowlist remove local-admin-20260521
+saugra-waf allowlist list
+saugra-waf allowlist prune
 ```
 
 The CLI should write the policy atomically:
@@ -149,7 +149,7 @@ Event metadata should make the bypass explainable:
 }
 ```
 
-`saugra explain <request-id>` should mention the allowlist match when it changes
+`saugra-waf explain <request-id>` should mention the allowlist match when it changes
 the decision.
 
 ## State Interaction
@@ -160,8 +160,8 @@ active. It should not silently erase bot or behavior state by default.
 Operators should have an explicit cleanup command later if needed:
 
 ```bash
-saugra behavior reset --client 203.0.113.10
-saugra bot reset --client 203.0.113.10
+saugra-waf behavior reset --client 203.0.113.10
+saugra-waf bot reset --client 203.0.113.10
 ```
 
 Those reset commands are separate from runtime allowlisting because deletion of
@@ -184,12 +184,12 @@ security state is higher risk and should be visible.
 2. Add `runtime_policy.rs` with schema, CIDR matching, expiry handling, and
    atomic write helpers.
 3. Add a reloadable runtime policy handle used by the proxy request path.
-4. Add `saugra allowlist add/list/remove/prune`.
+4. Add `saugra-waf allowlist add/list/remove/prune`.
 5. Apply IP/CIDR runtime allowlist and blocklist before final decision
    enforcement.
 6. Add allowlist metadata to decisions and security events.
-7. Include allowlist context in `saugra explain`.
-8. Add package defaults so `/var/lib/saugra/runtime-policy.json` can be created
+7. Include allowlist context in `saugra-waf explain`.
+8. Add package defaults so `/var/lib/saugra-waf/runtime-policy.json` can be created
    by the CLI and read by the service user.
 9. Document production use in `docs/PRODUCTION_DEPLOYMENT.md`.
 
@@ -208,7 +208,7 @@ security state is higher risk and should be visible.
 - SQLi/XSS/path traversal rules are downgraded under `monitor_all`.
 - Runtime blocklist entries block clean requests.
 - Security events include runtime allowlist metadata.
-- `saugra explain` mentions allowlist matches.
+- `saugra-waf explain` mentions allowlist matches.
 
 ## Future Extension
 

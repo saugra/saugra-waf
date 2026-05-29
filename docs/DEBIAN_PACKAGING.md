@@ -1,7 +1,7 @@
 # Debian Packaging
 
 Saugra can be built as a `.deb` package with `cargo-deb`. The package installs
-the `saugra` binary, a systemd unit, production example configuration, bundled
+the `saugra-waf` binary, a systemd unit, production example configuration, bundled
 rule packs, standards data, and scanner intelligence catalogs.
 
 ## Local Build
@@ -31,13 +31,13 @@ The `.deb` artifact is written under `target/debian/`.
 Install the package on a Debian or Ubuntu host:
 
 ```bash
-sudo apt install ./target/debian/saugra_*.deb
+sudo apt install ./target/debian/saugra-waf_*.deb
 ```
 
 Validate the seeded production config:
 
 ```bash
-saugra test-config --config /etc/saugra/saugra.yml
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 The package does not start or enable Saugra automatically. Configure the
@@ -45,7 +45,7 @@ upstream application first, keep the default monitor-first posture during
 rollout, then start the service explicitly:
 
 ```bash
-sudo systemctl enable --now saugra
+sudo systemctl enable --now saugra-waf
 ```
 
 ## GitHub Release Publishing
@@ -73,7 +73,7 @@ locally:
 
 ```bash
 sudo apt install apt-utils dpkg-dev
-scripts/build-apt-repository.sh --output apt-repo target/debian/saugra_*.deb
+scripts/build-apt-repository.sh --output apt-repo target/debian/saugra-waf_*.deb
 ```
 
 See `docs/APT_REPOSITORY.md` for the repository layout, signing requirements,

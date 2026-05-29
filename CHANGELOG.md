@@ -12,12 +12,12 @@ All notable changes to Saugra are documented here.
 
 ### Changed
 
-- `saugra explain` now prints request context before the rule explanation,
+- `saugra-waf explain` now prints request context before the rule explanation,
   including request ID, client IP, method, path, query when present, and
   upstream metadata when recorded.
 - Summary email footer and production documentation now use the full
   production command:
-  `saugra explain <request-id> --config /etc/saugra/saugra.yml`.
+  `saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml`.
 
 ### Verified
 
@@ -53,17 +53,17 @@ All notable changes to Saugra are documented here.
 ### Added
 
 - Scheduled local security summaries generated from durable JSONL event logs.
-- `saugra summary daily` and `saugra summary send` commands for operator
+- `saugra-waf summary daily` and `saugra-waf summary send` commands for operator
   reporting workflows.
 - File-based summary output with optional local sendmail-compatible email
   delivery.
 - Local summary delivery failure events for operator troubleshooting.
 - `security_summary` configuration in example and production configs.
-- `saugra state reset behavior` and `saugra state reset bot` commands for
+- `saugra-waf state reset behavior` and `saugra-waf state reset bot` commands for
   clearing one client's local scoring state without deleting all state.
 - Runtime policy reload regression tests for malformed JSON and no-restart
   policy mutation.
-- `storage_cleanup` configuration and `saugra cleanup run` for removing stale
+- `storage_cleanup` configuration and `saugra-waf cleanup run` for removing stale
   generated summary/admin/report files after a configured retention window.
 - Production admin workflows for false positives, scanner bursts, upstream
   outages, Redis outages, WebSocket routing failures, summary scheduling, and
@@ -72,7 +72,7 @@ All notable changes to Saugra are documented here.
 ### Verified
 
 - Formatting and clippy pass locally.
-- Example config validates with `saugra test-config`.
+- Example config validates with `saugra-waf test-config`.
 - Focused tests for security summaries, runtime policy reloads, state reset,
   and storage cleanup pass locally.
 - Full local test run passes all unit tests and all non-raw-socket proxy e2e
@@ -84,9 +84,9 @@ All notable changes to Saugra are documented here.
 ### Added
 
 - Production-oriented Debian package metadata for `cargo-deb`.
-- Debian maintainer scripts that create the `saugra` service user, seed
-  `/etc/saugra`, and preserve operator-managed state and logs.
-- Packaged systemd unit for `/usr/bin/saugra`.
+- Debian maintainer scripts that create the `saugra-waf` service user, seed
+  `/etc/saugra-waf`, and preserve operator-managed state and logs.
+- Packaged systemd unit for `/usr/bin/saugra-waf`.
 - Bundled package assets for production config, rule packs, standards data,
   scanner intelligence catalogs, and deployment documentation.
 - GitHub Release workflow that runs tests, builds the `.deb`, and uploads it to

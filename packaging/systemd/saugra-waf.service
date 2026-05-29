@@ -5,18 +5,18 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=saugra
-Group=saugra
-ExecStart=/usr/local/bin/saugra run --config /etc/saugra/saugra.yml
+User=saugra-waf
+Group=saugra-waf
+ExecStart=/usr/bin/saugra-waf run --config /etc/saugra-waf/saugra-waf.yml
 Restart=on-failure
 RestartSec=5s
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=full
 ProtectHome=true
-StateDirectory=saugra
-LogsDirectory=saugra
-ReadWritePaths=/var/log/saugra /var/lib/saugra
+StateDirectory=saugra-waf
+LogsDirectory=saugra-waf
+ReadWritePaths=/var/log/saugra-waf /var/lib/saugra-waf
 
 [Install]
 WantedBy=multi-user.target

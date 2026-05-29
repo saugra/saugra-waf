@@ -8,7 +8,7 @@ APT repository is published with GitHub Pages so operators can install and
 upgrade Saugra with normal `apt` workflows.
 
 ```txt
-Git tag -> CI build -> .deb package -> signed APT repository -> apt install saugra
+Git tag -> CI build -> .deb package -> signed APT repository -> apt install saugra-waf
 ```
 
 ## Goals
@@ -25,29 +25,29 @@ Git tag -> CI build -> .deb package -> signed APT repository -> apt install saug
 The intended user-facing install flow for the custom repository domain is:
 
 ```bash
-curl -fsSL https://repo.saugra.dev/saugra.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra.gpg] https://repo.saugra.dev/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra.list
+curl -fsSL https://repo.saugra-waf.dev/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://repo.saugra-waf.dev/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
-sudo apt install saugra
+sudo apt install saugra-waf
 ```
 
-Before `repo.saugra.dev` is configured as a custom domain, the GitHub Pages URL
+Before `repo.saugra-waf.dev` is configured as a custom domain, the GitHub Pages URL
 is:
 
 ```bash
-curl -fsSL https://ewanyonyi.github.io/saugra/saugra.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra.gpg] https://ewanyonyi.github.io/saugra/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra.list
+curl -fsSL https://ewanyonyi.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://ewanyonyi.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
-sudo apt install saugra
+sudo apt install saugra-waf
 ```
 
 After installation, operators should edit the generated config before starting
 the service:
 
 ```bash
-sudo editor /etc/saugra/saugra.yml
-sudo saugra test-config --config /etc/saugra/saugra.yml
-sudo systemctl enable --now saugra
+sudo editor /etc/saugra-waf/saugra-waf.yml
+sudo saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+sudo systemctl enable --now saugra-waf
 ```
 
 The package must not enable or start Saugra automatically. The upstream
@@ -75,8 +75,8 @@ apt/
 └── pool/
     └── main/
         └── s/
-            └── saugra/
-                └── saugra_<version>_<arch>.deb
+            └── saugra-waf/
+                └── saugra-waf_<version>_<arch>.deb
 ```
 
 Start with `amd64`. Add `arm64` when CI builds and install tests are available
@@ -103,25 +103,25 @@ cargo deb --locked
 5. Inspect the package:
 
 ```bash
-dpkg-deb -I target/debian/saugra_*.deb
-dpkg-deb -c target/debian/saugra_*.deb
+dpkg-deb -I target/debian/saugra-waf_*.deb
+dpkg-deb -c target/debian/saugra-waf_*.deb
 ```
 
 6. Build and inspect the repository metadata:
 
 ```bash
 sudo apt install apt-utils dpkg-dev
-scripts/build-apt-repository.sh --output apt-repo target/debian/saugra_*.deb
+scripts/build-apt-repository.sh --output apt-repo target/debian/saugra-waf_*.deb
 find apt-repo/dists/stable -maxdepth 3 -type f -print
 ```
 
 7. Test installation through the generated repository:
 
 ```bash
-echo "deb [trusted=yes] file:$PWD/apt-repo stable main" | sudo tee /etc/apt/sources.list.d/saugra-local.list
+echo "deb [trusted=yes] file:$PWD/apt-repo stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf-local.list
 sudo apt update
-sudo apt install saugra
-saugra test-config --config /etc/saugra/saugra.yml
+sudo apt install saugra-waf
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 The `trusted=yes` form is only for local unsigned dry runs. Production
@@ -130,9 +130,9 @@ repositories must use the signed-by flow shown above.
 8. Install-test the standalone package on clean Ubuntu and Debian hosts:
 
 ```bash
-sudo apt install ./target/debian/saugra_*.deb
-saugra test-config --config /etc/saugra/saugra.yml
-systemctl status saugra
+sudo apt install ./target/debian/saugra-waf_*.deb
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+systemctl status saugra-waf
 ```
 
 9. Tag and publish the GitHub Release:
@@ -147,11 +147,11 @@ git push origin v1.0.5
 11. Run an end-to-end install from the repository:
 
 ```bash
-curl -fsSL https://ewanyonyi.github.io/saugra/saugra.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra.gpg] https://ewanyonyi.github.io/saugra/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra.list
+curl -fsSL https://ewanyonyi.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://ewanyonyi.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
-sudo apt install saugra
-saugra test-config --config /etc/saugra/saugra.yml
+sudo apt install saugra-waf
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 ## GitHub Pages Publishing
@@ -162,7 +162,7 @@ site contains:
 ```txt
 site/
 ├── .nojekyll
-├── saugra.gpg
+├── saugra-waf.gpg
 └── apt/
     ├── dists/
     └── pool/
@@ -171,21 +171,21 @@ site/
 The public repository URL is:
 
 ```txt
-https://ewanyonyi.github.io/saugra/apt
+https://ewanyonyi.github.io/saugra-waf/apt
 ```
 
-If the `repo.saugra.dev` custom domain is configured for GitHub Pages, the same
+If the `repo.saugra-waf.dev` custom domain is configured for GitHub Pages, the same
 repository is available at:
 
 ```txt
-https://repo.saugra.dev/apt
+https://repo.saugra-waf.dev/apt
 ```
 
 Required repository settings:
 
 - Enable GitHub Pages for the repository.
 - Set Pages source to GitHub Actions.
-- Optionally configure `repo.saugra.dev` as the custom domain.
+- Optionally configure `repo.saugra-waf.dev` as the custom domain.
 
 Required GitHub Actions secrets:
 
@@ -195,7 +195,7 @@ Required GitHub Actions secrets:
 - `SAUGRA_APT_GPG_PASSPHRASE`: optional passphrase for the dedicated APT
   repository signing key.
 
-The workflow exports the matching public key to `saugra.gpg`, signs the
+The workflow exports the matching public key to `saugra-waf.gpg`, signs the
 repository metadata, uploads the Pages artifact, and deploys it with
 `actions/deploy-pages`.
 
@@ -248,7 +248,7 @@ The release workflow:
 6. Upload the package to the GitHub Release.
 7. Import the dedicated repository signing key from trusted release secrets.
 8. Generate a signed APT repository under `site/apt`.
-9. Export the public key to `site/saugra.gpg`.
+9. Export the public key to `site/saugra-waf.gpg`.
 10. Publish the repository with GitHub Pages.
 
 The release workflow should eventually verify installation using the public
@@ -260,12 +260,12 @@ Repository publishing should run only for trusted release tags.
 
 The APT package must preserve the current production behavior:
 
-- Install `/usr/bin/saugra`.
+- Install `/usr/bin/saugra-waf`.
 - Install the systemd unit.
-- Create the `saugra` service user and group.
-- Seed `/etc/saugra/saugra.yml` only when missing.
+- Create the `saugra-waf` service user and group.
+- Seed `/etc/saugra-waf/saugra-waf.yml` only when missing.
 - Seed bundled rules, standards, and intelligence catalogs only when missing.
-- Create `/var/log/saugra` and `/var/lib/saugra`.
+- Create `/var/log/saugra-waf` and `/var/lib/saugra-waf`.
 - Leave existing operator config untouched during upgrades.
 - Avoid starting or enabling the service automatically.
 
@@ -296,7 +296,7 @@ install channel while that longer process is prepared.
 - Enable GitHub Pages with GitHub Actions as the Pages source.
 - Add `SAUGRA_APT_GPG_KEY_ID` and `SAUGRA_APT_GPG_PRIVATE_KEY` repository
   secrets.
-- Optionally configure `repo.saugra.dev` as the Pages custom domain.
+- Optionally configure `repo.saugra-waf.dev` as the Pages custom domain.
 - Add post-deploy public repository install verification.
 - Add `arm64` package builds and install tests.
 - Document repository key rotation.

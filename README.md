@@ -1,11 +1,11 @@
-# Saugra Web Application Firewall
+# Saugra WAF
 
-[![CI](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/ewanyonyi/saugra/actions/workflows/ci.yml?query=branch%3Amain)
-[![codecov](https://codecov.io/github/ewanyonyi/saugra/graph/badge.svg)](https://codecov.io/github/ewanyonyi/saugra)
+[![CI](https://github.com/saugra/saugra-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/saugra/saugra-waf/actions/workflows/ci.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/github/saugra/saugra-waf/graph/badge.svg)](https://codecov.io/github/saugra/saugra-waf)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](Cargo.toml)
 
-![Saugra WAF Logo](docs/img/saugra-logo.jpeg)
+![Saugra WAF Logo](docs/img/saugra-waf-logo.jpeg)
 
 Saugra is a lightweight, self-hosted Web Application Firewall for developers and
 small teams who want OWASP-style protection, rate limiting, behavior scoring,
@@ -93,7 +93,7 @@ This repository now has a production-oriented foundation:
 - WebSocket handshake inspection and upgrade tunneling
 - Redis-backed production rate limiting option
 - Rotated local JSONL security event storage
-- Example config at `configs/saugra.example.yml`
+- Example config at `configs/saugra-waf.example.yml`
 
 See `ROADMAP.md` for the public development roadmap.
 
@@ -136,12 +136,12 @@ Install status:
 ### Run Locally From Source
 
 ```bash
-git clone https://github.com/ewanyonyi/saugra.git
-cd saugra
+git clone https://github.com/saugra/saugra-waf.git
+cd saugra-waf
 cargo build
-cargo run -- test-config --config configs/saugra.example.yml
-cargo run -- rules list --config configs/saugra.example.yml
-cargo run -- run --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
+cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
+cargo run --bin saugra-waf -- run --config configs/saugra-waf.example.yml
 ```
 
 Leave Saugra running, then use another terminal for the checks below.
@@ -167,43 +167,43 @@ blocked, checks the JSONL event shape, and cleans up.
 Review OWASP Top 10:2025 mapped coverage:
 
 ```bash
-cargo run -- owasp coverage --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- owasp coverage --config configs/saugra-waf.example.yml
 ```
 
 Summarize recent security events by action and OWASP category:
 
 ```bash
-cargo run -- logs summary --config configs/saugra.example.yml --limit 200
+cargo run --bin saugra-waf -- logs summary --config configs/saugra-waf.example.yml --limit 200
 ```
 
 Generate a daily security summary from local event logs:
 
 ```bash
-cargo run -- summary daily --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- summary daily --config configs/saugra-waf.example.yml
 ```
 
 Preview stale generated file cleanup:
 
 ```bash
-cargo run -- cleanup run --dry-run --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- cleanup run --dry-run --config configs/saugra-waf.example.yml
 ```
 
 Explain a recorded request decision:
 
 ```bash
-cargo run -- explain <request-id> --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- explain <request-id> --config configs/saugra-waf.example.yml
 ```
 
 Run local deployment posture checks:
 
 ```bash
-cargo run -- posture check --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- posture check --config configs/saugra-waf.example.yml
 ```
 
 Convert supported OWASP CRS regex rules into Saugra YAML:
 
 ```bash
-cargo run -- rules convert-crs --input /path/to/coreruleset/rules --output configs/rules/converted-crs.yml
+cargo run --bin saugra-waf -- rules convert-crs --input /path/to/coreruleset/rules --output configs/rules/converted-crs.yml
 ```
 
 See `docs/CRS_IMPORT.md` for supported CRS operators, transform mappings,
@@ -227,14 +227,14 @@ For production:
 - Configure `forwarded_headers.trusted_proxies` for the proxy addresses that
   are allowed to supply client IP and protocol headers.
 - Use `rate_limit.backend: redis`.
-- Store events in a durable path such as `/var/log/saugra/saugra-events.jsonl`.
+- Store events in a durable path such as `/var/log/saugra-waf/saugra-waf-events.jsonl`.
 - Configure exact WebSocket `allowed_origins` and `allowed_hosts` before routing
   browser WebSocket traffic through Saugra.
 
 Full production guides and examples:
 
 - `docs/PRODUCTION_DEPLOYMENT.md`
-- `configs/saugra.production.example.yml`
+- `configs/saugra-waf.production.example.yml`
 - `configs/nginx.production.example.conf`
 - `configs/apache.production.example.conf`
 - `examples/django-channels-daphne-nginx/`
@@ -242,33 +242,33 @@ Full production guides and examples:
 ## Install On A Server
 
 For the full Ubuntu install path, including building from Git, installing the
-binary, creating `/etc/saugra/saugra.yml`, and running Saugra with systemd, see
+binary, creating `/etc/saugra-waf/saugra-waf.yml`, and running Saugra with systemd, see
 `docs/PRODUCTION_DEPLOYMENT.md`.
 
 Short version:
 
 ```bash
-git clone https://github.com/ewanyonyi/saugra.git /opt/saugra
-cd /opt/saugra
+git clone https://github.com/saugra/saugra-waf.git /opt/saugra-waf
+cd /opt/saugra-waf
 cargo build --release
-sudo install -m 0755 target/release/saugra /usr/local/bin/saugra
-saugra --version
-sudo useradd --system --home /var/lib/saugra --shell /usr/sbin/nologin saugra
-sudo mkdir -p /etc/saugra/rules /etc/saugra/standards /var/log/saugra /var/lib/saugra
-sudo cp configs/saugra.production.example.yml /etc/saugra/saugra.yml
-sudo cp configs/rules/REQUEST-*.yml /etc/saugra/rules/
-sudo cp configs/standards/*.yml /etc/saugra/standards/
-sudo cp configs/saugra.service.example /etc/systemd/system/saugra.service
-sudo chown -R saugra:saugra /var/log/saugra /var/lib/saugra
+sudo install -m 0755 target/release/saugra-waf /usr/local/bin/saugra-waf
+saugra-waf --version
+sudo useradd --system --home /var/lib/saugra-waf --shell /usr/sbin/nologin saugra-waf
+sudo mkdir -p /etc/saugra-waf/rules /etc/saugra-waf/standards /var/log/saugra-waf /var/lib/saugra-waf
+sudo cp configs/saugra-waf.production.example.yml /etc/saugra-waf/saugra-waf.yml
+sudo cp configs/rules/REQUEST-*.yml /etc/saugra-waf/rules/
+sudo cp configs/standards/*.yml /etc/saugra-waf/standards/
+sudo cp configs/saugra-waf.service.example /etc/systemd/system/saugra-waf.service
+sudo chown -R saugra-waf:saugra-waf /var/log/saugra-waf /var/lib/saugra-waf
 sudo systemctl daemon-reload
 sudo systemctl enable --now redis-server
-sudo systemctl enable --now saugra
+sudo systemctl enable --now saugra-waf
 ```
 
 Validate the installed config:
 
 ```bash
-saugra test-config --config /etc/saugra/saugra.yml
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 Check the service:

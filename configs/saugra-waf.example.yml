@@ -52,7 +52,7 @@ behavior:
   enabled: true
   mode: monitor
   backend: local
-  state_path: logs/saugra-behavior-state.json
+  state_path: logs/saugra-waf-behavior-state.json
   score_window: 10m
   decay_window: 30m
   monitor_threshold: 40
@@ -76,7 +76,7 @@ bot_protection:
   enabled: true
   mode: monitor
   backend: local
-  state_path: logs/saugra-bot-state.json
+  state_path: logs/saugra-waf-bot-state.json
   score_window: 10m
   monitor_threshold: 40
   block_threshold: 80
@@ -142,7 +142,7 @@ ai:
 logging:
   format: json
   level: info
-  event_log_path: logs/saugra-events.jsonl
+  event_log_path: logs/saugra-waf-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 10
   timezone: UTC
@@ -153,12 +153,12 @@ security_summary:
   send_time: "08:00"
   timezone: UTC
   lookback: 24h
-  output_path: logs/saugra-security-summary-YYYY-MM-DD.json
+  output_path: logs/saugra-waf-security-summary-YYYY-MM-DD.json
   channels:
     - type: file
     # Optional local email delivery after sendmail/postfix is configured:
     # - type: email
-    #   from: saugra@example.com
+    #   from: saugra-waf@example.com
     #   to:
     #     - security@example.com
     #   sendmail_path: /usr/sbin/sendmail
@@ -168,17 +168,17 @@ storage_cleanup:
   schedule: daily
   run_time: "02:30"
   # Start new deployments with dry_run true. Switch to false after reviewing
-  # `saugra cleanup run --dry-run --config configs/saugra.example.yml`.
+  # `saugra-waf cleanup run --dry-run --config configs/saugra-waf.example.yml`.
   dry_run: true
   targets:
     - name: local security summaries
       directory: logs
-      filename_prefix: saugra-security-summary-
+      filename_prefix: saugra-waf-security-summary-
       filename_suffix: .json
       older_than: 30d
     - name: local summary admin events
       directory: logs
-      filename_prefix: saugra-security-summary-admin-events
+      filename_prefix: saugra-waf-security-summary-admin-events
       filename_suffix: .jsonl
       older_than: 90d
 

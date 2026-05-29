@@ -5,9 +5,9 @@ upstream source that can be converted into Saugra YAML before deployment.
 
 ```txt
 OWASP CRS .conf files
-  -> saugra rules convert-crs
+  -> saugra-waf rules convert-crs
   -> Saugra YAML rule packs
-  -> saugra test-config
+  -> saugra-waf test-config
   -> Saugra rule engine
 ```
 
@@ -38,7 +38,7 @@ as unsupported imports.
 
 Unsupported CRS features are not silently converted. The generated YAML includes
 an `unsupported_imports` section with the CRS rule ID, reason, and source
-statement where possible. `saugra test-config` prints those warnings so
+statement where possible. `saugra-waf test-config` prints those warnings so
 operators can review the gap before using a converted pack.
 
 Currently unsupported:
@@ -61,8 +61,8 @@ Saugra supports the needed feature.
 After converting CRS rules, always validate the generated YAML:
 
 ```bash
-saugra rules convert-crs --input /path/to/coreruleset/rules --output /etc/saugra/rules/converted-crs.yml
-saugra test-config --config /etc/saugra/saugra.yml
+saugra-waf rules convert-crs --input /path/to/coreruleset/rules --output /etc/saugra-waf/rules/converted-crs.yml
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 Review:

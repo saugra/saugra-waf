@@ -1660,11 +1660,11 @@ fn default_behavior_score_window() -> String {
 }
 
 fn default_behavior_state_path() -> PathBuf {
-    PathBuf::from("logs/saugra-behavior-state.json")
+    PathBuf::from("logs/saugra-waf-behavior-state.json")
 }
 
 fn default_bot_protection_state_path() -> PathBuf {
-    PathBuf::from("logs/saugra-bot-state.json")
+    PathBuf::from("logs/saugra-waf-bot-state.json")
 }
 
 fn default_runtime_policy_path() -> PathBuf {
@@ -1692,7 +1692,7 @@ fn default_security_summary_lookback() -> String {
 }
 
 fn default_security_summary_output_path() -> PathBuf {
-    PathBuf::from("logs/saugra-security-summary.json")
+    PathBuf::from("logs/saugra-waf-security-summary.json")
 }
 
 fn default_security_summary_channels() -> Vec<SecuritySummaryChannelConfig> {
@@ -1715,7 +1715,7 @@ fn default_storage_cleanup_targets() -> Vec<StorageCleanupTargetConfig> {
     vec![StorageCleanupTargetConfig {
         name: "security summaries".to_string(),
         directory: PathBuf::from("logs"),
-        filename_prefix: Some("saugra-security-summary-".to_string()),
+        filename_prefix: Some("saugra-waf-security-summary-".to_string()),
         filename_suffix: Some(".json".to_string()),
         older_than: default_storage_cleanup_older_than(),
     }]
@@ -1829,7 +1829,7 @@ fn default_log_level() -> String {
 }
 
 fn default_event_log_path() -> String {
-    "logs/saugra-events.jsonl".to_string()
+    "logs/saugra-waf-events.jsonl".to_string()
 }
 
 fn default_event_log_max_size() -> String {
@@ -1883,7 +1883,7 @@ mod tests {
     #[test]
     fn validates_example_config() {
         let config: SaugraConfig =
-            serde_yaml::from_str(include_str!("../configs/saugra.example.yml")).unwrap();
+            serde_yaml::from_str(include_str!("../configs/saugra-waf.example.yml")).unwrap();
 
         assert!(config.validate().is_ok());
         assert_eq!(config.max_body_size_bytes().unwrap(), 2 * 1024 * 1024);
@@ -1906,8 +1906,8 @@ storage_cleanup:
   run_time: "03:30"
   targets:
     - name: summaries
-      directory: /var/lib/saugra/reports
-      filename_prefix: saugra-security-summary-
+      directory: /var/lib/saugra-waf/reports
+      filename_prefix: saugra-waf-security-summary-
       filename_suffix: .json
       older_than: 14d
 "#,
@@ -2049,7 +2049,7 @@ upstreams:
 storage_cleanup:
   targets:
     - name: unsafe
-      directory: /var/log/saugra
+      directory: /var/log/saugra-waf
       older_than: 30d
 "#,
         )
@@ -2074,7 +2074,7 @@ upstreams:
 storage_cleanup:
   targets:
     - name: summaries
-      directory: /var/lib/saugra/reports
+      directory: /var/lib/saugra-waf/reports
       filename_suffix: .json
       older_than: forever
 "#,
@@ -2091,7 +2091,7 @@ storage_cleanup:
     fn from_file_merges_threat_path_catalogs_and_extra_paths() {
         let dir = tempfile::tempdir().unwrap();
         let catalog_path = dir.path().join("scanner-paths.yml");
-        let config_path = dir.path().join("saugra.yml");
+        let config_path = dir.path().join("saugra-waf.yml");
         std::fs::write(
             &catalog_path,
             r#"
@@ -2481,7 +2481,7 @@ upstreams:
         assert_eq!(config.behavior.backend, BehaviorBackend::Local);
         assert_eq!(
             config.behavior.state_path,
-            PathBuf::from("logs/saugra-behavior-state.json")
+            PathBuf::from("logs/saugra-waf-behavior-state.json")
         );
         assert_eq!(config.behavior.score_window, "10m");
         assert_eq!(config.behavior.decay_window, "30m");

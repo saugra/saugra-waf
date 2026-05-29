@@ -19,17 +19,17 @@ cargo test --locked --all-targets --all-features
 ```bash
 cargo install cargo-deb --version 3.6.0 --locked
 cargo deb --locked
-dpkg-deb -I target/debian/saugra_*.deb
-dpkg-deb -c target/debian/saugra_*.deb
+dpkg-deb -I target/debian/saugra-waf_*.deb
+dpkg-deb -c target/debian/saugra-waf_*.deb
 sudo apt install apt-utils dpkg-dev
-scripts/build-apt-repository.sh --output apt-repo target/debian/saugra_*.deb
+scripts/build-apt-repository.sh --output apt-repo target/debian/saugra-waf_*.deb
 ```
 
 5. On a Debian or Ubuntu host, install-test the package:
 
 ```bash
-sudo apt install ./target/debian/saugra_*.deb
-saugra test-config --config /etc/saugra/saugra.yml
+sudo apt install ./target/debian/saugra-waf_*.deb
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 ## Publish
@@ -60,20 +60,20 @@ Pages, and uploads the `.deb` artifact from `target/debian/`.
 1. Verify the GitHub Pages APT repository:
 
 ```bash
-curl -fsSL https://ewanyonyi.github.io/saugra/saugra.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra.gpg] https://ewanyonyi.github.io/saugra/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra.list
+curl -fsSL https://ewanyonyi.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://ewanyonyi.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
-sudo apt install saugra
-saugra test-config --config /etc/saugra/saugra.yml
+sudo apt install saugra-waf
+saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
 2. Download the `.deb` from the GitHub Release as fallback verification.
 3. Install it on a clean Debian or Ubuntu host.
-4. Validate `/etc/saugra/saugra.yml`.
+4. Validate `/etc/saugra-waf/saugra-waf.yml`.
 5. Confirm the service can start after configuring the upstream application:
 
 ```bash
-sudo systemctl enable --now saugra
+sudo systemctl enable --now saugra-waf
 curl -i http://127.0.0.1:8787/_saugra/health
 ```
 

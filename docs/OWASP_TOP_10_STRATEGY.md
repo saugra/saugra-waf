@@ -93,15 +93,15 @@ OWASP category it maps to, and what tuning or hardening action is appropriate.
 CLI commands should make coverage explicit:
 
 ```bash
-saugra posture check
-saugra owasp coverage
-saugra logs summary
+saugra-waf posture check
+saugra-waf owasp coverage
+saugra-waf logs summary
 ```
 
-`saugra posture check` should validate configured deployment assumptions before
+`saugra-waf posture check` should validate configured deployment assumptions before
 traffic starts or during an operator audit.
 
-`saugra owasp coverage` summarizes how each OWASP category is addressed:
+`saugra-waf owasp coverage` summarizes how each OWASP category is addressed:
 
 ```txt
 A01 Broken Access Control: request rules + path policy
@@ -156,11 +156,11 @@ integrations can come later once the local report model is stable.
 
 ## Implementation Phases
 
-1. Add `saugra owasp coverage`. Done.
+1. Add `saugra-waf owasp coverage`. Done.
    This should report current coverage from loaded rule metadata, rate limiting,
    event storage, and documented planned posture checks.
 
-2. Add a `posture` config section and `saugra posture check`. Initial local
+2. Add a `posture` config section and `saugra-waf posture check`. Initial local
    checks done.
    Start with deterministic local checks: expected scheme, allowed methods,
    security headers, secure cookies, and upload/body policy.
@@ -170,7 +170,7 @@ integrations can come later once the local report model is stable.
    into Saugra findings mapped to OWASP categories.
 
 4. Add dashboard/log viewer coverage views.
-   Initial local log-viewer support is done through `saugra logs summary`,
+   Initial local log-viewer support is done through `saugra-waf logs summary`,
    which shows recent events by action and OWASP category. Future dashboard
    work should reuse the same event fields and coverage model.
 
@@ -180,6 +180,6 @@ integrations can come later once the local report model is stable.
 
 Saugra stores the active standard catalog in `configs/standards/`. The default
 configuration points at `configs/standards/owasp-top-10-2025.yml`, while
-production installs should copy the same catalog to `/etc/saugra/standards/`.
+production installs should copy the same catalog to `/etc/saugra-waf/standards/`.
 When a future OWASP release is adopted, operators should be able to install a new
 catalog file and update `standards.owasp_catalog` without changing Rust code.

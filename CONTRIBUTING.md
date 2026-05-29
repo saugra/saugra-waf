@@ -70,12 +70,12 @@ Saugra is built with Rust. You will need a modern Rust toolchain installed.
 1. Fork the repository on GitHub.
 2. Clone your fork locally:
    ```bash
-   git clone https://github.com/<your-username>/saugra.git
-   cd saugra
+   git clone https://github.com/<your-username>/saugra-waf.git
+   cd saugra-waf
    ```
 3. Add the upstream repository as a remote:
    ```bash
-   git remote add upstream https://github.com/<upstream-owner>/saugra.git
+   git remote add upstream https://github.com/saugra/saugra-waf.git
    ```
 
 ---
@@ -129,12 +129,12 @@ tests.
 
 Always verify that Saugra compiles and can validate the example configuration and rules files:
 ```bash
-cargo run -- test-config --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
 ```
 
 You can list rules configured in the rulepack files with:
 ```bash
-cargo run -- rules list --config configs/saugra.example.yml
+cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 ```
 
 ---

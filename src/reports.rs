@@ -42,7 +42,7 @@ pub enum SecurityReportFormat {
 impl std::fmt::Display for SecurityReportFormat {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let value = match self {
-            Self::Saugra => "saugra",
+            Self::Saugra => "saugra-waf",
             Self::CycloneDx => "cyclonedx",
             Self::Unknown => "unknown",
         };
@@ -251,7 +251,7 @@ mod tests {
     use uuid::Uuid;
 
     #[test]
-    fn normalizes_saugra_report_findings() {
+    fn normalizes_saugra_waf_report_findings() {
         let path = temp_report_path();
         std::fs::write(
             &path,
@@ -308,6 +308,6 @@ vulnerabilities:
     }
 
     fn temp_report_path() -> PathBuf {
-        std::env::temp_dir().join(format!("saugra-report-{}.yml", Uuid::new_v4()))
+        std::env::temp_dir().join(format!("saugra-waf-report-{}.yml", Uuid::new_v4()))
     }
 }

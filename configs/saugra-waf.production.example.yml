@@ -91,7 +91,7 @@ behavior:
   # multiple Saugra instances. To survive server reboots, keep this path on
   # persistent storage and make it writable by the Saugra service user.
   backend: local
-  state_path: /var/lib/saugra/saugra-behavior-state.json
+  state_path: /var/lib/saugra-waf/saugra-waf-behavior-state.json
   score_window: 10m
   decay_window: 30m
   monitor_threshold: 40
@@ -111,7 +111,7 @@ behavior:
   # configs/intelligence/scanner-paths.yml after build will not change runtime
   # behavior. Use probe_paths_extra for site-specific additions, or set
   # probe_path_catalog to an external path such as
-  # /etc/saugra/intelligence/scanner-paths.yml when operators need to manage the
+  # /etc/saugra-waf/intelligence/scanner-paths.yml when operators need to manage the
   # full catalog without rebuilding Saugra.
   probe_path_catalog: builtin
   # Extra app-specific probe paths are merged with the selected catalog.
@@ -126,7 +126,7 @@ bot_protection:
   # server reboots, keep this path on persistent storage and make it writable by
   # the Saugra service user.
   backend: local
-  state_path: /var/lib/saugra/saugra-bot-state.json
+  state_path: /var/lib/saugra-waf/saugra-waf-bot-state.json
   score_window: 10m
   monitor_threshold: 40
   block_threshold: 80
@@ -145,7 +145,7 @@ bot_protection:
   # "builtin" uses Saugra's packaged scanner/probe catalog. In binary builds,
   # that catalog is embedded at compile time. Use scanner_paths_extra for
   # site-specific additions, or point scanner_path_catalog at an external file
-  # such as /etc/saugra/intelligence/scanner-paths.yml for runtime-managed
+  # such as /etc/saugra-waf/intelligence/scanner-paths.yml for runtime-managed
   # scanner paths.
   scanner_path_catalog: builtin
   # Extra app-specific scanner paths are merged with the selected catalog.
@@ -165,7 +165,7 @@ bot_protection:
 # threshold blocks while keeping deterministic WAF rules active.
 runtime_policy:
   enabled: true
-  path: /var/lib/saugra/runtime-policy.json
+  path: /var/lib/saugra-waf/runtime-policy.json
   reload_interval: 5s
   default_duration: 2h
   allowlist_effect: skip_bot_and_behavior_block
@@ -184,19 +184,19 @@ rules:
   # In block mode, requests block when blocking-eligible findings reach this score.
   inbound_anomaly_threshold: 5
   files:
-    - /etc/saugra/rules/REQUEST-913-SCANNER-DETECTION.yml
-    - /etc/saugra/rules/REQUEST-914-AUTHENTICATION-ABUSE.yml
-    - /etc/saugra/rules/REQUEST-916-INSECURE-DESIGN.yml
-    - /etc/saugra/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml
-    - /etc/saugra/rules/REQUEST-921-CRYPTO-TRANSPORT.yml
-    - /etc/saugra/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
-    - /etc/saugra/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
-    - /etc/saugra/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
-    - /etc/saugra/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
-    - /etc/saugra/rules/REQUEST-944-SUPPLY-CHAIN.yml
-    - /etc/saugra/rules/REQUEST-945-INTEGRITY.yml
-    - /etc/saugra/rules/REQUEST-949-LOGGING-ALERTING.yml
-    - /etc/saugra/rules/REQUEST-950-EXCEPTIONAL-CONDITIONS.yml
+    - /etc/saugra-waf/rules/REQUEST-913-SCANNER-DETECTION.yml
+    - /etc/saugra-waf/rules/REQUEST-914-AUTHENTICATION-ABUSE.yml
+    - /etc/saugra-waf/rules/REQUEST-916-INSECURE-DESIGN.yml
+    - /etc/saugra-waf/rules/REQUEST-920-PROTOCOL-ENFORCEMENT.yml
+    - /etc/saugra-waf/rules/REQUEST-921-CRYPTO-TRANSPORT.yml
+    - /etc/saugra-waf/rules/REQUEST-932-APPLICATION-ATTACK-RCE.yml
+    - /etc/saugra-waf/rules/REQUEST-930-APPLICATION-ATTACK-LFI.yml
+    - /etc/saugra-waf/rules/REQUEST-941-APPLICATION-ATTACK-XSS.yml
+    - /etc/saugra-waf/rules/REQUEST-942-APPLICATION-ATTACK-SQLI.yml
+    - /etc/saugra-waf/rules/REQUEST-944-SUPPLY-CHAIN.yml
+    - /etc/saugra-waf/rules/REQUEST-945-INTEGRITY.yml
+    - /etc/saugra-waf/rules/REQUEST-949-LOGGING-ALERTING.yml
+    - /etc/saugra-waf/rules/REQUEST-950-EXCEPTIONAL-CONDITIONS.yml
   # Example false-positive tuning:
   # exclusions:
   #   - name: Allow article HTML previews
@@ -219,7 +219,7 @@ ai:
 logging:
   format: json
   level: info
-  event_log_path: /var/log/saugra/saugra-events.jsonl
+  event_log_path: /var/log/saugra-waf/saugra-waf-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 10
   timezone: Africa/Nairobi
@@ -248,7 +248,7 @@ logging:
 # - Morning daily review: send_time "08:00", lookback 24h.
 # - Shift handoff review: send_time "18:00", lookback 12h.
 # - Weekend catch-up: keep schedule daily but run
-#   `saugra summary daily --config /etc/saugra/saugra.yml` manually after
+#   `saugra-waf summary daily --config /etc/saugra-waf/saugra-waf.yml` manually after
 #   temporarily setting lookback to 72h or 7d.
 # - File-only delivery: channels contains only `type: file`.
 # - File + email delivery: keep `type: file`, then add an email channel after
@@ -264,13 +264,13 @@ security_summary:
   # Examples: 12h, 24h, 48h, 7d
   lookback: 24h
   # YYYY-MM-DD is replaced using security_summary.timezone.
-  output_path: /var/log/saugra/saugra-security-summary-YYYY-MM-DD.json
+  output_path: /var/log/saugra-waf/saugra-waf-security-summary-YYYY-MM-DD.json
   channels:
     # Stable default: write local JSON summary.
     - type: file
     # Optional local email delivery after sendmail/postfix is configured:
     # - type: email
-    #   from: saugra@example.com
+    #   from: saugra-waf@example.com
     #   to:
     #     - security@example.com
     #   sendmail_path: /usr/sbin/sendmail
@@ -286,7 +286,7 @@ security_summary:
 # - Only regular files matching filename_prefix and/or filename_suffix are
 #   considered.
 # - Directories and symlinks are skipped.
-# - Start with dry_run: true and run `saugra cleanup run --dry-run` before
+# - Start with dry_run: true and run `saugra-waf cleanup run --dry-run` before
 #   enabling deletion.
 # - Use explicit filename patterns for report files. Do not point cleanup at a
 #   broad application upload directory.
@@ -303,19 +303,19 @@ storage_cleanup:
   dry_run: true
   targets:
     - name: security summary files
-      directory: /var/log/saugra
-      filename_prefix: saugra-security-summary-
+      directory: /var/log/saugra-waf
+      filename_prefix: saugra-waf-security-summary-
       filename_suffix: .json
       older_than: 90d
     - name: summary admin events
-      directory: /var/log/saugra
-      filename_prefix: saugra-security-summary-admin-events
+      directory: /var/log/saugra-waf
+      filename_prefix: saugra-waf-security-summary-admin-events
       filename_suffix: .jsonl
       older_than: 180d
     # Optional cleanup for locally generated dependency or scanner reports.
     # Keep this disabled until your report generator uses predictable names.
     # - name: dependency scan reports
-    #   directory: /var/lib/saugra/reports
+    #   directory: /var/lib/saugra-waf/reports
     #   filename_prefix: dependency-scan-
     #   filename_suffix: .json
     #   older_than: 90d
@@ -355,4 +355,4 @@ reports:
 # Standards catalogs provide OWASP/category metadata for reporting and operator
 # explanations.
 standards:
-  owasp_catalog: /etc/saugra/standards/owasp-top-10-2025.yml
+  owasp_catalog: /etc/saugra-waf/standards/owasp-top-10-2025.yml

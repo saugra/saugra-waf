@@ -268,7 +268,7 @@ Responsible for local no-restart operational policy such as emergency IP/CIDR
 allowlisting.
 
 The first runtime policy target is a file-backed allow/block policy stored at
-`/var/lib/saugra/runtime-policy.json`. Saugra should reload this file while
+`/var/lib/saugra-waf/runtime-policy.json`. Saugra should reload this file while
 running and apply active entries before final decision enforcement. Runtime
 allowlist effects can bypass bot/behavior blocking, downgrade all findings to
 monitor, or allow all traffic for a matching client. Runtime blocklist entries
@@ -472,7 +472,7 @@ Example:
 
 ```yaml
 metadata:
-  name: saugra-application-attack-sqli
+  name: saugra-waf-application-attack-sqli
   version: 0.1.0
   standards:
     - owasp-top-10:2025
@@ -499,7 +499,7 @@ Native rule packs are split into CRS-style files such as
 OWASP CRS regex rules with:
 
 ```bash
-saugra rules convert-crs --input /path/to/coreruleset/rules --output /etc/saugra/rules/converted-crs.yml
+saugra-waf rules convert-crs --input /path/to/coreruleset/rules --output /etc/saugra-waf/rules/converted-crs.yml
 ```
 
 The converter is intentionally conservative: unsupported CRS operators and
@@ -513,7 +513,7 @@ intended flow is:
 
 ```txt
 OWASP CRS .conf files
-  -> saugra rules convert-crs
+  -> saugra-waf rules convert-crs
   -> Saugra YAML rule packs
   -> Saugra rule engine
 ```
@@ -555,7 +555,7 @@ rules:
 Rule-pack validation reports metadata such as pack name, version, standards,
 active rule counts, filtered rules, and unsupported CRS imports. Converted CRS
 packs can carry `unsupported_imports` entries so operators can see which rules
-were skipped and why during `saugra test-config`.
+were skipped and why during `saugra-waf test-config`.
 
 Rule transforms are ordered pipelines. Saugra applies each transform exactly in
 the order listed in YAML before evaluating the regex. Supported native
@@ -605,7 +605,7 @@ files are configurable. When the active log would exceed the configured size,
 Saugra rotates it to `.1`, shifts older rotated files upward, and removes files
 older than the configured retention count.
 
-`saugra logs tail` and `saugra explain <request-id>` read across the active and
+`saugra-waf logs tail` and `saugra-waf explain <request-id>` read across the active and
 rotated event files so recent audit and explanation workflows continue after
 rotation.
 

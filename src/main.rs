@@ -2,14 +2,14 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Context;
 use clap::{Parser, Subcommand};
-use saugra::{
+use saugra_waf::{
     ai, behavior, bot, config::SaugraConfig, crs_convert, event_store,
     event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rules, runtime_policy,
     security_summary, standards, storage_cleanup,
 };
 
 #[derive(Debug, Parser)]
-#[command(name = "saugra")]
+#[command(name = "saugra-waf")]
 #[command(version)]
 #[command(about = "A lightweight rule-based + AI-assisted Web Application Firewall.")]
 struct Cli {
@@ -26,12 +26,12 @@ enum Commands {
     },
     /// Validate a Saugra YAML configuration file.
     TestConfig {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Start the Saugra service.
     Run {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Inspect built-in rules.
@@ -47,7 +47,7 @@ enum Commands {
     /// Explain a recorded request decision.
     Explain {
         request_id: String,
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Inspect OWASP Top 10 coverage.
@@ -99,7 +99,7 @@ enum InitTarget {
 enum RulesCommand {
     /// List configured WAF rules.
     List {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Convert supported OWASP CRS regex rules into Saugra YAML.
@@ -115,14 +115,14 @@ enum RulesCommand {
 enum LogsCommand {
     /// Print recent local security events.
     Tail {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
         #[arg(short, long, default_value_t = 20)]
         limit: usize,
     },
     /// Summarize local security events by action and OWASP category.
     Summary {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
         #[arg(short, long, default_value_t = 200)]
         limit: usize,
@@ -133,7 +133,7 @@ enum LogsCommand {
 enum OwaspCommand {
     /// Print current OWASP Top 10 coverage from loaded rules and config controls.
     Coverage {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
 }
@@ -142,7 +142,7 @@ enum OwaspCommand {
 enum PostureCommand {
     /// Run local deterministic posture checks.
     Check {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
 }
@@ -151,7 +151,7 @@ enum PostureCommand {
 enum ReportsCommand {
     /// Normalize and summarize configured local security reports.
     Summary {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
 }
@@ -166,17 +166,17 @@ enum AllowlistCommand {
     /// Remove a runtime allowlist entry by ID.
     Remove {
         id: String,
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// List runtime allowlist entries.
     List {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Remove expired runtime allowlist entries.
     Prune {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Manage runtime blocklist entries.
@@ -195,7 +195,7 @@ enum AllowlistAddTarget {
         duration: Option<String>,
         #[arg(short, long)]
         reason: String,
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Add a CIDR range.
@@ -205,7 +205,7 @@ enum AllowlistAddTarget {
         duration: Option<String>,
         #[arg(short, long)]
         reason: String,
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
 }
@@ -219,7 +219,7 @@ enum BlocklistCommand {
         duration: Option<String>,
         #[arg(short, long)]
         reason: String,
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
 }
@@ -238,13 +238,13 @@ enum StateResetTarget {
     /// Remove one client from local behavior scoring state.
     Behavior {
         client_id: String,
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Remove one client from local bot-protection state.
     Bot {
         client_id: String,
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
 }
@@ -253,12 +253,12 @@ enum StateResetTarget {
 enum SummaryCommand {
     /// Generate a daily summary over the configured lookback and print JSON.
     Daily {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
     /// Generate and deliver a summary through configured channels.
     Send {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
     },
 }
@@ -267,7 +267,7 @@ enum SummaryCommand {
 enum CleanupCommand {
     /// Scan cleanup targets and optionally delete stale files.
     Run {
-        #[arg(short, long, default_value = "configs/saugra.example.yml")]
+        #[arg(short, long, default_value = "configs/saugra-waf.example.yml")]
         config: PathBuf,
         /// Preview removals without deleting files.
         #[arg(long)]
@@ -759,7 +759,7 @@ fn print_security_event_summary(summary: &event_store::SecurityEventSummary) {
 fn print_init(target: Option<InitTarget>) -> anyhow::Result<()> {
     match target {
         None => {
-            println!("{}", include_str!("../configs/saugra.example.yml"));
+            println!("{}", include_str!("../configs/saugra-waf.example.yml"));
         }
         Some(InitTarget::Nginx) => {
             println!(

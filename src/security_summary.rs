@@ -245,14 +245,18 @@ fn admin_event_path(output_path: &Path) -> PathBuf {
     output_path
         .parent()
         .unwrap_or_else(|| Path::new("."))
-        .join("saugra-security-summary-admin-events.jsonl")
+        .join("saugra-waf-security-summary-admin-events.jsonl")
 }
 
 fn send_email(
     channel: &SecuritySummaryChannelConfig,
     summary: &SecuritySummary,
 ) -> anyhow::Result<()> {
-    let from = channel.from.as_deref().unwrap_or("saugra@localhost").trim();
+    let from = channel
+        .from
+        .as_deref()
+        .unwrap_or("saugra-waf@localhost")
+        .trim();
     let subject = summary_email_subject(summary);
     let mut child = Command::new(&channel.sendmail_path)
         .arg("-t")
@@ -283,7 +287,7 @@ fn build_email_message(
     subject: &str,
     summary: &SecuritySummary,
 ) -> String {
-    let boundary = "saugra-security-summary-boundary";
+    let boundary = "saugra-waf-security-summary-boundary";
     let text = render_summary_text(summary);
     let html = render_summary_html(summary);
 
@@ -354,7 +358,7 @@ fn render_summary_text(summary: &SecuritySummary) -> String {
         }
     }
     text.push_str(
-        "\nExplain a request on the server with: saugra explain <request-id> --config /etc/saugra/saugra.yml\n",
+        "\nExplain a request on the server with: saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml\n",
     );
     text
 }
@@ -440,7 +444,7 @@ fn render_summary_html(summary: &SecuritySummary) -> String {
           {blocked_ids}
           <tr>
             <td style="padding:18px 28px 24px;color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;">
-              This report is generated from local Saugra security events. Use <code>saugra explain &lt;request-id&gt; --config /etc/saugra/saugra.yml</code> on the server for detailed analysis of a specific request.
+              This report is generated from local Saugra security events. Use <code>saugra-waf explain &lt;request-id&gt; --config /etc/saugra-waf/saugra-waf.yml</code> on the server for detailed analysis of a specific request.
             </td>
           </tr>
         </table>
@@ -785,14 +789,14 @@ mod tests {
     #[test]
     fn output_path_replaces_local_date_token() {
         let path = render_output_path(
-            Path::new("/tmp/saugra-security-summary-YYYY-MM-DD.json"),
+            Path::new("/tmp/saugra-waf-security-summary-YYYY-MM-DD.json"),
             rfc3339_to_unix_seconds("2026-05-21T22:30:00Z").unwrap(),
             "Africa/Nairobi",
         );
 
         assert_eq!(
             path,
-            PathBuf::from("/tmp/saugra-security-summary-2026-05-22.json")
+            PathBuf::from("/tmp/saugra-waf-security-summary-2026-05-22.json")
         );
     }
 
@@ -832,7 +836,7 @@ mod tests {
         };
 
         let message = build_email_message(
-            "saugra@example.com",
+            "saugra-waf@example.com",
             &["security@example.com".to_string()],
             &summary_email_subject(&summary),
             &summary,
@@ -842,10 +846,11 @@ mod tests {
         assert!(message.contains("Content-Type: text/html; charset=UTF-8"));
         assert!(message.contains("Saugra WAF - EXAMPLE.COM"));
         assert!(message.contains("text-align:center"));
-        assert!(
-            message.contains("saugra explain &lt;request-id&gt; --config /etc/saugra/saugra.yml")
-        );
-        assert!(message.contains("saugra explain <request-id> --config /etc/saugra/saugra.yml"));
+        assert!(message.contains(
+            "saugra-waf explain &lt;request-id&gt; --config /etc/saugra-waf/saugra-waf.yml"
+        ));
+        assert!(message
+            .contains("saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml"));
         assert!(message.contains("41,408"));
         assert!(message.contains("SAUGRA-BOT-PROTECTION-001"));
         assert!(!message.contains("Content-Type: application/json"));
@@ -887,7 +892,7 @@ mod tests {
                 channels: vec![crate::config::SecuritySummaryChannelConfig {
                     channel_type: "email".to_string(),
                     to: vec!["security@example.com".to_string()],
-                    from: Some("saugra@example.com".to_string()),
+                    from: Some("saugra-waf@example.com".to_string()),
                     sendmail_path: temp_dir
                         .path()
                         .join("missing-sendmail")
@@ -903,7 +908,7 @@ mod tests {
         let admin_events = fs::read_to_string(
             temp_dir
                 .path()
-                .join("saugra-security-summary-admin-events.jsonl"),
+                .join("saugra-waf-security-summary-admin-events.jsonl"),
         )
         .unwrap();
 
