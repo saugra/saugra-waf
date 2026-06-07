@@ -9,6 +9,8 @@ All notable changes to Saugra are documented here.
 - Document the live signed Ubuntu/Debian APT repository as the recommended
   installation and upgrade path.
 - Record the public APT repository signing-key fingerprint.
+- Add the GitHub Pages, deployment-tag rule, signing-key secret, and release-tag
+  setup procedure to the README.
 
 ## 1.0.6 - 2026-06-07
 

@@ -321,6 +321,117 @@ The package artifact is written under `target/debian/`. See
 `docs/DEBIAN_PACKAGING.md` for the local install test and GitHub Release
 publishing flow.
 
+## APT Release Setup
+
+Maintainers must complete this one-time setup before a version tag can publish
+the `.deb` package and signed APT repository through
+`.github/workflows/release.yml`.
+
+### 1. Enable GitHub Pages
+
+For an organization repository, first open the organization **Settings**, go to
+**Member privileges**, and allow members to create public GitHub Pages sites
+under **Pages creation**.
+
+Then open the repository Pages settings:
+
+```txt
+https://github.com/saugra/saugra-waf/settings/pages
+```
+
+Under **Build and deployment**, set **Source** to **GitHub Actions**. Do not
+configure a branch-based Pages workflow; the release workflow uploads and
+deploys the generated APT repository.
+
+### 2. Allow Release Tags To Deploy
+
+Open:
+
+```txt
+https://github.com/saugra/saugra-waf/settings/environments
+```
+
+Select the `github-pages` environment. Under **Deployment branches and tags**,
+choose **Selected branches and tags**, then add this as a **tag** rule:
+
+```txt
+v*.*.*
+```
+
+Make sure GitHub reports tags, rather than branches, as allowed by the rule.
+
+### 3. Create A Dedicated Signing Key
+
+Create the APT signing key on a trusted maintainer machine. Use a strong,
+dedicated passphrase and keep an encrypted offline backup of this GPG home:
+
+```bash
+export GNUPGHOME="$HOME/.saugra-waf-apt-gnupg"
+install -d -m 700 "$GNUPGHOME"
+
+gpg --quick-generate-key \
+  "Saugra WAF APT Repository <releases@saugra-waf.dev>" \
+  rsa4096 sign 2y
+
+gpg --list-secret-keys --with-subkey-fingerprint
+```
+
+Use the full hexadecimal primary-key fingerprint printed below the `sec` line
+as the signing key ID. Do not include the `rsa4096/` prefix.
+
+Export the private key temporarily:
+
+```bash
+gpg --armor --export-secret-keys <FULL-FINGERPRINT> \
+  > /tmp/saugra-waf-apt-private.asc
+```
+
+Never commit this file or disclose its contents or passphrase.
+
+### 4. Add GitHub Actions Secrets
+
+Open:
+
+```txt
+https://github.com/saugra/saugra-waf/settings/secrets/actions
+```
+
+Add these repository secrets:
+
+- `SAUGRA_APT_GPG_KEY_ID`: full primary-key fingerprint.
+- `SAUGRA_APT_GPG_PRIVATE_KEY`: complete contents of
+  `/tmp/saugra-waf-apt-private.asc`, including the BEGIN and END lines.
+- `SAUGRA_APT_GPG_PASSPHRASE`: exact signing-key passphrase.
+
+After adding the secrets, securely remove the temporary export:
+
+```bash
+shred -u /tmp/saugra-waf-apt-private.asc
+```
+
+### 5. Publish A Release
+
+Update `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md`, commit and push the
+release preparation, then create an annotated version tag:
+
+```bash
+git tag -a v<version> -m "Saugra WAF v<version>"
+git push origin main
+git push origin v<version>
+```
+
+The tag triggers tests, builds and install-tests the `.deb`, creates the GitHub
+Release, signs the APT metadata, and deploys the repository to:
+
+```txt
+https://saugra.github.io/saugra-waf/apt
+```
+
+Verify the release by following the
+[Ubuntu or Debian installation](#install-on-ubuntu-or-debian) steps on a clean
+host. See `docs/APT_REPOSITORY.md` and `docs/RELEASE_PROCESS.md` for the full
+maintainer checklist, signing policy, and troubleshooting details.
+
 ## Verify A Deployment
 
 For a staging or production deployment you own:
