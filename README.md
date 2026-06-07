@@ -109,7 +109,7 @@ Public docs:
 - `docs/OWASP_TOP_10_STRATEGY.md` — layered OWASP Top 10 coverage strategy
 - `docs/CRS_IMPORT.md` — OWASP CRS conversion support and limitations
 - `docs/DEBIAN_PACKAGING.md` — `.deb` build and GitHub Release publishing guide
-- `docs/APT_REPOSITORY.md` — signed Ubuntu/Debian APT repository plan
+- `docs/APT_REPOSITORY.md` — signed Ubuntu/Debian APT repository guide
 - `docs/OFFICIAL_DEBIAN_RELEASE.md` — official Debian archive release plan
 - `docs/RELEASE_PROCESS.md` — maintainer release checklist
 - `docs/RUNTIME_ALLOWLIST.md` — no-restart local runtime allowlisting design
@@ -117,15 +117,54 @@ Public docs:
 
 Install status:
 
+- Supported today: install from the signed Saugra Ubuntu/Debian APT repository.
+- Supported today: download `.deb` packages from GitHub Releases.
 - Supported today: build from Git/source and run with systemd.
-- Supported today: build `.deb` packages with `cargo-deb` and publish them to
-  GitHub Releases.
-- In progress: signed Saugra-owned Ubuntu/Debian APT repository published with
-  GitHub Pages.
 - Planned later: official Debian archive submission, then Ubuntu sync where
   possible.
 
 ## Quick Start
+
+### Install On Ubuntu Or Debian
+
+Install the HTTPS and signing-key tools:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+```
+
+Add the Saugra repository signing key:
+
+```bash
+curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg |
+  sudo gpg --dearmor --yes -o /usr/share/keyrings/saugra-waf.gpg
+```
+
+Add the signed Saugra APT repository and install the package:
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" |
+  sudo tee /etc/apt/sources.list.d/saugra-waf.list
+
+sudo apt update
+sudo apt install saugra-waf
+```
+
+Review the monitor-first production config, validate it, and then start Saugra:
+
+```bash
+sudo editor /etc/saugra-waf/saugra-waf.yml
+sudo saugra-waf test-config
+sudo systemctl enable --now saugra-waf
+```
+
+Future releases can be installed through the normal system upgrade flow:
+
+```bash
+sudo apt update
+sudo apt upgrade
+```
 
 ### Prerequisites
 
@@ -245,34 +284,17 @@ Full production guides and examples:
 
 ## Install On A Server
 
-For the full Ubuntu install path, including building from Git, installing the
-binary, creating `/etc/saugra-waf/saugra-waf.yml`, and running Saugra with systemd, see
-`docs/PRODUCTION_DEPLOYMENT.md`.
+The recommended server install is the signed APT repository shown in
+[Quick Start](#install-on-ubuntu-or-debian). It installs the binary, systemd
+unit, production configuration, rule packs, and runtime directories.
 
-Short version:
-
-```bash
-git clone https://github.com/saugra/saugra-waf.git /opt/saugra-waf
-cd /opt/saugra-waf
-cargo build --release
-sudo install -m 0755 target/release/saugra-waf /usr/local/bin/saugra-waf
-saugra-waf --version
-sudo useradd --system --home /var/lib/saugra-waf --shell /usr/sbin/nologin saugra-waf
-sudo mkdir -p /etc/saugra-waf/rules /etc/saugra-waf/standards /var/log/saugra-waf /var/lib/saugra-waf
-sudo cp configs/saugra-waf.production.example.yml /etc/saugra-waf/saugra-waf.yml
-sudo cp configs/rules/REQUEST-*.yml /etc/saugra-waf/rules/
-sudo cp configs/standards/*.yml /etc/saugra-waf/standards/
-sudo cp configs/saugra-waf.service.example /etc/systemd/system/saugra-waf.service
-sudo chown -R saugra-waf:saugra-waf /var/log/saugra-waf /var/lib/saugra-waf
-sudo systemctl daemon-reload
-sudo systemctl enable --now redis-server
-sudo systemctl enable --now saugra-waf
-```
-
-Validate the installed config:
+After installation, configure the real upstream application before starting
+the service:
 
 ```bash
+sudo editor /etc/saugra-waf/saugra-waf.yml
 saugra-waf test-config
+sudo systemctl enable --now saugra-waf
 ```
 
 Check the service:
@@ -280,6 +302,10 @@ Check the service:
 ```bash
 curl -i http://127.0.0.1:8787/_saugra-waf/health
 ```
+
+See `docs/PRODUCTION_DEPLOYMENT.md` for the complete Nginx, Apache, Redis, and
+monitor-first rollout procedure. Source installation remains available for
+development and testing.
 
 ## Build A Debian Package
 

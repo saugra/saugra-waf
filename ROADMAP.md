@@ -130,8 +130,8 @@ inclusion, with Ubuntu sync where possible.
 - [x] Document creation and secure handling of a dedicated APT repository
       signing key.
 - [x] Add GitHub Pages publishing for signed APT repository metadata.
-- [ ] Enable GitHub Pages with GitHub Actions as the Pages source.
-- [ ] Add APT repository signing secrets to GitHub Actions.
+- [x] Enable GitHub Pages with GitHub Actions as the Pages source.
+- [x] Add APT repository signing secrets to GitHub Actions.
 - [ ] Optionally configure `repo.saugra-waf.dev` as the Pages custom domain.
 - [ ] Add `arm64` package builds and install tests.
 - [ ] Run a Debian Rust dependency audit for official archive readiness.

@@ -2,6 +2,14 @@
 
 All notable changes to Saugra are documented here.
 
+## Unreleased
+
+### Documentation
+
+- Document the live signed Ubuntu/Debian APT repository as the recommended
+  installation and upgrade path.
+- Record the public APT repository signing-key fingerprint.
+
 ## 1.0.6 - 2026-06-07
 
 ### Added

@@ -22,23 +22,30 @@ Git tag -> CI build -> .deb package -> signed APT repository -> apt install saug
 
 ## User Install Flow
 
-The intended user-facing install flow for the custom repository domain is:
+Install the required HTTPS and signing-key tools:
 
 ```bash
-curl -fsSL https://repo.saugra-waf.dev/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://repo.saugra-waf.dev/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+```
+
+Add the public signing key, configure the signed repository, and install Saugra:
+
+```bash
+curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg |
+  sudo gpg --dearmor --yes -o /usr/share/keyrings/saugra-waf.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" |
+  sudo tee /etc/apt/sources.list.d/saugra-waf.list
+
 sudo apt update
 sudo apt install saugra-waf
 ```
 
-Before `repo.saugra-waf.dev` is configured as a custom domain, the GitHub Pages URL
-is:
+The published signing-key fingerprint is:
 
-```bash
-curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
-sudo apt update
-sudo apt install saugra-waf
+```txt
+8992 2EB2 4DFF 0CF9 E29F 6048 5C90 F14F C121 4E24
 ```
 
 After installation, operators should edit the generated config before starting
@@ -309,8 +316,8 @@ Operators should explicitly start Saugra after configuration has been reviewed.
 GitHub Releases are the immediate binary distribution channel. They are useful
 for manual installs, testing, and rollback.
 
-The signed Saugra APT repository is the recommended production channel once it
-exists. It gives operators normal `apt update` and `apt upgrade` workflows.
+The signed Saugra APT repository is the recommended production channel. It
+gives operators normal `apt update` and `apt upgrade` workflows.
 
 Ubuntu PPAs are useful for Ubuntu-specific testing and discovery, but they are
 not a Debian distribution channel.
@@ -325,10 +332,6 @@ install channel while that longer process is prepared.
 
 ## Open Work
 
-- Create a dedicated repository signing key.
-- Enable GitHub Pages with GitHub Actions as the Pages source.
-- Add the `SAUGRA_APT_GPG_KEY_ID`, `SAUGRA_APT_GPG_PRIVATE_KEY`, and
-  `SAUGRA_APT_GPG_PASSPHRASE` repository secrets.
 - Optionally configure `repo.saugra-waf.dev` as the Pages custom domain.
 - Add post-deploy public repository install verification.
 - Add `arm64` package builds and install tests.

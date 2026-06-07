@@ -20,17 +20,44 @@ switch to `block` after tuning.
 
 ## Install Saugra on Ubuntu or Debian
 
-The recommended production install path is the `.deb` package from a tagged
-Saugra release. Source installs remain useful for development and testing.
+The recommended production install path is the signed Saugra APT repository.
+It supports normal `apt update` and `apt upgrade` workflows. Source installs
+remain useful for development and testing.
 
-### Install From A Downloaded `.deb`
+### Install From The Signed APT Repository
+
+Install the repository prerequisites:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg
+```
+
+Add the Saugra signing key and repository:
+
+```bash
+curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg |
+  sudo gpg --dearmor --yes -o /usr/share/keyrings/saugra-waf.gpg
+
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" |
+  sudo tee /etc/apt/sources.list.d/saugra-waf.list
+```
+
+Install Saugra:
+
+```bash
+sudo apt update
+sudo apt install saugra-waf
+```
+
+### Install From A Downloaded `.deb` As A Fallback
 
 If the package is already on the server, install it with `apt` so dependencies
 are handled correctly:
 
 ```bash
 cd /opt
-apt install ./saugra-waf_1.0.6-1_amd64.deb
+sudo apt install ./saugra-waf_1.0.6-1_amd64.deb
 ```
 
 The package installs:
