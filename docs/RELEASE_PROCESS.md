@@ -32,21 +32,24 @@ sudo apt install ./target/debian/saugra-waf_*.deb
 saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 ```
 
+The release workflow builds on Ubuntu 22.04 as the binary compatibility
+baseline, then install-tests on Ubuntu 22.04, Ubuntu 24.04, and Debian 12.
+
 ## Publish
 
 Commit the release changes:
 
 ```bash
 git add Cargo.toml README.md CHANGELOG.md docs/DEBIAN_PACKAGING.md docs/RELEASE_PROCESS.md .github/workflows/release.yml packaging
-git commit -m "Prepare v1.0.1 release"
+git commit -m "Prepare v1.0.6 release"
 ```
 
 Create and push an annotated tag:
 
 ```bash
-git tag -a v1.0.1 -m "Saugra v1.0.1"
+git tag -a v1.0.6 -m "Saugra v1.0.6"
 git push origin main
-git push origin v1.0.1
+git push origin v1.0.6
 ```
 
 The release workflow creates or updates the GitHub Release, generates release
@@ -60,8 +63,8 @@ Pages, and uploads the `.deb` artifact from `target/debian/`.
 1. Verify the GitHub Pages APT repository:
 
 ```bash
-curl -fsSL https://ewanyonyi.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://ewanyonyi.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
+curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
 sudo apt install saugra-waf
 saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml

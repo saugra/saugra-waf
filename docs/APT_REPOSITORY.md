@@ -35,8 +35,8 @@ Before `repo.saugra-waf.dev` is configured as a custom domain, the GitHub Pages 
 is:
 
 ```bash
-curl -fsSL https://ewanyonyi.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://ewanyonyi.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
+curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
 sudo apt install saugra-waf
 ```
@@ -81,6 +81,10 @@ apt/
 
 Start with `amd64`. Add `arm64` when CI builds and install tests are available
 for that architecture.
+
+The `amd64` package is built on Ubuntu 22.04 to keep its glibc requirement
+compatible with Debian 12 and newer supported Ubuntu releases. Release CI then
+install-tests the same package on Ubuntu 22.04, Ubuntu 24.04, and Debian 12.
 
 ## Maintainer Release Flow
 
@@ -138,17 +142,17 @@ systemctl status saugra-waf
 9. Tag and publish the GitHub Release:
 
 ```bash
-git tag -a v1.0.5 -m "Saugra v1.0.5"
+git tag -a v1.0.6 -m "Saugra v1.0.6"
 git push origin main
-git push origin v1.0.5
+git push origin v1.0.6
 ```
 
 10. Release CI publishes the signed APT repository to GitHub Pages.
 11. Run an end-to-end install from the repository:
 
 ```bash
-curl -fsSL https://ewanyonyi.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
-echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://ewanyonyi.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
+curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg | sudo gpg --dearmor -o /usr/share/keyrings/saugra-waf.gpg
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" | sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
 sudo apt install saugra-waf
 saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
@@ -171,7 +175,7 @@ site/
 The public repository URL is:
 
 ```txt
-https://ewanyonyi.github.io/saugra-waf/apt
+https://saugra.github.io/saugra-waf/apt
 ```
 
 If the `repo.saugra-waf.dev` custom domain is configured for GitHub Pages, the same
@@ -192,7 +196,7 @@ Required GitHub Actions secrets:
 - `SAUGRA_APT_GPG_KEY_ID`: dedicated APT repository signing key ID.
 - `SAUGRA_APT_GPG_PRIVATE_KEY`: ASCII-armored private key for the dedicated APT
   repository signing key.
-- `SAUGRA_APT_GPG_PASSPHRASE`: optional passphrase for the dedicated APT
+- `SAUGRA_APT_GPG_PASSPHRASE`: passphrase for the dedicated APT
   repository signing key.
 
 The workflow exports the matching public key to `saugra-waf.gpg`, signs the
@@ -235,6 +239,35 @@ Requirements:
 The user install instructions should always use `signed-by=` with a key stored
 under `/usr/share/keyrings/`. Do not instruct users to add repository keys with
 global `apt-key`.
+
+### Create The Dedicated Signing Key
+
+Create the key on a trusted maintainer machine, preferably using a temporary
+isolated GPG home:
+
+```bash
+export GNUPGHOME="$PWD/.release-gnupg"
+install -d -m 700 "$GNUPGHOME"
+gpg --quick-generate-key \
+  "Saugra WAF APT Repository <releases@saugra-waf.dev>" \
+  rsa4096 sign 2y
+gpg --list-secret-keys --keyid-format long
+```
+
+Record the signing-key ID shown after `rsa4096/`. Export the CI secret and
+public key:
+
+```bash
+gpg --armor --export-secret-keys <KEY-ID> > saugra-waf-apt-private.asc
+gpg --armor --export <KEY-ID> > saugra-waf.gpg
+```
+
+Store `saugra-waf-apt-private.asc` only in the GitHub Actions secret
+`SAUGRA_APT_GPG_PRIVATE_KEY`, set `<KEY-ID>` as `SAUGRA_APT_GPG_KEY_ID`, and
+store the key's strong, dedicated passphrase as `SAUGRA_APT_GPG_PASSPHRASE`.
+Securely delete the exported private-key file after the secrets are configured.
+Keep an encrypted offline backup of the original GPG home. The release workflow
+publishes the exported public key as `saugra-waf.gpg`.
 
 ## CI Publishing Requirements
 
@@ -294,8 +327,8 @@ install channel while that longer process is prepared.
 
 - Create a dedicated repository signing key.
 - Enable GitHub Pages with GitHub Actions as the Pages source.
-- Add `SAUGRA_APT_GPG_KEY_ID` and `SAUGRA_APT_GPG_PRIVATE_KEY` repository
-  secrets.
+- Add the `SAUGRA_APT_GPG_KEY_ID`, `SAUGRA_APT_GPG_PRIVATE_KEY`, and
+  `SAUGRA_APT_GPG_PASSPHRASE` repository secrets.
 - Optionally configure `repo.saugra-waf.dev` as the Pages custom domain.
 - Add post-deploy public repository install verification.
 - Add `arm64` package builds and install tests.

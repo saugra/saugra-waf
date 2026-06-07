@@ -127,7 +127,8 @@ inclusion, with Ubuntu sync where possible.
 - [x] Add release CI install tests for standalone `.deb` packages.
 - [x] Add release CI install test coverage for the generated APT repository.
 - [x] Choose hosting for the Saugra-owned signed APT repository: GitHub Pages.
-- [ ] Create and document a dedicated APT repository signing key.
+- [x] Document creation and secure handling of a dedicated APT repository
+      signing key.
 - [x] Add GitHub Pages publishing for signed APT repository metadata.
 - [ ] Enable GitHub Pages with GitHub Actions as the Pages source.
 - [ ] Add APT repository signing secrets to GitHub Actions.

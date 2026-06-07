@@ -13,7 +13,9 @@ permissions:
 jobs:
   deb:
     name: Debian package
-    runs-on: ubuntu-24.04
+    # Build on the oldest supported glibc baseline so the package remains
+    # installable on Debian 12 and newer Ubuntu releases.
+    runs-on: ubuntu-22.04
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
@@ -52,6 +54,19 @@ jobs:
               apt-get update
               apt-get install -y ./target/debian/*.deb
               saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+              systemctl list-unit-files saugra-waf.service
+            '
+
+      - name: Install-test package on Ubuntu 22.04
+        run: |
+          docker run --rm \
+            -v "$PWD:/workspace" \
+            -w /workspace \
+            ubuntu:22.04 \
+            bash -euxo pipefail -c '
+              apt-get update
+              apt-get install -y ./target/debian/*.deb
+              saugra-waf test-config
               systemctl list-unit-files saugra-waf.service
             '
 
@@ -107,8 +122,10 @@ jobs:
           SAUGRA_APT_GPG_PASSPHRASE: ${{ secrets.SAUGRA_APT_GPG_PASSPHRASE }}
           SAUGRA_APT_GPG_PRIVATE_KEY: ${{ secrets.SAUGRA_APT_GPG_PRIVATE_KEY }}
         run: |
-          if [ -z "$SAUGRA_APT_GPG_KEY_ID" ] || [ -z "$SAUGRA_APT_GPG_PRIVATE_KEY" ]; then
-            echo "SAUGRA_APT_GPG_KEY_ID and SAUGRA_APT_GPG_PRIVATE_KEY secrets are required for APT publishing" >&2
+          if [ -z "$SAUGRA_APT_GPG_KEY_ID" ] ||
+             [ -z "$SAUGRA_APT_GPG_PRIVATE_KEY" ] ||
+             [ -z "$SAUGRA_APT_GPG_PASSPHRASE" ]; then
+            echo "APT signing key ID, private key, and passphrase secrets are required for publishing" >&2
             exit 1
           fi
 
@@ -122,6 +139,10 @@ jobs:
             --output site/apt \
             --signing-key "$SAUGRA_APT_GPG_KEY_ID" \
             target/debian/*.deb
+          test -s site/saugra-waf.gpg
+          test -s site/apt/dists/stable/InRelease
+          test -s site/apt/dists/stable/Release.gpg
+          gpg --batch --verify site/apt/dists/stable/Release.gpg site/apt/dists/stable/Release
           touch site/.nojekyll
 
       - name: Configure GitHub Pages

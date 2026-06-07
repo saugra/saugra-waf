@@ -54,8 +54,8 @@ Pushing a version tag builds and uploads the `.deb` artifact to the matching
 GitHub Release:
 
 ```bash
-git tag v1.0.1
-git push origin v1.0.1
+git tag v1.0.6
+git push origin v1.0.6
 ```
 
 The release workflow runs tests, installs `cargo-deb`, builds the package, and

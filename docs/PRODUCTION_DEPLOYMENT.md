@@ -30,7 +30,7 @@ are handled correctly:
 
 ```bash
 cd /opt
-apt install ./saugra-waf_1.0.1-1_amd64.deb
+apt install ./saugra-waf_1.0.6-1_amd64.deb
 ```
 
 The package installs:

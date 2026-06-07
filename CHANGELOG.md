@@ -2,20 +2,34 @@
 
 All notable changes to Saugra are documented here.
 
-## Unreleased
+## 1.0.6 - 2026-06-07
 
-- Add follow-up changes here before tagging the next release.
+### Added
+
 - Add APT repository dry-run tooling, GitHub Pages publishing, release
   install-test coverage, and an official Debian archive release plan.
-- Complete the runtime rename to `saugra-waf` across release install tests,
-  package paths, service checks, APT artifacts, templates, verifier identifiers,
-  the health endpoint, and repository asset names.
+- Build release packages on an Ubuntu 22.04 glibc baseline and install-test
+  them on Ubuntu 22.04, Ubuntu 24.04, and Debian 12.
 - Discover configuration from `--config`, `SAUGRA_WAF_CONFIG`, the installed
   `/etc/saugra-waf/saugra-waf.yml`, or the source-checkout example, in that
   precedence order.
+
+### Changed
+
+- Complete the runtime rename to `saugra-waf` across release install tests,
+  package paths, service checks, APT artifacts, templates, verifier identifiers,
+  the health endpoint, and repository asset names.
 - Shorten plain-text and HTML security-summary email guidance to
   `saugra-waf explain <request-id>` now that installed config discovery is
   automatic.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo check --locked --all-targets`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- 176 library tests and 8 CLI integration tests pass.
+- Debian package and APT repository metadata build locally.
 
 ## 1.0.5 - 2026-05-23
 
