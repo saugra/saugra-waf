@@ -572,7 +572,7 @@ saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml
 
 ```nginx
 proxy_set_header Upgrade $http_upgrade;
-proxy_set_header Connection $saugra-waf_connection_upgrade;
+proxy_set_header Connection $saugra_waf_connection_upgrade;
 ```
 
 ## Common Problems

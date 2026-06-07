@@ -302,7 +302,7 @@ long-lived connection.
 For Nginx, route `/ws/` through Saugra and preserve upgrade semantics:
 
 ```nginx
-map $http_upgrade $saugra-waf_connection_upgrade {
+map $http_upgrade $saugra_waf_connection_upgrade {
     default upgrade;
     '' close;
 }
@@ -312,7 +312,7 @@ location /ws/ {
     proxy_http_version 1.1;
 
     proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $saugra-waf_connection_upgrade;
+    proxy_set_header Connection $saugra_waf_connection_upgrade;
     proxy_set_header Host $host;
     proxy_set_header Origin $http_origin;
     proxy_set_header X-Real-IP $remote_addr;
