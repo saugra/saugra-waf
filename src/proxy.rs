@@ -172,7 +172,7 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
     )?;
 
     let app = Router::new()
-        .route("/_saugra/health", get(health))
+        .route("/_saugra-waf/health", get(health))
         .fallback(proxy_request_with_connect_info)
         .with_state(state);
 

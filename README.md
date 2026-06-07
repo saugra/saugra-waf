@@ -87,7 +87,7 @@ This repository now has a production-oriented foundation:
 - Built-in rule metadata and basic regex inspection
 - Monitor/block/off mode model
 - Structured logging setup
-- Proxies all normal application traffic and exposes `/_saugra/health` for
+- Proxies all normal application traffic and exposes `/_saugra-waf/health` for
   checking that the WAF service is alive
 - Route-based multi-upstream HTTP and WebSocket forwarding
 - WebSocket handshake inspection and upgrade tunneling
@@ -149,7 +149,7 @@ Leave Saugra running, then use another terminal for the checks below.
 Check the health endpoint:
 
 ```bash
-curl http://127.0.0.1:8787/_saugra/health
+curl http://127.0.0.1:8787/_saugra-waf/health
 ```
 
 Run the local smoke test:
@@ -163,6 +163,10 @@ verifies clean traffic is forwarded, verifies an SQL injection payload is
 blocked, checks the JSONL event shape, and cleans up.
 
 ## Common Commands
+
+Installed commands automatically use `/etc/saugra-waf/saugra-waf.yml`. In a
+source checkout they use `configs/saugra-waf.example.yml`. Set
+`SAUGRA_WAF_CONFIG=/different/path.yml` or pass `--config` to override discovery.
 
 Review OWASP Top 10:2025 mapped coverage:
 
@@ -268,13 +272,13 @@ sudo systemctl enable --now saugra-waf
 Validate the installed config:
 
 ```bash
-saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf test-config
 ```
 
 Check the service:
 
 ```bash
-curl -i http://127.0.0.1:8787/_saugra/health
+curl -i http://127.0.0.1:8787/_saugra-waf/health
 ```
 
 ## Build A Debian Package

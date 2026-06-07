@@ -1,5 +1,5 @@
 metadata:
-  name: saugra-protocol-enforcement
+  name: saugra-waf-protocol-enforcement
   version: 0.1.0
   standards:
     - owasp-top-10:2025

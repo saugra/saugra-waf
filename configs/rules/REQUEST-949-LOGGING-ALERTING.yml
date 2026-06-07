@@ -1,5 +1,5 @@
 metadata:
-  name: saugra-logging-alerting-abuse
+  name: saugra-waf-logging-alerting-abuse
   version: 0.1.0
   standards:
     - owasp-top-10:2025

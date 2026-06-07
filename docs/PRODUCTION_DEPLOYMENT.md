@@ -90,7 +90,7 @@ systemctl status saugra-waf
 Check Saugra locally before changing Nginx or Apache:
 
 ```bash
-curl -i http://127.0.0.1:8787/_saugra/health
+curl -i http://127.0.0.1:8787/_saugra-waf/health
 curl -i -H "Host: example.com" http://127.0.0.1:8787/
 ```
 
@@ -200,7 +200,7 @@ systemctl status saugra-waf
 Check Saugra locally before changing Nginx:
 
 ```bash
-curl -i http://127.0.0.1:8787/_saugra/health
+curl -i http://127.0.0.1:8787/_saugra-waf/health
 ```
 
 ## Saugra Config

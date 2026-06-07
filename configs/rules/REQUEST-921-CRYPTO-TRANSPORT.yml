@@ -1,5 +1,5 @@
 metadata:
-  name: saugra-crypto-transport
+  name: saugra-waf-crypto-transport
   version: 0.1.0
   standards:
     - owasp-top-10:2025

@@ -143,6 +143,30 @@ fn cli_explain_reads_recorded_event() {
 }
 
 #[test]
+fn cli_discovers_config_from_environment() {
+    let fixture = CliFixture::new();
+    let output =
+        saugra_waf_cmd_with_env(["test-config"], "SAUGRA_WAF_CONFIG", fixture.config_arg());
+
+    assert_success(&output);
+    assert!(stdout(&output).contains("config OK: listen=127.0.0.1:8787"));
+}
+
+#[test]
+fn cli_explicit_config_overrides_discovered_config() {
+    let fixture = CliFixture::new();
+    let config = fixture.config_arg();
+    let output = Command::new(env!("CARGO_BIN_EXE_saugra-waf"))
+        .env("SAUGRA_WAF_CONFIG", "/does/not/exist/saugra-waf.yml")
+        .args(["test-config", "--config", &config])
+        .output()
+        .unwrap();
+
+    assert_success(&output);
+    assert!(stdout(&output).contains("config OK: listen=127.0.0.1:8787"));
+}
+
+#[test]
 fn cli_runtime_policy_and_state_commands_run() {
     let fixture = CliFixture::new();
     let config = fixture.config_arg();
@@ -299,6 +323,18 @@ where
     S: AsRef<std::ffi::OsStr>,
 {
     Command::new(env!("CARGO_BIN_EXE_saugra-waf"))
+        .args(args)
+        .output()
+        .unwrap()
+}
+
+fn saugra_waf_cmd_with_env<I, S>(args: I, name: &str, value: String) -> std::process::Output
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    Command::new(env!("CARGO_BIN_EXE_saugra-waf"))
+        .env(name, value)
         .args(args)
         .output()
         .unwrap()

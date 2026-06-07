@@ -22,7 +22,7 @@ Please describe the request that was incorrectly flagged:
   ```
 
 ## JSON Security Log Event
-Please paste the corresponding entry from `/var/log/saugra/saugra-events.jsonl` (ensure to mask credentials, actual session IDs, and tokens):
+Please paste the corresponding entry from `/var/log/saugra-waf/saugra-waf-events.jsonl` (ensure to mask credentials, actual session IDs, and tokens):
 ```json
 {
   "request_id": "...",

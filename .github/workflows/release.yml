@@ -51,8 +51,8 @@ jobs:
             bash -euxo pipefail -c '
               apt-get update
               apt-get install -y ./target/debian/*.deb
-              saugra test-config --config /etc/saugra/saugra.yml
-              systemctl list-unit-files saugra.service || true
+              saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+              systemctl list-unit-files saugra-waf.service
             '
 
       - name: Install-test package on Debian
@@ -64,8 +64,8 @@ jobs:
             bash -euxo pipefail -c '
               apt-get update
               apt-get install -y ./target/debian/*.deb
-              saugra test-config --config /etc/saugra/saugra.yml
-              systemctl list-unit-files saugra.service || true
+              saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+              systemctl list-unit-files saugra-waf.service
             '
 
       - name: Build unsigned APT repository artifact
@@ -83,16 +83,16 @@ jobs:
             -w /workspace \
             ubuntu:24.04 \
             bash -euxo pipefail -c '
-              printf "%s\n" "deb [trusted=yes] file:/workspace/apt-repo stable main" > /etc/apt/sources.list.d/saugra.list
+              printf "%s\n" "deb [trusted=yes] file:/workspace/apt-repo stable main" > /etc/apt/sources.list.d/saugra-waf.list
               apt-get update
-              apt-get install -y saugra
-              saugra test-config --config /etc/saugra/saugra.yml
+              apt-get install -y saugra-waf
+              saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
             '
 
       - name: Upload unsigned APT repository dry-run artifact
         uses: actions/upload-artifact@v4
         with:
-          name: saugra-apt-repository-dry-run
+          name: saugra-waf-apt-repository-dry-run
           path: apt-repo
 
       - name: Upload package to GitHub Release
@@ -112,12 +112,12 @@ jobs:
             exit 1
           fi
 
-          export GNUPGHOME="$RUNNER_TEMP/saugra-apt-gnupg"
+          export GNUPGHOME="$RUNNER_TEMP/saugra-waf-apt-gnupg"
           install -d -m 700 "$GNUPGHOME"
           printf '%s' "$SAUGRA_APT_GPG_PRIVATE_KEY" | gpg --batch --import
 
           install -d site
-          gpg --batch --yes --armor --export "$SAUGRA_APT_GPG_KEY_ID" > site/saugra.gpg
+          gpg --batch --yes --armor --export "$SAUGRA_APT_GPG_KEY_ID" > site/saugra-waf.gpg
           scripts/build-apt-repository.sh \
             --output site/apt \
             --signing-key "$SAUGRA_APT_GPG_KEY_ID" \

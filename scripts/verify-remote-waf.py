@@ -114,7 +114,7 @@ PROBES = [
         name="Known scanner user-agent",
         owasp="A07:2025-Authentication Failures",
         vector="header",
-        headers=(("User-Agent", "sqlmap/1.7 saugra-verification"),),
+        headers=(("User-Agent", "sqlmap/1.7 saugra-waf-verification"),),
         required=False,
     ),
     Probe(
@@ -123,7 +123,7 @@ PROBES = [
         owasp="A07:2025-Authentication Failures",
         vector="query",
         param="password",
-        payload="saugra-verification-secret",
+        payload="saugra-waf-verification-secret",
         required=False,
     ),
     Probe(
@@ -184,7 +184,7 @@ PROBES = [
         owasp="A09:2025-Security Logging and Alerting Failures",
         vector="query",
         param="saugra_probe_log",
-        payload="%0aERROR status=500 request_id=saugra",
+        payload="%0aERROR status=500 request_id=saugra-waf",
         required=False,
     ),
     Probe(
@@ -293,8 +293,8 @@ def request_probe(
     block_statuses: set[int],
 ) -> ProbeResult:
     headers = {
-        "User-Agent": "saugra-remote-verifier/1.0",
-        "X-Saugra-Verification": run_id,
+        "User-Agent": "saugra-waf-remote-verifier/1.0",
+        "X-Saugra-Waf-Verification": run_id,
         "Accept": "text/html,application/json;q=0.9,*/*;q=0.1",
     }
     headers.update(dict(probe.headers))
@@ -348,8 +348,8 @@ def clean_request(target_url: str, timeout: float, run_id: str) -> ProbeResult:
         required=True,
     )
     headers = {
-        "User-Agent": "saugra-remote-verifier/1.0",
-        "X-Saugra-Verification": run_id,
+        "User-Agent": "saugra-waf-remote-verifier/1.0",
+        "X-Saugra-Waf-Verification": run_id,
     }
     request = urllib.request.Request(target_url, headers=headers, method="GET")
 
@@ -430,7 +430,7 @@ def main() -> int:
 
     target_url = normalize_target(args.base_url, args.path)
     block_statuses = {int(item.strip()) for item in args.block_statuses.split(",") if item.strip()}
-    run_id = f"saugra-remote-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
+    run_id = f"saugra-waf-remote-{time.strftime('%Y%m%dT%H%M%SZ', time.gmtime())}"
 
     print("Remote Saugra WAF verification")
     print(f"target: {target_url}")

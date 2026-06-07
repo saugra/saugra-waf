@@ -4,6 +4,18 @@ This guide is the day-to-day operator runbook for installed Saugra servers. It
 covers service checks, common commands, troubleshooting, runtime allowlisting,
 runtime blocking, logs, and explanations.
 
+## Config Discovery
+
+Commands that need configuration choose it in this order:
+
+1. An explicit `--config <path>` argument.
+2. The `SAUGRA_WAF_CONFIG` environment variable.
+3. The installed config at `/etc/saugra-waf/saugra-waf.yml`.
+4. The source-checkout config at `configs/saugra-waf.example.yml`.
+
+Installed deployments can normally omit `--config`. Use the flag or environment
+variable when the active config lives elsewhere.
+
 ## Service Basics
 
 Check the installed binary:
@@ -15,7 +27,7 @@ saugra-waf --help
 Validate the active config:
 
 ```bash
-saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf test-config
 ```
 
 Start or restart Saugra:
@@ -35,7 +47,7 @@ journalctl -u saugra-waf -f
 Check the local health endpoint:
 
 ```bash
-curl -i http://127.0.0.1:8787/_saugra/health
+curl -i http://127.0.0.1:8787/_saugra-waf/health
 ```
 
 ## Backend Checks
@@ -83,19 +95,19 @@ debugging Saugra.
 Tail recent security events:
 
 ```bash
-saugra-waf logs tail --config /etc/saugra-waf/saugra-waf.yml --limit 20
+saugra-waf logs tail --limit 20
 ```
 
 Summarize recent security events:
 
 ```bash
-saugra-waf logs summary --config /etc/saugra-waf/saugra-waf.yml --limit 200
+saugra-waf logs summary --limit 200
 ```
 
 Explain a denied or monitored request:
 
 ```bash
-saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf explain <request-id>
 ```
 
 The explanation output includes the request context before the rule analysis:
@@ -497,7 +509,7 @@ saugra-waf allowlist block add 198.51.100.44 --duration 2h --reason "scanner bur
 1. Confirm Saugra is alive:
 
 ```bash
-curl -i http://127.0.0.1:8787/_saugra/health
+curl -i http://127.0.0.1:8787/_saugra-waf/health
 ```
 
 2. Test the configured backend directly:
@@ -606,7 +618,7 @@ Test in this order:
 
 ```bash
 saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
-curl -i http://127.0.0.1:8787/_saugra/health
+curl -i http://127.0.0.1:8787/_saugra-waf/health
 curl -i -H "Host: example.com" http://127.0.0.1:8000/
 curl -i -H "Host: example.com" http://127.0.0.1:8787/
 journalctl -u saugra-waf -n 100 --no-pager

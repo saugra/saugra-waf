@@ -580,11 +580,11 @@ The dashboard should provide practical operational visibility.
 Possible endpoints:
 
 ```txt
-GET /_saugra/health
-GET /_saugra/events
-GET /_saugra/events/:request_id
-GET /_saugra/summary
-POST /_saugra/explain/:request_id
+GET /_saugra-waf/health
+GET /_saugra-waf/events
+GET /_saugra-waf/events/:request_id
+GET /_saugra-waf/summary
+POST /_saugra-waf/explain/:request_id
 ```
 
 Dashboard cards:

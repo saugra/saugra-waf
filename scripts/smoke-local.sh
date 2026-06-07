@@ -137,7 +137,7 @@ YAML
 cargo run --quiet -- test-config --config "${CONFIG_PATH}" >/dev/null
 cargo run --quiet -- run --config "${CONFIG_PATH}" >"${SAUGRA_LOG_PATH}" 2>&1 &
 SAUGRA_PID="$!"
-wait_for_url "http://${SAUGRA_HOST}:${SAUGRA_PORT}/_saugra/health"
+wait_for_url "http://${SAUGRA_HOST}:${SAUGRA_PORT}/_saugra-waf/health"
 
 clean_status="$(curl -sS -o /dev/null -w "%{http_code}" -H "Host: smoke.local" "http://${SAUGRA_HOST}:${SAUGRA_PORT}/")"
 if [[ "${clean_status}" != "200" ]]; then

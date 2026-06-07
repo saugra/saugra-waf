@@ -7,6 +7,15 @@ All notable changes to Saugra are documented here.
 - Add follow-up changes here before tagging the next release.
 - Add APT repository dry-run tooling, GitHub Pages publishing, release
   install-test coverage, and an official Debian archive release plan.
+- Complete the runtime rename to `saugra-waf` across release install tests,
+  package paths, service checks, APT artifacts, templates, verifier identifiers,
+  the health endpoint, and repository asset names.
+- Discover configuration from `--config`, `SAUGRA_WAF_CONFIG`, the installed
+  `/etc/saugra-waf/saugra-waf.yml`, or the source-checkout example, in that
+  precedence order.
+- Shorten plain-text and HTML security-summary email guidance to
+  `saugra-waf explain <request-id>` now that installed config discovery is
+  automatic.
 
 ## 1.0.5 - 2026-05-23
 

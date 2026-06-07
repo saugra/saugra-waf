@@ -74,7 +74,7 @@ saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
 
 ```bash
 sudo systemctl enable --now saugra-waf
-curl -i http://127.0.0.1:8787/_saugra/health
+curl -i http://127.0.0.1:8787/_saugra-waf/health
 ```
 
 6. Attach any manually curated release notes from `CHANGELOG.md` to the GitHub

@@ -15,7 +15,7 @@ A clear and concise description of what the bug is.
 ## Steps to Reproduce
 Steps to reproduce the behavior:
 1. Run command '...'
-2. Set configuration option '...' in `saugra.yml`
+2. Set configuration option '...' in `saugra-waf.yml`
 3. See error: '...'
 
 ## Expected Behavior
@@ -28,7 +28,7 @@ If applicable, add the relevant output logs, traceback or panic messages:
 ```
 
 ## Configuration File
-If relevant, please share the structure of your `saugra.yml` file (with credentials and passwords masked):
+If relevant, please share the structure of your `saugra-waf.yml` file (with credentials and passwords masked):
 ```yaml
 # Paste config here
 ```

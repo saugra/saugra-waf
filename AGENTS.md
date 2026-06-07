@@ -51,17 +51,17 @@ Build and maintain a production WAF that can:
 ## Recommended Repository Structure
 
 ```txt
-saugra/
+saugra-waf/
 ├── crates/
-│   ├── saugra-core/        # rule engine, request model, decisions
-│   ├── saugra-proxy/       # reverse proxy runtime
-│   ├── saugra-config/      # YAML config parsing and validation
-│   ├── saugra-rules/       # built-in rules
-│   ├── saugra-ai/          # explain-only AI assistant layer
-│   ├── saugra-cli/         # CLI commands
-│   └── saugra-dashboard/   # optional dashboard backend/frontend
+│   ├── saugra-waf-core/        # rule engine, request model, decisions
+│   ├── saugra-waf-proxy/       # reverse proxy runtime
+│   ├── saugra-waf-config/      # YAML config parsing and validation
+│   ├── saugra-waf-rules/       # built-in rules
+│   ├── saugra-waf-ai/          # explain-only AI assistant layer
+│   ├── saugra-waf-cli/         # CLI commands
+│   └── saugra-waf-dashboard/   # optional dashboard backend/frontend
 ├── configs/
-│   ├── saugra.example.yml
+│   ├── saugra-waf.example.yml
 │   ├── nginx.example.conf
 │   └── apache.example.conf
 ├── examples/
@@ -82,7 +82,7 @@ For a single-crate production repository, this structure is acceptable while the
 module boundaries remain clear:
 
 ```txt
-saugra/
+saugra-waf/
 ├── src/
 │   ├── main.rs
 │   ├── config.rs
@@ -238,7 +238,7 @@ ai:
 logging:
   format: json
   level: info
-  event_log_path: /var/log/saugra/saugra-events.jsonl
+  event_log_path: /var/log/saugra-waf/saugra-waf-events.jsonl
   event_log_max_size: 100mb
   event_log_max_files: 30
   timezone: Africa/Nairobi
@@ -249,14 +249,14 @@ logging:
 Implement these commands first:
 
 ```bash
-saugra init
-saugra init nginx
-saugra init apache
-saugra test-config
-saugra run
-saugra rules list
-saugra logs tail
-saugra explain <request-id>
+saugra-waf init
+saugra-waf init nginx
+saugra-waf init apache
+saugra-waf test-config
+saugra-waf run
+saugra-waf rules list
+saugra-waf logs tail
+saugra-waf explain <request-id>
 ```
 
 ## Integration Examples Required
@@ -343,7 +343,7 @@ The product path is production-ready when a user can:
 4. Send normal traffic successfully.
 5. Send attack payloads and see them blocked or logged.
 6. View structured JSON logs.
-7. Run `saugra explain <request-id>`.
+7. Run `saugra-waf explain <request-id>`.
 8. Configure production-safe rate limiting with durable or distributed state.
 9. Restart Saugra without losing the security events needed for explanation and
    audit workflows.
