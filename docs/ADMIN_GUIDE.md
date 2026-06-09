@@ -17,6 +17,170 @@ Installed deployments should normally omit `--config`. The examples in this
 guide use automatic discovery. Use the flag or environment variable only when
 the active config lives elsewhere.
 
+## Initial Installation
+
+The recommended production installation path for Ubuntu and Debian is the
+signed Saugra APT repository.
+
+Install the repository tools and Redis:
+
+```bash
+sudo apt update
+sudo apt install -y ca-certificates curl gnupg redis-server
+```
+
+Install the Saugra repository signing key:
+
+```bash
+curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg |
+  sudo gpg --dearmor --yes -o /usr/share/keyrings/saugra-waf.gpg
+```
+
+Add the signed repository and install Saugra:
+
+```bash
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" |
+  sudo tee /etc/apt/sources.list.d/saugra-waf.list
+sudo apt update
+sudo apt install saugra-waf
+```
+
+The package installs the CLI, systemd service, monitor-first production config,
+rule packs, standards, intelligence catalogs, and writable runtime directories.
+Confirm the installation:
+
+```bash
+saugra-waf --version
+systemctl list-unit-files saugra-waf.service
+```
+
+Edit `/etc/saugra-waf/saugra-waf.yml` before starting the service:
+
+```bash
+sudo editor /etc/saugra-waf/saugra-waf.yml
+```
+
+At minimum, replace the example host and target with the public host and local
+backend application:
+
+```yaml
+server:
+  listen: 127.0.0.1:8787
+  mode: monitor
+
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+
+routes:
+  - path_prefix: /
+    upstream: app
+```
+
+Keep `server.mode`, `behavior.mode`, and `bot_protection.mode` set to `monitor`
+during the initial rollout. Also review `forwarded_headers.trusted_proxies`,
+rate-limit routes, and the Redis connection settings for the deployment.
+
+Validate the configuration, then start Redis and Saugra:
+
+```bash
+saugra-waf test-config
+sudo systemctl enable --now redis-server
+sudo systemctl enable --now saugra-waf
+sudo systemctl status saugra-waf --no-pager
+```
+
+Verify the health endpoint and request forwarding. Replace `example.com` with
+the configured upstream host:
+
+```bash
+curl -i http://127.0.0.1:8787/_saugra-waf/health
+curl -i -H "Host: example.com" http://127.0.0.1:8787/
+```
+
+Finally, configure Nginx, Apache, or another trusted reverse proxy to send
+public traffic to `127.0.0.1:8787`. Keep the backend application and Saugra
+private; only the public reverse proxy should accept Internet traffic.
+
+If startup or forwarding fails, inspect:
+
+```bash
+journalctl -u saugra-waf -n 100 --no-pager
+ss -ltnp
+```
+
+## Upgrade To The Newest Version
+
+The signed Saugra APT repository is the recommended upgrade path for Debian and
+Ubuntu installations.
+
+Check the currently installed version and the version available from APT:
+
+```bash
+saugra-waf --version
+sudo apt update
+apt-cache policy saugra-waf
+```
+
+Back up the active configuration before upgrading:
+
+```bash
+sudo cp -a /etc/saugra-waf "/etc/saugra-waf.backup-$(date +%Y%m%d-%H%M%S)"
+```
+
+Install the newest published version:
+
+```bash
+sudo apt install --only-upgrade saugra-waf
+```
+
+The package preserves operator-managed files under `/etc/saugra-waf` and does
+not restart the service automatically. It places the newest bundled examples,
+rules, standards, and intelligence catalogs under `/usr/share/saugra-waf`.
+Review those files when the release notes mention configuration or rule-pack
+changes.
+
+Validate the existing configuration before restarting:
+
+```bash
+saugra-waf --version
+saugra-waf test-config
+sudo systemctl restart saugra-waf
+sudo systemctl status saugra-waf --no-pager
+curl -i http://127.0.0.1:8787/_saugra-waf/health
+```
+
+Review startup errors and recent security events after the upgrade:
+
+```bash
+journalctl -u saugra-waf -n 100 --no-pager
+saugra-waf logs tail --limit 20
+```
+
+If the APT repository was not configured during installation, add the signing
+key and repository first:
+
+```bash
+sudo apt install -y ca-certificates curl gnupg
+curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg |
+  sudo gpg --dearmor --yes -o /usr/share/keyrings/saugra-waf.gpg
+echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" |
+  sudo tee /etc/apt/sources.list.d/saugra-waf.list
+sudo apt update
+sudo apt install saugra-waf
+```
+
+As a fallback, download the newest `.deb` from the
+[GitHub Releases page](https://github.com/saugra/saugra-waf/releases/latest)
+and install it with `apt` so dependencies are handled:
+
+```bash
+sudo apt install ./saugra-waf_<version>-1_amd64.deb
+saugra-waf test-config
+sudo systemctl restart saugra-waf
+```
+
 ## Service Basics
 
 Check the installed binary:
