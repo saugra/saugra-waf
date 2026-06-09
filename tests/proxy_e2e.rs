@@ -613,6 +613,73 @@ async fn bot_protection_monitor_mode_records_score_and_still_forwards() {
 }
 
 #[tokio::test]
+async fn monitor_only_bot_and_behavior_findings_do_not_combine_into_block() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.behavior = BehaviorConfig {
+        enabled: true,
+        backend: BehaviorBackend::Memory,
+        monitor_threshold: 40,
+        block_threshold: 80,
+        probe_paths: vec!["/admin".to_string()],
+        ..BehaviorConfig::default()
+    };
+    config.bot_protection = BotProtectionConfig {
+        enabled: true,
+        backend: BehaviorBackend::Memory,
+        monitor_threshold: 40,
+        block_threshold: 80,
+        scanner_paths: vec!["/admin".to_string()],
+        ..BotProtectionConfig::default()
+    };
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for _ in 0..3 {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/admin/login/?next=/admin/meeting/")
+            .header("user-agent", "Mozilla/5.0")
+            .header("x-real-ip", "198.51.100.75")
+            .body(Body::empty())
+            .unwrap();
+        let response = proxy_request(State(state.clone()), request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let final_decision = &events.last().unwrap().decision;
+
+    assert_eq!(fake_upstream.requests.lock().unwrap().len(), 3);
+    assert_eq!(final_decision.action, WafAction::Monitor);
+    assert_eq!(final_decision.anomaly_score, 6);
+    assert_eq!(final_decision.blocking_anomaly_score, 0);
+    assert_eq!(
+        final_decision.bot_protection.as_ref().unwrap().action,
+        WafAction::Monitor
+    );
+    assert_eq!(
+        final_decision.behavior.as_ref().unwrap().action,
+        WafAction::Monitor
+    );
+    assert!(!final_decision
+        .behavior
+        .as_ref()
+        .unwrap()
+        .contributors
+        .iter()
+        .any(|contributor| contributor.reason == "rule_match:bot_protection"));
+}
+
+#[tokio::test]
 async fn bot_protection_blocklist_blocks_and_persists_event_shape() {
     let fake_upstream = Arc::new(FakeUpstreamTransport::new());
     let event_log_path = test_event_log_path();

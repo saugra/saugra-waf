@@ -67,6 +67,8 @@ struct BotProtectionEntry {
     timestamp_seconds: u64,
     reason: String,
     score_delta: u16,
+    #[serde(default)]
+    path: String,
 }
 
 #[derive(Debug)]
@@ -232,6 +234,7 @@ fn evaluate_with_state(
             vec![BehaviorContributor {
                 reason: "temporary_block_active".to_string(),
                 score_delta: thresholds.block_threshold,
+                path: request.path.to_string(),
             }],
         );
     }
@@ -241,6 +244,7 @@ fn evaluate_with_state(
         new_contributors.push(BehaviorContributor {
             reason: "blocklist_match".to_string(),
             score_delta: thresholds.block_threshold,
+            path: request.path.to_string(),
         });
     }
 
@@ -253,6 +257,7 @@ fn evaluate_with_state(
             timestamp_seconds: now,
             reason: contributor.reason.clone(),
             score_delta: contributor.score_delta,
+            path: contributor.path.clone(),
         });
     }
 
@@ -264,6 +269,7 @@ fn evaluate_with_state(
         .map(|entry| BehaviorContributor {
             reason: entry.reason.clone(),
             score_delta: entry.score_delta,
+            path: entry.path.clone(),
         })
         .collect::<Vec<_>>();
     let score = contributors
@@ -389,7 +395,7 @@ fn contributors_for_request(
     let user_agent = request.user_agent.trim().to_ascii_lowercase();
 
     if user_agent.is_empty() {
-        contributors.push(contributor("missing_user_agent", 20));
+        contributors.push(contributor("missing_user_agent", 20, request.path));
     }
 
     if [
@@ -406,11 +412,13 @@ fn contributors_for_request(
     .iter()
     .any(|needle| user_agent.contains(needle))
     {
-        contributors.push(contributor("automation_user_agent", 20));
+        contributors.push(contributor("automation_user_agent", 20, request.path));
     }
 
-    if path_matches_any(request.path, &config.scanner_paths) {
-        contributors.push(contributor("scanner_path_probe", 25));
+    if path_matches_any(request.path, &config.scanner_paths)
+        && !path_matches_any(request.path, &config.scanner_path_exclusions)
+    {
+        contributors.push(contributor("scanner_path_probe", 25, request.path));
     }
 
     if request.forwarded_headers.enabled
@@ -420,6 +428,7 @@ fn contributors_for_request(
         contributors.push(contributor(
             "insecure_forwarded_proto",
             request.forwarded_headers.insecure_proto_score,
+            request.path,
         ));
     }
 
@@ -450,10 +459,11 @@ fn normalized_header_value<'a>(headers: &'a str, name: &str) -> Option<&'a str> 
     })
 }
 
-fn contributor(reason: &str, score_delta: u16) -> BehaviorContributor {
+fn contributor(reason: &str, score_delta: u16, path: &str) -> BehaviorContributor {
     BehaviorContributor {
         reason: reason.to_string(),
         score_delta,
+        path: path.to_string(),
     }
 }
 
@@ -796,6 +806,33 @@ mod tests {
             .contributors
             .iter()
             .any(|contributor| contributor.reason == "scanner_path_probe"));
+    }
+
+    #[test]
+    fn scanner_path_exclusion_prevents_bot_scoring() {
+        let store = MemoryBotProtectionStore::new();
+        let config = BotProtectionConfig {
+            enabled: true,
+            scanner_paths: vec!["/admin".to_string()],
+            scanner_path_exclusions: vec!["/admin".to_string()],
+            ..BotProtectionConfig::default()
+        };
+
+        let outcome = store
+            .evaluate(
+                &config,
+                test_request(
+                    "203.0.113.10",
+                    "/admin/login/",
+                    "",
+                    "Mozilla/5.0",
+                    WafMode::Block,
+                ),
+            )
+            .unwrap();
+
+        assert_eq!(outcome.score, 0);
+        assert_eq!(outcome.action, WafAction::Allow);
     }
 
     #[test]

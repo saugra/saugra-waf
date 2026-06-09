@@ -64,6 +64,24 @@ impl WafDecision {
         anomaly_threshold: u16,
         blocking_paranoia_level: u8,
     ) -> Self {
+        Self::from_matches_with_blocking_policy(
+            request_id,
+            mode,
+            matches,
+            anomaly_threshold,
+            blocking_paranoia_level,
+            &[],
+        )
+    }
+
+    pub fn from_matches_with_blocking_policy(
+        request_id: String,
+        mode: WafMode,
+        matches: Vec<RuleMatch>,
+        anomaly_threshold: u16,
+        blocking_paranoia_level: u8,
+        non_blocking_match_indices: &[usize],
+    ) -> Self {
         if matches.is_empty() || mode == WafMode::Off {
             return Self {
                 request_id,
@@ -90,12 +108,17 @@ impl WafDecision {
             .sum();
         let blocking_anomaly_score = matches
             .iter()
-            .filter(|rule_match| rule_match.paranoia_level <= blocking_paranoia_level)
-            .map(|rule_match| rule_match.severity.anomaly_points())
+            .enumerate()
+            .filter(|(index, rule_match)| {
+                rule_match.paranoia_level <= blocking_paranoia_level
+                    && !non_blocking_match_indices.contains(index)
+            })
+            .map(|(_, rule_match)| rule_match.severity.anomaly_points())
             .sum();
-        let has_blocking_eligible_match = matches
-            .iter()
-            .any(|rule_match| rule_match.paranoia_level <= blocking_paranoia_level);
+        let has_blocking_eligible_match = matches.iter().enumerate().any(|(index, rule_match)| {
+            rule_match.paranoia_level <= blocking_paranoia_level
+                && !non_blocking_match_indices.contains(&index)
+        });
         let risk_score = matches
             .iter()
             .map(|rule_match| rule_match.severity.risk_score())
@@ -269,6 +292,23 @@ mod tests {
         );
 
         assert_eq!(decision.action, WafAction::Monitor);
+        assert_eq!(decision.blocking_anomaly_score, 0);
+    }
+
+    #[test]
+    fn block_mode_does_not_block_non_blocking_monitor_findings() {
+        let matches = vec![medium_rule_match(), medium_rule_match()];
+        let decision = WafDecision::from_matches_with_blocking_policy(
+            "request-1".to_string(),
+            WafMode::Block,
+            matches,
+            5,
+            1,
+            &[0, 1],
+        );
+
+        assert_eq!(decision.action, WafAction::Monitor);
+        assert_eq!(decision.anomaly_score, 6);
         assert_eq!(decision.blocking_anomaly_score, 0);
     }
 

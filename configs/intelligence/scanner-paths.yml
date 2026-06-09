@@ -7,7 +7,6 @@ behavior_probe_paths:
   - /phpmyadmin
   - /phpMyAdmin
   - /pma
-  - /admin
   - /administrator
   - /manager/html
   - /.git
@@ -50,7 +49,6 @@ bot_scanner_paths:
   - /pma
   - /mysql
   - /adminer.php
-  - /admin
   - /administrator
   - /cpanel
   - /plesk-stat

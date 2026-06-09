@@ -41,15 +41,15 @@ Commit the release changes:
 
 ```bash
 git add Cargo.toml README.md CHANGELOG.md docs/DEBIAN_PACKAGING.md docs/RELEASE_PROCESS.md .github/workflows/release.yml packaging
-git commit -m "Prepare v1.0.6 release"
+git commit -m "Prepare v1.0.7 release"
 ```
 
 Create and push an annotated tag:
 
 ```bash
-git tag -a v1.0.6 -m "Saugra v1.0.6"
+git tag -a v1.0.7 -m "Saugra v1.0.7"
 git push origin main
-git push origin v1.0.6
+git push origin v1.0.7
 ```
 
 The release workflow creates or updates the GitHub Release, generates release

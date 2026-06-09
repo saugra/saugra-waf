@@ -13,8 +13,9 @@ Commands that need configuration choose it in this order:
 3. The installed config at `/etc/saugra-waf/saugra-waf.yml`.
 4. The source-checkout config at `configs/saugra-waf.example.yml`.
 
-Installed deployments can normally omit `--config`. Use the flag or environment
-variable when the active config lives elsewhere.
+Installed deployments should normally omit `--config`. The examples in this
+guide use automatic discovery. Use the flag or environment variable only when
+the active config lives elsewhere.
 
 ## Service Basics
 
@@ -130,7 +131,7 @@ The browser block response uses `reference` as the request ID:
 Use that value with the production config:
 
 ```bash
-saugra-waf explain 40651a2b-057e-41da-a740-23e488ed5752 --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf explain 40651a2b-057e-41da-a740-23e488ed5752
 ```
 
 ## Safe Rollout
@@ -151,7 +152,7 @@ bot_protection:
 Then:
 
 ```bash
-saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf test-config
 systemctl restart saugra-waf
 ```
 
@@ -166,37 +167,37 @@ restart.
 Allow a single IP for the default duration:
 
 ```bash
-saugra-waf allowlist add ip 203.0.113.10 --reason "admin testing" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist add ip 203.0.113.10 --reason "admin testing"
 ```
 
 Allow a single IP for two hours:
 
 ```bash
-saugra-waf allowlist add ip 203.0.113.10 --duration 2h --reason "admin testing" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist add ip 203.0.113.10 --duration 2h --reason "admin testing"
 ```
 
 Allow an office CIDR for 30 minutes:
 
 ```bash
-saugra-waf allowlist add cidr 203.0.113.0/24 --duration 30m --reason "office NAT" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist add cidr 203.0.113.0/24 --duration 30m --reason "office NAT"
 ```
 
 List runtime policy entries:
 
 ```bash
-saugra-waf allowlist list --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist list
 ```
 
 Remove an entry by ID:
 
 ```bash
-saugra-waf allowlist remove <entry-id> --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist remove <entry-id>
 ```
 
 Remove expired entries:
 
 ```bash
-saugra-waf allowlist prune --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist prune
 ```
 
 Runtime allowlist behavior is controlled by:
@@ -225,19 +226,19 @@ Runtime blocking also reloads without restarting Saugra.
 Block an IP for two hours:
 
 ```bash
-saugra-waf allowlist block add 198.51.100.44 --duration 2h --reason "active scanner" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist block add 198.51.100.44 --duration 2h --reason "active scanner"
 ```
 
 Block a CIDR:
 
 ```bash
-saugra-waf allowlist block add 198.51.100.0/24 --duration 30m --reason "scanner burst" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist block add 198.51.100.0/24 --duration 30m --reason "scanner burst"
 ```
 
 Use `saugra-waf allowlist list` to find the entry ID, then remove it with:
 
 ```bash
-saugra-waf allowlist remove <entry-id> --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist remove <entry-id>
 ```
 
 ## Local State Reset
@@ -246,8 +247,8 @@ When a single trusted client accumulates behavior or bot state during rollout,
 reset only that client instead of deleting the full state file:
 
 ```bash
-saugra-waf state reset behavior 203.0.113.10 --config /etc/saugra-waf/saugra-waf.yml
-saugra-waf state reset bot 203.0.113.10 --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf state reset behavior 203.0.113.10
+saugra-waf state reset bot 203.0.113.10
 ```
 
 This is for local behavior and bot-protection state. It does not remove durable
@@ -258,13 +259,13 @@ security events from `/var/log/saugra-waf/saugra-waf-events.jsonl`.
 Generate a local summary over the configured lookback window and print JSON:
 
 ```bash
-saugra-waf summary daily --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf summary daily
 ```
 
 Write the summary through configured delivery channels:
 
 ```bash
-saugra-waf summary send --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf summary send
 ```
 
 The stable default is file output:
@@ -305,7 +306,7 @@ Description=Saugra daily security summary
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/saugra-waf summary send --config /etc/saugra-waf/saugra-waf.yml
+ExecStart=/usr/bin/saugra-waf summary send
 User=saugra-waf
 Group=saugra-waf
 ```
@@ -350,13 +351,13 @@ directories you opt in.
 Start with a dry run:
 
 ```bash
-saugra-waf cleanup run --dry-run --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf cleanup run --dry-run
 ```
 
 After reviewing the JSON report, allow deletion:
 
 ```bash
-saugra-waf cleanup run --execute --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf cleanup run --execute
 ```
 
 Example policy:
@@ -402,7 +403,7 @@ Description=Saugra stale file cleanup
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/saugra-waf cleanup run --execute --config /etc/saugra-waf/saugra-waf.yml
+ExecStart=/usr/bin/saugra-waf cleanup run --execute
 User=saugra-waf
 Group=saugra-waf
 ```
@@ -440,22 +441,46 @@ understood.
 2. Explain the decision:
 
 ```bash
-saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf explain <request-id>
 ```
 
 3. If the finding is bot or behavior scoring, add a short runtime allowlist
    entry for the affected trusted IP:
 
 ```bash
-saugra-waf allowlist add ip 203.0.113.10 --duration 2h --reason "false positive triage" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist add ip 203.0.113.10 --duration 2h --reason "false positive triage"
 ```
 
-4. If a deterministic rule is noisy for a valid route or parameter, keep the
-   server in monitor mode or add a scoped `rules.exclusions` entry after review.
-5. Validate and restart only when changing YAML config:
+4. Reset accumulated bot and behavior state after confirming the traffic is
+   legitimate:
 
 ```bash
-saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf state reset bot 203.0.113.10
+saugra-waf state reset behavior 203.0.113.10
+```
+
+5. If a legitimate application route overlaps a scanner-path entry, add narrow
+   path exclusions:
+
+```yaml
+behavior:
+  probe_path_exclusions:
+    - /admin
+
+bot_protection:
+  scanner_path_exclusions:
+    - /admin
+```
+
+   Keep specific high-confidence paths such as `/wp-admin`, `/phpmyadmin`, and
+   `/adminer.php`. The bundled catalog intentionally does not classify the
+   generic `/admin` prefix as a scanner path.
+6. If a deterministic rule is noisy for a valid route or parameter, keep the
+   server in monitor mode or add a scoped `rules.exclusions` entry after review.
+7. Validate and restart only when changing YAML config:
+
+```bash
+saugra-waf test-config
 systemctl restart saugra-waf
 ```
 
@@ -478,7 +503,7 @@ For TLS-terminating Nginx, set the HTTPS server block to send
 or wait for `bot_protection.score_window` to expire:
 
 ```bash
-saugra-waf state reset bot 203.0.113.10 --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf state reset bot 203.0.113.10
 ```
 
 ### Scanner Bursts
@@ -486,19 +511,19 @@ saugra-waf state reset bot 203.0.113.10 --config /etc/saugra-waf/saugra-waf.yml
 1. Summarize recent events and identify top IPs, paths, and rule IDs:
 
 ```bash
-saugra-waf logs summary --config /etc/saugra-waf/saugra-waf.yml --limit 500
+saugra-waf logs summary --limit 500
 ```
 
 2. Explain a representative blocked or monitored request:
 
 ```bash
-saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf explain <request-id>
 ```
 
 3. Temporarily block clear abusive IPs or CIDRs:
 
 ```bash
-saugra-waf allowlist block add 198.51.100.44 --duration 2h --reason "scanner burst" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist block add 198.51.100.44 --duration 2h --reason "scanner burst"
 ```
 
 4. Check route-specific rate limits for login, signup, search, and expensive
@@ -564,8 +589,8 @@ instances.
 4. Tail events and explain a monitored or blocked handshake:
 
 ```bash
-saugra-waf logs tail --config /etc/saugra-waf/saugra-waf.yml --limit 20
-saugra-waf explain <request-id> --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf logs tail --limit 20
+saugra-waf explain <request-id>
 ```
 
 5. For Nginx, preserve upgrade headers:
@@ -582,7 +607,7 @@ proxy_set_header Connection $saugra_waf_connection_upgrade;
 Run:
 
 ```bash
-saugra-waf explain <reference> --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf explain <reference>
 ```
 
 If the reason is bot or behavior scoring during rollout, add a short-lived
@@ -593,7 +618,7 @@ runtime allowlist entry or switch bot/behavior back to monitor mode.
 Add your public IP:
 
 ```bash
-saugra-waf allowlist add ip YOUR_PUBLIC_IP --duration 2h --reason "admin recovery" --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf allowlist add ip YOUR_PUBLIC_IP --duration 2h --reason "admin recovery"
 ```
 
 If deterministic WAF rules are also blocking your verification traffic, set:
@@ -606,7 +631,7 @@ runtime_policy:
 Then validate and restart once for the config change:
 
 ```bash
-saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf test-config
 systemctl restart saugra-waf
 ```
 
@@ -617,7 +642,7 @@ The allowlist entries themselves still reload without restart after that.
 Test in this order:
 
 ```bash
-saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf test-config
 curl -i http://127.0.0.1:8787/_saugra-waf/health
 curl -i -H "Host: example.com" http://127.0.0.1:8000/
 curl -i -H "Host: example.com" http://127.0.0.1:8787/
@@ -635,7 +660,7 @@ Production configs normally use Redis-backed rate limiting:
 ```bash
 systemctl status redis-server --no-pager
 systemctl restart redis-server
-saugra-waf test-config --config /etc/saugra-waf/saugra-waf.yml
+saugra-waf test-config
 systemctl restart saugra-waf
 ```
 

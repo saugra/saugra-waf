@@ -116,6 +116,8 @@ behavior:
   probe_path_catalog: builtin
   # Extra app-specific probe paths are merged with the selected catalog.
   probe_paths_extra: []
+  # Exclude legitimate application routes from scanner-path behavior scoring.
+  probe_path_exclusions: []
 
 # Bot protection scores scanner-like behavior, blocklists, and suspicious
 # automation signals. Enable in monitor mode first, then tune thresholds.
@@ -150,6 +152,8 @@ bot_protection:
   scanner_path_catalog: builtin
   # Extra app-specific scanner paths are merged with the selected catalog.
   scanner_paths_extra: []
+  # Exclude legitimate application routes from bot scanner-path scoring.
+  scanner_path_exclusions: []
   rule:
     id: SAUGRA-BOT-PROTECTION-001
     name: Bot Protection Threshold

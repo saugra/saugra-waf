@@ -57,7 +57,7 @@ are handled correctly:
 
 ```bash
 cd /opt
-sudo apt install ./saugra-waf_1.0.6-1_amd64.deb
+sudo apt install ./saugra-waf_1.0.7-1_amd64.deb
 ```
 
 The package installs:

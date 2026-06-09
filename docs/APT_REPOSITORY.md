@@ -149,9 +149,9 @@ systemctl status saugra-waf
 9. Tag and publish the GitHub Release:
 
 ```bash
-git tag -a v1.0.6 -m "Saugra v1.0.6"
+git tag -a v1.0.7 -m "Saugra v1.0.7"
 git push origin main
-git push origin v1.0.6
+git push origin v1.0.7
 ```
 
 10. Release CI publishes the signed APT repository to GitHub Pages.

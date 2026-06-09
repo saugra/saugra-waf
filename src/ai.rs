@@ -20,8 +20,9 @@ pub fn explain(decision: &WafDecision) -> String {
                 bot_protection.monitor_threshold,
                 bot_protection.score,
                 bot_protection.block_threshold,
-                bot_protection.contributors.len()
-            ) + &allowlist_context;
+                bot_protection.contributors.len(),
+            ) + &contributor_path_context(&bot_protection.contributors)
+                + &allowlist_context;
         }
         if let Some(behavior) = &decision.behavior {
             return format!(
@@ -30,7 +31,8 @@ pub fn explain(decision: &WafDecision) -> String {
                 behavior.monitor_threshold,
                 behavior.score,
                 behavior.block_threshold
-            ) + &allowlist_context;
+            ) + &contributor_path_context(&behavior.contributors)
+                + &allowlist_context;
         }
         return "No rules matched this request, so Saugra allowed it.".to_string()
             + &allowlist_context;
@@ -57,7 +59,7 @@ pub fn explain(decision: &WafDecision) -> String {
                 behavior.score,
                 behavior.block_threshold,
                 behavior.contributors.len()
-            )
+            ) + &contributor_path_context(&behavior.contributors)
         })
         .unwrap_or_default();
     let bot_context = decision
@@ -71,22 +73,40 @@ pub fn explain(decision: &WafDecision) -> String {
                 bot_protection.score,
                 bot_protection.block_threshold,
                 bot_protection.contributors.len()
-            )
+            ) + &contributor_path_context(&bot_protection.contributors)
         })
         .unwrap_or_default();
 
     format!(
-        "This request was flagged because {} matched rule {} ({}) with {} severity. {} Anomaly score is {}/{}.",
+        "This request was flagged because {} matched rule {} ({}) with {} severity. {} Anomaly score is {}/{}; blocking-eligible score is {}/{}.",
         rule.matched_target,
         rule.rule_id,
         rule.rule_name,
         rule.severity,
         owasp_context,
         decision.anomaly_score,
+        decision.anomaly_threshold,
+        decision.blocking_anomaly_score,
         decision.anomaly_threshold
     ) + &behavior_context
         + &bot_context
         + &allowlist_context
+}
+
+fn contributor_path_context(contributors: &[crate::behavior::BehaviorContributor]) -> String {
+    let mut paths = contributors
+        .iter()
+        .map(|contributor| contributor.path.as_str())
+        .filter(|path| !path.is_empty())
+        .collect::<Vec<_>>();
+    paths.sort_unstable();
+    paths.dedup();
+
+    if paths.is_empty() {
+        String::new()
+    } else {
+        format!(" Contributor paths: {}.", paths.join(", "))
+    }
 }
 
 #[cfg(test)]
@@ -147,7 +167,7 @@ mod tests {
         let explanation = explain(&decision);
 
         assert!(explanation.contains("No rules matched this request"));
-        assert!(explanation.contains("Runtime allowlist entry admin-ip matched 203.0.113.10"));
+        assert!(explanation.contains("Runtime allowlist entry test-ip matched 203.0.113.10"));
         assert!(explanation.contains("AllowAll"));
     }
 
@@ -164,6 +184,7 @@ mod tests {
             explanation.contains("Bot protection score is 80/40 for monitor and 80/80 for block")
         );
         assert!(explanation.contains("with 2 contributor(s)"));
+        assert!(explanation.contains("Contributor paths: /.env, /protected-area/sign-in/"));
     }
 
     #[test]
@@ -219,7 +240,7 @@ mod tests {
         assert!(explanation.contains(
             "Bot protection score is 80/40 for monitor and 80/80 for block with 2 contributor(s)."
         ));
-        assert!(explanation.contains("Runtime allowlist entry admin-ip matched 203.0.113.10"));
+        assert!(explanation.contains("Runtime allowlist entry test-ip matched 203.0.113.10"));
         assert!(explanation.contains("SkipBotAndBehaviorBlock"));
     }
 
@@ -272,17 +293,19 @@ mod tests {
             BehaviorContributor {
                 reason: "scanner_path".to_string(),
                 score_delta: 40,
+                path: "/.env".to_string(),
             },
             BehaviorContributor {
                 reason: "rule_match:bot_protection".to_string(),
                 score_delta: 40,
+                path: "/protected-area/sign-in/".to_string(),
             },
         ]
     }
 
     fn runtime_allowlist_match(effect: RuntimeAllowlistEffect) -> RuntimeAllowlistMatch {
         RuntimeAllowlistMatch {
-            id: "admin-ip".to_string(),
+            id: "test-ip".to_string(),
             match_type: "ip".to_string(),
             value: "203.0.113.10".to_string(),
             effect,

@@ -475,6 +475,13 @@ rules:
 Global exclusions reduce protection across the whole application. Use them only
 when the rule is intentionally disabled everywhere.
 
+Bot and behavior threshold findings produced in monitor mode remain visible in
+events and explanations, but do not contribute to the blocking anomaly score.
+For scanner-path false positives, use an operator-managed threat-path catalog
+or configure `behavior.probe_path_exclusions` and
+`bot_protection.scanner_path_exclusions` for legitimate routes. Avoid weakening
+unrelated deterministic attack rules or raising the global anomaly threshold.
+
 ## Licensing
 
 Saugra WAF Community Edition is licensed under the [GNU Affero General Public

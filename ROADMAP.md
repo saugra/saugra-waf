@@ -49,9 +49,8 @@ cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 Current test status:
 
 ```txt
-176 tests expected in a normal local/CI environment.
-Current sandbox verification: 174 passed; 2 WebSocket raw-socket tests blocked
-by loopback bind permissions.
+212 tests pass in a normal local/CI environment, including the two WebSocket
+raw-socket tunnel tests.
 ```
 
 ## Production-Ready Product Principle

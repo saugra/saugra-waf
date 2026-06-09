@@ -4,6 +4,31 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.0.7 - 2026-06-09
+
+### Added
+
+- Add `behavior.probe_path_exclusions` and
+  `bot_protection.scanner_path_exclusions` for narrowly tuning legitimate
+  application routes without weakening deterministic attack rules.
+- Record contributor paths in behavior and bot state, security events, and
+  explanations while preserving compatibility with existing local state files.
+
+### Fixed
+
+- Prevent monitor-only bot and behavior threshold findings from contributing to
+  the blocking anomaly score.
+- Stop behavior scoring from counting the synthetic bot threshold finding a
+  second time.
+- Remove the overly broad `/admin` prefix from the bundled scanner-path catalog.
+- Clarify explanations by reporting both total anomaly score and
+  blocking-eligible score.
+
+### Changed
+
+- Update the admin runbook to use installed configuration discovery by default
+  and reserve `--config` for explicit overrides.
+
 ### Documentation
 
 - Document the live signed Ubuntu/Debian APT repository as the recommended
@@ -11,6 +36,14 @@ All notable changes to Saugra are documented here.
 - Record the public APT repository signing-key fingerprint.
 - Add the GitHub Pages, deployment-tag rule, signing-key secret, and release-tag
   setup procedure to the README.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo check --locked --all-targets --all-features`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- 179 library tests, 8 CLI tests, and 25 proxy integration tests pass,
+  including both raw-socket WebSocket tunnel tests.
 
 ## 1.0.6 - 2026-06-07
 

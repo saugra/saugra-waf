@@ -361,6 +361,8 @@ pub struct BehaviorConfig {
     pub probe_paths: Vec<String>,
     #[serde(default)]
     pub probe_paths_extra: Vec<String>,
+    #[serde(default)]
+    pub probe_path_exclusions: Vec<String>,
 }
 
 impl Default for BehaviorConfig {
@@ -379,6 +381,7 @@ impl Default for BehaviorConfig {
             probe_path_catalog: None,
             probe_paths: default_probe_paths(),
             probe_paths_extra: Vec::new(),
+            probe_path_exclusions: Vec::new(),
         }
     }
 }
@@ -598,6 +601,8 @@ pub struct BotProtectionConfig {
     #[serde(default)]
     pub scanner_paths_extra: Vec<String>,
     #[serde(default)]
+    pub scanner_path_exclusions: Vec<String>,
+    #[serde(default)]
     pub rule: BotProtectionRuleConfig,
 }
 
@@ -618,6 +623,7 @@ impl Default for BotProtectionConfig {
             scanner_path_catalog: None,
             scanner_paths: default_scanner_paths(),
             scanner_paths_extra: Vec::new(),
+            scanner_path_exclusions: Vec::new(),
             rule: BotProtectionRuleConfig::default(),
         }
     }
@@ -1290,6 +1296,7 @@ impl SaugraConfig {
             .probe_paths
             .iter()
             .chain(self.behavior.probe_paths_extra.iter())
+            .chain(self.behavior.probe_path_exclusions.iter())
             .any(|path| path.trim().is_empty())
         {
             return Err(ConfigError::InvalidBehaviorProbePath);
@@ -1351,6 +1358,7 @@ impl SaugraConfig {
             .scanner_paths
             .iter()
             .chain(self.bot_protection.scanner_paths_extra.iter())
+            .chain(self.bot_protection.scanner_path_exclusions.iter())
             .any(|path| path.trim().is_empty())
         {
             return Err(ConfigError::InvalidBotProtectionScannerPath);

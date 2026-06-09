@@ -34,6 +34,8 @@ pub struct BehaviorOutcome {
 pub struct BehaviorContributor {
     pub reason: String,
     pub score_delta: u16,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub path: String,
 }
 
 #[derive(Debug, Clone)]
@@ -67,6 +69,8 @@ struct BehaviorEntry {
     timestamp_seconds: u64,
     reason: String,
     score_delta: u16,
+    #[serde(default)]
+    path: String,
 }
 
 #[derive(Debug)]
@@ -162,7 +166,16 @@ pub fn behavior_rule_match(outcome: &BehaviorOutcome) -> Option<RuleMatch> {
         outcome
             .contributors
             .iter()
-            .map(|contributor| format!("{} (+{})", contributor.reason, contributor.score_delta))
+            .map(|contributor| {
+                if contributor.path.is_empty() {
+                    format!("{} (+{})", contributor.reason, contributor.score_delta)
+                } else {
+                    format!(
+                        "{} at {} (+{})",
+                        contributor.reason, contributor.path, contributor.score_delta
+                    )
+                }
+            })
             .collect::<Vec<_>>()
             .join(", ")
     };
@@ -212,6 +225,7 @@ fn evaluate_with_state(
             timestamp_seconds: now,
             reason: contributor.reason.clone(),
             score_delta: contributor.score_delta,
+            path: contributor.path.clone(),
         });
     }
 
@@ -223,6 +237,7 @@ fn evaluate_with_state(
         .map(|entry| BehaviorContributor {
             reason: entry.reason.clone(),
             score_delta: entry.score_delta,
+            path: entry.path.clone(),
         })
         .collect::<Vec<_>>();
     let score = contributors
@@ -307,10 +322,13 @@ fn contributors_for_request(
 ) -> Vec<BehaviorContributor> {
     let mut contributors = Vec::new();
 
-    if path_matches_any(request.path, &config.probe_paths) {
+    if path_matches_any(request.path, &config.probe_paths)
+        && !path_matches_any(request.path, &config.probe_path_exclusions)
+    {
         contributors.push(BehaviorContributor {
             reason: "scanner_path_probe".to_string(),
             score_delta: 15,
+            path: request.path.to_string(),
         });
     }
 
@@ -320,6 +338,7 @@ fn contributors_for_request(
         contributors.push(BehaviorContributor {
             reason: format!("rule_match:{}", rule_match.category),
             score_delta,
+            path: request.path.to_string(),
         });
     }
 
@@ -668,6 +687,32 @@ mod tests {
     }
 
     #[test]
+    fn probe_path_exclusion_prevents_behavior_scoring() {
+        let store = MemoryBehaviorStore::new();
+        let config = BehaviorConfig {
+            enabled: true,
+            probe_paths: vec!["/admin".to_string()],
+            probe_path_exclusions: vec!["/admin".to_string()],
+            ..BehaviorConfig::default()
+        };
+
+        let outcome = store
+            .evaluate(
+                &config,
+                BehaviorRequest {
+                    client_id: "203.0.113.10",
+                    path: "/admin/login/",
+                    rule_matches: &[],
+                    server_mode: WafMode::Block,
+                },
+            )
+            .unwrap();
+
+        assert_eq!(outcome.score, 0);
+        assert_eq!(outcome.action, WafAction::Allow);
+    }
+
+    #[test]
     fn score_window_ignores_expired_entries() {
         let mut state = BehaviorState::default();
         state.clients.insert(
@@ -677,6 +722,7 @@ mod tests {
                     timestamp_seconds: unix_seconds_now().saturating_sub(120),
                     reason: "scanner_path_probe".to_string(),
                     score_delta: 50,
+                    path: "/old-probe".to_string(),
                 }],
             },
         );

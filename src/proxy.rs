@@ -899,6 +899,8 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
         user_agent,
         trusted_forwarded_headers,
     } = request;
+    let deterministic_matches = matches.clone();
+    let mut non_blocking_match_indices = Vec::new();
 
     if let Some(runtime_blocklist) = state.runtime_policy.match_blocked_ip(client_ip) {
         let mut decision = WafDecision::from_matches_with_blocking_paranoia(
@@ -962,6 +964,9 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
 
     if let Some(outcome) = &bot_outcome {
         if let Some(rule_match) = bot::bot_rule_match(&state.config.bot_protection, outcome) {
+            if outcome.action == WafAction::Monitor {
+                non_blocking_match_indices.push(matches.len());
+            }
             matches.push(rule_match);
         }
     }
@@ -972,7 +977,7 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
             BehaviorRequest {
                 client_id: client_ip,
                 path,
-                rule_matches: &matches,
+                rule_matches: &deterministic_matches,
                 server_mode: state.config.server.mode,
             },
         ) {
@@ -988,6 +993,9 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
 
     if let Some(outcome) = &behavior_outcome {
         if let Some(rule_match) = behavior::behavior_rule_match(outcome) {
+            if outcome.action == WafAction::Monitor {
+                non_blocking_match_indices.push(matches.len());
+            }
             matches.push(rule_match);
         }
     }
@@ -997,12 +1005,13 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
     } else {
         state.config.server.mode
     };
-    let decision = WafDecision::from_matches_with_blocking_paranoia(
+    let decision = WafDecision::from_matches_with_blocking_policy(
         request_id,
         decision_mode,
         matches,
         state.config.rules.inbound_anomaly_threshold,
         state.config.rules.blocking_paranoia_level(),
+        &non_blocking_match_indices,
     );
 
     let mut decision = if let Some(outcome) = behavior_outcome {
