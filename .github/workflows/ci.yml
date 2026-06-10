@@ -11,6 +11,27 @@ permissions:
   contents: read
 
 jobs:
+  docs:
+    name: Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: docs/requirements.txt
+
+      - name: Install documentation dependencies
+        run: pip install --requirement docs/requirements.txt
+
+      - name: Build documentation
+        run: mkdocs build --strict
+
   test:
     name: Rust
     runs-on: ubuntu-latest

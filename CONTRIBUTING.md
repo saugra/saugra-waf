@@ -137,6 +137,21 @@ You can list rules configured in the rulepack files with:
 cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 ```
 
+### 6. Building Documentation
+
+Documentation is built with MkDocs and published through Read the Docs. Install
+the pinned documentation dependencies in a virtual environment, then run the
+strict build:
+
+```bash
+python3 -m venv .venv-docs
+.venv-docs/bin/pip install --requirement docs/requirements.txt
+.venv-docs/bin/mkdocs build --strict
+```
+
+The strict build must pass before documentation changes are submitted. It
+checks the site configuration, navigation, and internal links.
+
 ---
 
 ## Contributing Rules
