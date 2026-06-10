@@ -63,8 +63,8 @@ Use short expirations and explicit reasons for temporary exceptions. Runtime
 policy is security-sensitive state; protect its file permissions and include
 changes in operational review.
 
-See the [administration guide](../ADMIN_GUIDE.md) for incident procedures and
-the [runtime allowlist design](../RUNTIME_ALLOWLIST.md) for policy semantics.
+See the [administration guide](../ADMIN_GUIDE.md#runtime-allowlisting) for
+runtime policy semantics and incident procedures.
 
 ## Reports and Maintenance
 

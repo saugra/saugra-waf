@@ -8,6 +8,16 @@ copyright: Copyright &copy; Saugra contributors
 
 docs_dir: docs
 
+exclude_docs: |
+  APT_REPOSITORY.md
+  ARCHITECTURE.md
+  CRS_IMPORT.md
+  DEBIAN_PACKAGING.md
+  OFFICIAL_DEBIAN_RELEASE.md
+  PRODUCT_SPEC.md
+  RELEASE_PROCESS.md
+  RUNTIME_ALLOWLIST.md
+
 theme:
   name: material
   logo: img/saugra-waf-logo.jpeg
@@ -49,20 +59,10 @@ nav:
   - Reference:
       - Configuration: reference/configuration.md
       - CLI: reference/cli.md
-      - Runtime Allowlisting: RUNTIME_ALLOWLIST.md
-      - CRS Import: CRS_IMPORT.md
   - Security:
       - Security Model: security/security-model.md
-      - OWASP Top 10 Strategy: OWASP_TOP_10_STRATEGY.md
-  - Architecture:
-      - Technical Architecture: ARCHITECTURE.md
-      - Product Specification: PRODUCT_SPEC.md
-  - Packaging and Releases:
-      - Debian Packaging: DEBIAN_PACKAGING.md
-      - APT Repository: APT_REPOSITORY.md
-      - Official Debian Plan: OFFICIAL_DEBIAN_RELEASE.md
-      - Release Process: RELEASE_PROCESS.md
-  - Project:
+      - OWASP Coverage: OWASP_TOP_10_STRATEGY.md
+  - About:
       - Licensing: LICENSING.md
 
 markdown_extensions:

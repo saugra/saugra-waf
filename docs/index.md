@@ -68,9 +68,7 @@ traffic and security events before enabling blocking.
 | Understand every major YAML section | [Configuration reference](reference/configuration.md) |
 | Find a command | [CLI reference](reference/cli.md) |
 | Run and troubleshoot a server | [Administration guide](ADMIN_GUIDE.md) |
-| Understand the request lifecycle | [Architecture](ARCHITECTURE.md) |
 | Review OWASP coverage | [OWASP Top 10 strategy](OWASP_TOP_10_STRATEGY.md) |
-| Build or publish packages | [Debian packaging](DEBIAN_PACKAGING.md) |
 
 ## Current Scope
 
