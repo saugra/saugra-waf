@@ -353,6 +353,7 @@ mod tests {
             rate_limit: RateLimitConfig::default(),
             rules: RuleSettings::default(),
             behavior: Default::default(),
+            unknown_threats: Default::default(),
             bot_protection: Default::default(),
             runtime_policy: Default::default(),
             ai: AiConfig::default(),

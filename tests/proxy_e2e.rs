@@ -1213,6 +1213,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
             backend: BehaviorBackend::Memory,
             ..BehaviorConfig::default()
         },
+        unknown_threats: Default::default(),
         bot_protection: BotProtectionConfig {
             backend: BehaviorBackend::Memory,
             ..BotProtectionConfig::default()

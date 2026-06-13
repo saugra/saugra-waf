@@ -64,6 +64,14 @@ pub enum ConfigError {
     InvalidBehaviorProbePathCatalog,
     #[error("behavior.probe_paths entries must not be blank")]
     InvalidBehaviorProbePath,
+    #[error("unknown_threats.state_path must not be blank when unknown_threats.backend is local")]
+    InvalidUnknownThreatStatePath,
+    #[error("unknown_threats.minimum_observations must be greater than zero")]
+    InvalidUnknownThreatMinimumObservations,
+    #[error("unknown_threats.monitor_threshold must be greater than zero")]
+    InvalidUnknownThreatMonitorThreshold,
+    #[error("unknown_threats.body_size_multiplier must be at least 2")]
+    InvalidUnknownThreatBodySizeMultiplier,
     #[error("bot_protection.score_window must be a positive duration, for example 10m")]
     InvalidBotProtectionScoreWindow,
     #[error(
@@ -181,6 +189,8 @@ pub struct SaugraConfig {
     pub rate_limit: RateLimitConfig,
     #[serde(default)]
     pub behavior: BehaviorConfig,
+    #[serde(default)]
+    pub unknown_threats: UnknownThreatConfig,
     #[serde(default)]
     pub bot_protection: BotProtectionConfig,
     #[serde(default)]
@@ -401,6 +411,47 @@ pub enum BehaviorBackend {
     Memory,
     #[default]
     Local,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UnknownThreatConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub backend: BehaviorBackend,
+    #[serde(default = "default_unknown_threat_state_path")]
+    pub state_path: PathBuf,
+    #[serde(default = "default_unknown_threat_minimum_observations")]
+    pub minimum_observations: u64,
+    #[serde(default = "default_unknown_threat_monitor_threshold")]
+    pub monitor_threshold: u16,
+    #[serde(default = "default_unknown_threat_unseen_method_score")]
+    pub unseen_method_score: u16,
+    #[serde(default = "default_unknown_threat_unseen_content_type_score")]
+    pub unseen_content_type_score: u16,
+    #[serde(default = "default_unknown_threat_unseen_query_parameter_score")]
+    pub unseen_query_parameter_score: u16,
+    #[serde(default = "default_unknown_threat_body_size_multiplier")]
+    pub body_size_multiplier: u16,
+    #[serde(default = "default_unknown_threat_body_size_score")]
+    pub body_size_score: u16,
+}
+
+impl Default for UnknownThreatConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            backend: BehaviorBackend::Local,
+            state_path: default_unknown_threat_state_path(),
+            minimum_observations: default_unknown_threat_minimum_observations(),
+            monitor_threshold: default_unknown_threat_monitor_threshold(),
+            unseen_method_score: default_unknown_threat_unseen_method_score(),
+            unseen_content_type_score: default_unknown_threat_unseen_content_type_score(),
+            unseen_query_parameter_score: default_unknown_threat_unseen_query_parameter_score(),
+            body_size_multiplier: default_unknown_threat_body_size_multiplier(),
+            body_size_score: default_unknown_threat_body_size_score(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -938,6 +989,8 @@ impl SaugraConfig {
             }
         }
 
+        self.validate_unknown_threats()?;
+
         if self.rate_limit.backend == RateLimitBackend::Redis
             && self
                 .rate_limit
@@ -1305,6 +1358,25 @@ impl SaugraConfig {
         Ok(())
     }
 
+    fn validate_unknown_threats(&self) -> Result<(), ConfigError> {
+        if self.unknown_threats.backend == BehaviorBackend::Local
+            && self.unknown_threats.state_path.as_os_str().is_empty()
+        {
+            return Err(ConfigError::InvalidUnknownThreatStatePath);
+        }
+        if self.unknown_threats.minimum_observations == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMinimumObservations);
+        }
+        if self.unknown_threats.monitor_threshold == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMonitorThreshold);
+        }
+        if self.unknown_threats.body_size_multiplier < 2 {
+            return Err(ConfigError::InvalidUnknownThreatBodySizeMultiplier);
+        }
+
+        Ok(())
+    }
+
     fn validate_bot_protection(&self) -> Result<(), ConfigError> {
         if parse_duration_seconds(&self.bot_protection.score_window).is_none() {
             return Err(ConfigError::InvalidBotProtectionScoreWindow);
@@ -1425,7 +1497,7 @@ impl SaugraConfig {
             .join(",");
 
         format!(
-            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, behavior_enabled={}, behavior_mode={:?}, behavior_backend={:?}, behavior_state_path={}, behavior_score_window={}, behavior_decay_window={}, behavior_monitor_threshold={}, behavior_block_threshold={}, behavior_route_overrides={}, behavior_category_overrides={}, bot_protection_enabled={}, bot_protection_mode={:?}, bot_protection_backend={:?}, bot_protection_state_path={}, bot_protection_monitor_threshold={}, bot_protection_block_threshold={}, bot_protection_routes={}, runtime_policy_enabled={}, runtime_policy_path={}, runtime_policy_reload_interval={}, runtime_policy_allowlist_effect={:?}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
+            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, behavior_enabled={}, behavior_mode={:?}, behavior_backend={:?}, behavior_state_path={}, behavior_score_window={}, behavior_decay_window={}, behavior_monitor_threshold={}, behavior_block_threshold={}, behavior_route_overrides={}, behavior_category_overrides={}, unknown_threats_enabled={}, unknown_threats_backend={:?}, unknown_threats_state_path={}, unknown_threats_minimum_observations={}, unknown_threats_monitor_threshold={}, bot_protection_enabled={}, bot_protection_mode={:?}, bot_protection_backend={:?}, bot_protection_state_path={}, bot_protection_monitor_threshold={}, bot_protection_block_threshold={}, bot_protection_routes={}, runtime_policy_enabled={}, runtime_policy_path={}, runtime_policy_reload_interval={}, runtime_policy_allowlist_effect={:?}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
             self.server.listen,
             self.server.mode,
             upstreams,
@@ -1446,6 +1518,11 @@ impl SaugraConfig {
             self.behavior.block_threshold,
             self.behavior.route_overrides.len(),
             self.behavior.category_overrides.len(),
+            self.unknown_threats.enabled,
+            self.unknown_threats.backend,
+            self.unknown_threats.state_path.display(),
+            self.unknown_threats.minimum_observations,
+            self.unknown_threats.monitor_threshold,
             self.bot_protection.enabled,
             self.bot_protection.mode,
             self.bot_protection.backend,
@@ -1669,6 +1746,38 @@ fn default_behavior_score_window() -> String {
 
 fn default_behavior_state_path() -> PathBuf {
     PathBuf::from("logs/saugra-waf-behavior-state.json")
+}
+
+fn default_unknown_threat_state_path() -> PathBuf {
+    PathBuf::from("logs/saugra-waf-unknown-threat-state.json")
+}
+
+fn default_unknown_threat_minimum_observations() -> u64 {
+    100
+}
+
+fn default_unknown_threat_monitor_threshold() -> u16 {
+    20
+}
+
+fn default_unknown_threat_unseen_method_score() -> u16 {
+    20
+}
+
+fn default_unknown_threat_unseen_content_type_score() -> u16 {
+    15
+}
+
+fn default_unknown_threat_unseen_query_parameter_score() -> u16 {
+    10
+}
+
+fn default_unknown_threat_body_size_multiplier() -> u16 {
+    4
+}
+
+fn default_unknown_threat_body_size_score() -> u16 {
+    15
 }
 
 fn default_bot_protection_state_path() -> PathBuf {
@@ -2496,6 +2605,48 @@ upstreams:
         assert_eq!(config.behavior.monitor_threshold, 40);
         assert_eq!(config.behavior.block_threshold, 80);
         assert!(config.behavior.probe_paths.contains(&"/.env".to_string()));
+    }
+
+    #[test]
+    fn unknown_threat_config_defaults_to_disabled_monitoring() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert!(!config.unknown_threats.enabled);
+        assert_eq!(config.unknown_threats.minimum_observations, 100);
+        assert_eq!(config.unknown_threats.monitor_threshold, 20);
+    }
+
+    #[test]
+    fn rejects_unsafe_unknown_threat_learning_values() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  minimum_observations: 0
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidUnknownThreatMinimumObservations)
+        ));
     }
 
     #[test]

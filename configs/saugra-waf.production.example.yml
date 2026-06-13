@@ -119,6 +119,21 @@ behavior:
   # Exclude legitimate application routes from scanner-path behavior scoring.
   probe_path_exclusions: []
 
+# Unknown-threat analysis is monitor-only in this release. Keep the state on
+# persistent storage. Multi-instance deployments should leave this disabled
+# until a shared baseline backend is configured in a future release.
+unknown_threats:
+  enabled: false
+  backend: local
+  state_path: /var/lib/saugra-waf/saugra-waf-unknown-threat-state.json
+  minimum_observations: 100
+  monitor_threshold: 20
+  unseen_method_score: 20
+  unseen_content_type_score: 15
+  unseen_query_parameter_score: 10
+  body_size_multiplier: 4
+  body_size_score: 15
+
 # Bot protection scores scanner-like behavior, blocklists, and suspicious
 # automation signals. Enable in monitor mode first, then tune thresholds.
 bot_protection:

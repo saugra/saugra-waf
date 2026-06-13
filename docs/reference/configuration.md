@@ -32,6 +32,7 @@ The repository ships two maintained examples:
 | `rate_limit` | Backend, global limits, bursts, and route limits |
 | `rules` | Rule packs, exclusions, and rule-engine settings |
 | `behavior` | Repeated suspicious activity scoring |
+| `unknown_threats` | Monitor-only route request-shape baselines |
 | `bot_protection` | Bot and scanner scoring policy |
 | `runtime_policy` | Reloadable allowlist and blocklist behavior |
 | `standards` | Security-standard catalogs and mappings |
@@ -84,6 +85,19 @@ rate_limit:
 
 Security events must use bounded, queryable storage. Configure the JSONL event
 path, rotation size, and retained file count under `logging`.
+
+## Unknown-Threat Monitoring
+
+`unknown_threats` learns request shapes per normalized route from clean
+requests. After `minimum_observations`, it monitors unseen methods, content
+types, query parameter names, and large body-size deviations. It stores only
+bounded metadata, not request bodies.
+
+This first implementation is monitor-only. The local backend supports a
+single-node deployment and survives restarts; leave it disabled in
+multi-instance deployments until a shared backend is available. Review the
+phased safety and enforcement work in the
+[public roadmap](https://github.com/saugra/saugra-waf/blob/main/ROADMAP.md#phase-9--unknown-threat-detection-and-ai-assistance).
 
 ## Forwarded Headers
 

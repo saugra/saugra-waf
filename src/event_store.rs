@@ -685,6 +685,7 @@ mod tests {
             owasp_category: None,
             owasp_categories: Vec::new(),
             behavior: None,
+            unknown_threats: None,
             bot_protection: None,
             runtime_allowlist: None,
         }

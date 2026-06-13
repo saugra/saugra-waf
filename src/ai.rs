@@ -34,6 +34,25 @@ pub fn explain(decision: &WafDecision) -> String {
             ) + &contributor_path_context(&behavior.contributors)
                 + &allowlist_context;
         }
+        if let Some(outcome) = decision
+            .unknown_threats
+            .as_ref()
+            .filter(|outcome| !outcome.signals.is_empty())
+        {
+            return format!(
+                "No request rules matched. Unknown-threat score is {}/{} for route {} with {} signal(s): {}.",
+                outcome.score,
+                outcome.threshold,
+                outcome.route_shape,
+                outcome.signals.len(),
+                outcome
+                    .signals
+                    .iter()
+                    .map(|signal| signal.explanation.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            ) + &allowlist_context;
+        }
         return "No rules matched this request, so Saugra allowed it.".to_string()
             + &allowlist_context;
     }
@@ -60,6 +79,26 @@ pub fn explain(decision: &WafDecision) -> String {
                 behavior.block_threshold,
                 behavior.contributors.len()
             ) + &contributor_path_context(&behavior.contributors)
+        })
+        .unwrap_or_default();
+    let unknown_threat_context = decision
+        .unknown_threats
+        .as_ref()
+        .filter(|outcome| !outcome.signals.is_empty())
+        .map(|outcome| {
+            format!(
+                " Unknown-threat score is {}/{} for route {} with {} signal(s): {}.",
+                outcome.score,
+                outcome.threshold,
+                outcome.route_shape,
+                outcome.signals.len(),
+                outcome
+                    .signals
+                    .iter()
+                    .map(|signal| signal.explanation.as_str())
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            )
         })
         .unwrap_or_default();
     let bot_context = decision
@@ -89,6 +128,7 @@ pub fn explain(decision: &WafDecision) -> String {
         decision.blocking_anomaly_score,
         decision.anomaly_threshold
     ) + &behavior_context
+        + &unknown_threat_context
         + &bot_context
         + &allowlist_context
 }

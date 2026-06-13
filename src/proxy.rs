@@ -39,6 +39,7 @@ use crate::{
     rate_limit::{self, RateLimitExceeded, RateLimitPolicy, RateLimitStore},
     rules::{self, RequestParts, RuleMatch, RuleSet, RuleSeverity, RuleTarget},
     runtime_policy::RuntimePolicyHandle,
+    unknown_threats::{self, UnknownThreatRequest, UnknownThreatStore},
 };
 
 #[derive(Clone)]
@@ -49,6 +50,7 @@ pub struct ProxyState {
     max_body_size_bytes: usize,
     rate_limit_store: Arc<dyn RateLimitStore>,
     behavior_store: Arc<dyn BehaviorStore>,
+    unknown_threat_store: Arc<dyn UnknownThreatStore>,
     bot_protection_store: Arc<dyn BotProtectionStore>,
     runtime_policy: Arc<RuntimePolicyHandle>,
     event_log_path: PathBuf,
@@ -78,6 +80,8 @@ impl ProxyState {
             .context("security.max_body_size is too large for this platform")?;
         let rule_set = Arc::new(rules::load_rule_set(&config.rules)?);
         let behavior_store = Arc::from(behavior::build_store(&config.behavior)?);
+        let unknown_threat_store =
+            Arc::from(unknown_threats::build_store(&config.unknown_threats)?);
         let bot_protection_store = Arc::from(bot::build_store(&config.bot_protection)?);
         let runtime_policy = Arc::new(RuntimePolicyHandle::open(config.runtime_policy.clone()));
 
@@ -88,6 +92,7 @@ impl ProxyState {
             max_body_size_bytes,
             rate_limit_store,
             behavior_store,
+            unknown_threat_store,
             bot_protection_store,
             runtime_policy,
             event_log_path,
@@ -341,6 +346,12 @@ async fn proxy_request_inner(
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .to_string();
+    let content_type = parts
+        .headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
     let body_for_rules = String::from_utf8_lossy(&body_bytes);
 
     let request_parts = RequestParts {
@@ -360,6 +371,10 @@ async fn proxy_request_inner(
             matches,
             client_ip: &client_ip,
             path: &path,
+            method: parts.method.as_str(),
+            query: &query,
+            content_type: &content_type,
+            body_size: body_bytes.len(),
             headers: &headers,
             user_agent: &user_agent,
             trusted_forwarded_headers,
@@ -460,6 +475,12 @@ async fn proxy_websocket_handshake(
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .to_string();
+    let content_type = parts
+        .headers
+        .get(header::CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_string();
 
     let request_parts = RequestParts {
         path: &path,
@@ -480,6 +501,10 @@ async fn proxy_websocket_handshake(
             matches,
             client_ip: &client_ip,
             path: &path,
+            method: parts.method.as_str(),
+            query: &query,
+            content_type: &content_type,
+            body_size: 0,
             headers: &headers,
             user_agent: &user_agent,
             trusted_forwarded_headers,
@@ -884,6 +909,10 @@ struct DecisionRequest<'a> {
     matches: Vec<RuleMatch>,
     client_ip: &'a str,
     path: &'a str,
+    method: &'a str,
+    query: &'a str,
+    content_type: &'a str,
+    body_size: usize,
     headers: &'a str,
     user_agent: &'a str,
     trusted_forwarded_headers: bool,
@@ -895,6 +924,10 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
         mut matches,
         client_ip,
         path,
+        method,
+        query,
+        content_type,
+        body_size,
         headers,
         user_agent,
         trusted_forwarded_headers,
@@ -1000,6 +1033,28 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
         }
     }
 
+    let unknown_threat_outcome = if state.config.unknown_threats.enabled && !skip_bot_and_behavior {
+        match state.unknown_threat_store.evaluate(
+            &state.config.unknown_threats,
+            UnknownThreatRequest {
+                path,
+                method,
+                content_type,
+                query,
+                body_size,
+                eligible_for_learning: deterministic_matches.is_empty(),
+            },
+        ) {
+            Ok(outcome) => Some(outcome),
+            Err(error) => {
+                warn!(request_id, %error, "unknown-threat analysis failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let decision_mode = if allowlist_effect == Some(RuntimeAllowlistEffect::MonitorAll) {
         WafMode::Monitor
     } else {
@@ -1025,6 +1080,13 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
     } else {
         decision
     };
+
+    if let Some(outcome) = unknown_threat_outcome {
+        if outcome.action == WafAction::Monitor && decision.action == WafAction::Allow {
+            decision.action = WafAction::Monitor;
+        }
+        decision = decision.with_unknown_threats(outcome);
+    }
 
     if let Some(outcome) = bot_outcome {
         if outcome.action == WafAction::Block
@@ -1217,6 +1279,8 @@ fn log_decision(
         risk_score = decision.risk_score,
         behavior_score = decision.behavior.as_ref().map(|behavior| behavior.score).unwrap_or(0),
         behavior_action = ?decision.behavior.as_ref().map(|behavior| behavior.action),
+        unknown_threat_score = decision.unknown_threats.as_ref().map(|outcome| outcome.score).unwrap_or(0),
+        unknown_threat_action = ?decision.unknown_threats.as_ref().map(|outcome| outcome.action),
         bot_protection_score = decision.bot_protection.as_ref().map(|bot| bot.score).unwrap_or(0),
         bot_protection_action = ?decision.bot_protection.as_ref().map(|bot| bot.action),
         severity = %decision.severity,
@@ -1508,6 +1572,7 @@ mod tests {
             },
             rules: Default::default(),
             behavior: Default::default(),
+            unknown_threats: Default::default(),
             bot_protection: Default::default(),
             runtime_policy: Default::default(),
             ai: Default::default(),

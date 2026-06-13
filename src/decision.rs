@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     behavior::BehaviorOutcome, bot::BotProtectionOutcome, config::WafMode, rules::RuleMatch,
-    runtime_policy::RuntimeAllowlistMatch,
+    runtime_policy::RuntimeAllowlistMatch, unknown_threats::UnknownThreatOutcome,
 };
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -31,6 +31,8 @@ pub struct WafDecision {
     pub owasp_categories: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub behavior: Option<BehaviorOutcome>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unknown_threats: Option<UnknownThreatOutcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bot_protection: Option<BotProtectionOutcome>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -97,6 +99,7 @@ impl WafDecision {
                 owasp_category: None,
                 owasp_categories: Vec::new(),
                 behavior: None,
+                unknown_threats: None,
                 bot_protection: None,
                 runtime_allowlist: None,
             };
@@ -164,6 +167,7 @@ impl WafDecision {
             owasp_category,
             owasp_categories,
             behavior: None,
+            unknown_threats: None,
             bot_protection: None,
             runtime_allowlist: None,
         }
@@ -171,6 +175,11 @@ impl WafDecision {
 
     pub fn with_behavior(mut self, behavior: BehaviorOutcome) -> Self {
         self.behavior = Some(behavior);
+        self
+    }
+
+    pub fn with_unknown_threats(mut self, unknown_threats: UnknownThreatOutcome) -> Self {
+        self.unknown_threats = Some(unknown_threats);
         self
     }
 

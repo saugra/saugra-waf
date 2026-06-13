@@ -871,6 +871,7 @@ mod tests {
             forwarded_headers: Default::default(),
             rate_limit: Default::default(),
             behavior: Default::default(),
+            unknown_threats: Default::default(),
             bot_protection: Default::default(),
             runtime_policy: Default::default(),
             rules: Default::default(),
@@ -957,6 +958,7 @@ mod tests {
             } else {
                 None
             },
+            unknown_threats: None,
             bot_protection: if category == "bot_protection" {
                 Some(BotProtectionOutcome {
                     enabled: true,

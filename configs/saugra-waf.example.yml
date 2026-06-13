@@ -73,6 +73,20 @@ behavior:
   probe_paths_extra: []
   probe_path_exclusions: []
 
+# Route-aware request-shape learning for unknown-threat monitoring. It learns
+# only from requests with no deterministic rule matches and never stores bodies.
+unknown_threats:
+  enabled: false
+  backend: local
+  state_path: logs/saugra-waf-unknown-threat-state.json
+  minimum_observations: 100
+  monitor_threshold: 20
+  unseen_method_score: 20
+  unseen_content_type_score: 15
+  unseen_query_parameter_score: 10
+  body_size_multiplier: 4
+  body_size_score: 15
+
 bot_protection:
   enabled: true
   mode: monitor

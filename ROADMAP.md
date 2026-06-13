@@ -503,9 +503,106 @@ security_summary:
     - type: file
     # Future:
     # - type: email
-    #   to:
-    #     - security@example.com
+      #   to:
+      #     - security@example.com
 ```
+
+## Phase 9 — Unknown-Threat Detection and AI Assistance
+
+Saugra should describe this capability as unknown-threat detection, not as a
+guarantee that every zero-day exploit will be stopped. Known attack patterns
+remain the responsibility of deterministic rules. Statistical and AI-assisted
+features add evidence, explanations, correlation, and tuning support.
+
+The request path remains:
+
+```txt
+request
+  -> deterministic rules
+  -> rate limiting and behavior controls
+  -> route-aware unknown-threat signals
+  -> deterministic risk policy
+  -> allow / monitor / block
+  -> asynchronous explanation and tuning workflows
+```
+
+An external LLM must never sit in the synchronous forwarding path or become the
+only reason Saugra blocks a request.
+
+### Route-Aware Request Baselines
+
+- [x] Add an `unknown_threats` configuration boundary.
+- [x] Add a stable baseline-store interface with memory and durable local
+      implementations.
+- [x] Normalize dynamic path segments into route shapes.
+- [x] Learn methods, content types, query parameter names, and body-size ranges
+      from requests that have no deterministic rule matches.
+- [x] Require a minimum number of observations before emitting anomaly signals.
+- [x] Attach explainable anomaly signals to decisions and security events.
+- [x] Keep the first implementation monitor-only.
+- [x] Add focused tests for learning, persistence, route normalization, and
+      anomaly detection.
+- [ ] Add a Redis or equivalent shared baseline backend before supporting
+      multi-instance enforcement.
+- [ ] Add bounded baseline retention, route cardinality limits, and scheduled
+      cleanup.
+- [ ] Add explicit route exclusions and route-specific learning policies.
+
+### Deterministic Unknown-Threat Policy
+
+- [ ] Add independently configurable signal weights through a validated data
+      file rather than hard-coded production policy.
+- [ ] Require at least two independent anomaly signals for automatic blocking.
+- [ ] Add observation-age and traffic-volume requirements before a baseline can
+      become blocking-eligible.
+- [ ] Prevent automatic blocking on newly observed routes.
+- [ ] Add route-specific thresholds and high-risk route policies.
+- [ ] Add shadow evaluation and false-positive reports before enabling block
+      mode.
+- [ ] Add baseline poisoning defenses, including trusted-learning traffic,
+      bounded updates, and quarantine of anomalous observations.
+
+### Campaign Correlation
+
+- [ ] Correlate low-severity events across clients, sessions, routes, and time
+      windows.
+- [ ] Detect distributed scanning, endpoint discovery, credential attacks, and
+      multi-step attack progression.
+- [ ] Store correlation state in a durable distributed backend.
+- [ ] Produce campaign IDs and include them in events and explanations.
+- [ ] Add deterministic campaign thresholds with monitor-first rollout.
+
+### AI Explanations and Tuning
+
+- [ ] Define a provider-neutral asynchronous explanation interface.
+- [ ] Redact secrets and minimize payload data before any external model call.
+- [ ] Explain route-baseline deviations, rule matches, behavior history, and
+      campaign context.
+- [ ] Generate narrow tuning suggestions such as route exclusions or threshold
+      changes.
+- [ ] Record model, prompt version, input digest, output, latency, and failure
+      state for auditability.
+- [ ] Keep deterministic local explanations available when AI is disabled or
+      unavailable.
+
+### Rule Drafting and Replay
+
+- [ ] Convert repeated, reviewed anomalies into draft Saugra YAML rules.
+- [ ] Require human approval before publishing generated rules.
+- [ ] Validate and compile generated rules before activation.
+- [ ] Replay sanitized historical traffic against proposed rules.
+- [ ] Report false-positive impact and attack-case coverage.
+- [ ] Deploy accepted rules in monitor mode before block mode.
+
+### Security and Privacy Guardrails
+
+- Do not train on requests already matched by deterministic attack rules.
+- Do not store full request bodies in baseline state.
+- Store request shapes and bounded metadata, not credentials or tokens.
+- Treat local state as single-node production support, not distributed support.
+- Fail open for unknown-threat analysis errors while logging the failure.
+- Never silently block; every enforced decision must produce a security event.
+- Keep monitor-first defaults and make enforcement an explicit operator choice.
 
 ## Production Readiness Gate
 
