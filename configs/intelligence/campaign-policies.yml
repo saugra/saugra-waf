@@ -1,0 +1,63 @@
+version: 1
+campaigns:
+  - kind: distributed_scanning
+    scope: global
+    score: 60
+    minimum_events: 6
+    minimum_clients: 3
+    minimum_sessions: 3
+    minimum_routes: 3
+    categories:
+      - scanner_behavior
+      - bot_protection
+      - unknown_threat
+  - kind: endpoint_discovery
+    scope: client
+    score: 50
+    minimum_events: 5
+    minimum_clients: 1
+    minimum_sessions: 1
+    minimum_routes: 5
+    categories:
+      - scanner_behavior
+      - bot_protection
+      - path_traversal
+      - unknown_threat
+  - kind: credential_attack
+    scope: global
+    score: 70
+    minimum_events: 5
+    minimum_clients: 2
+    minimum_sessions: 2
+    minimum_routes: 1
+    categories:
+      - authentication_abuse
+      - rate_limit_abuse
+    path_prefixes:
+      - /login
+      - /signin
+      - /auth
+      - /api/auth
+  - kind: multi_step_progression
+    scope: session
+    score: 80
+    minimum_events: 3
+    minimum_clients: 1
+    minimum_sessions: 1
+    minimum_routes: 2
+    minimum_stages: 3
+    stages:
+      - name: reconnaissance
+        categories:
+          - scanner_behavior
+          - bot_protection
+          - unknown_threat
+      - name: access_attempt
+        categories:
+          - authentication_abuse
+          - path_traversal
+      - name: exploitation
+        categories:
+          - sql_injection
+          - cross_site_scripting
+          - command_injection

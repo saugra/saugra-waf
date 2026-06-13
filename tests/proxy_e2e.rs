@@ -14,10 +14,10 @@ use axum::{
 use saugra_waf::{
     config::{
         AiConfig, BehaviorBackend, BehaviorConfig, BehaviorMode, BotProtectionConfig,
-        BotProtectionLists, LoggingConfig, ProxyRouteConfig, RateLimitBackend, RateLimitConfig,
-        RuleExclusionConfig, RuleSettings, RuntimeAllowlistEffect, RuntimePolicyConfig,
-        SaugraConfig, SecurityConfig, ServerConfig, UnknownThreatMode, UnknownThreatRouteConfig,
-        UpstreamConfig, WafMode,
+        BotProtectionLists, CampaignBackend, CampaignPolicyConfig, LoggingConfig, ProxyRouteConfig,
+        RateLimitBackend, RateLimitConfig, RuleExclusionConfig, RuleSettings,
+        RuntimeAllowlistEffect, RuntimePolicyConfig, SaugraConfig, SecurityConfig, ServerConfig,
+        UnknownThreatMode, UnknownThreatRouteConfig, UpstreamConfig, WafMode,
     },
     decision::WafAction,
     event_store::{self, EventLogRetention},
@@ -317,6 +317,55 @@ async fn block_mode_monitors_findings_below_anomaly_threshold() {
     assert_eq!(events[0].decision.action, WafAction::Monitor);
     assert_eq!(events[0].decision.anomaly_score, 2);
     assert_eq!(events[0].decision.anomaly_threshold, 5);
+}
+
+#[tokio::test]
+async fn campaign_correlation_records_monitor_only_campaign_ids() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.campaign_correlation.enabled = true;
+    config.campaign_correlation.backend = CampaignBackend::Memory;
+    config.campaign_correlation.policies = vec![CampaignPolicyConfig {
+        kind: "endpoint_discovery".to_string(),
+        scope: "client".to_string(),
+        score: 50,
+        minimum_events: 2,
+        minimum_clients: 1,
+        minimum_sessions: 1,
+        minimum_routes: 2,
+        categories: vec!["scanner_behavior".to_string()],
+        path_prefixes: Vec::new(),
+        stages: Vec::new(),
+        minimum_stages: 0,
+    }];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for path in ["/.env", "/wp-admin"] {
+        let request = Request::builder()
+            .uri(path)
+            .header(header::USER_AGENT, "sqlmap")
+            .header(header::COOKIE, "session=campaign-test")
+            .body(Body::empty())
+            .unwrap();
+        let response = proxy_request(State(state.clone()), request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let campaign = events.last().unwrap().decision.campaign.as_ref().unwrap();
+    assert_eq!(campaign.action, WafAction::Monitor);
+    assert_eq!(campaign.matches[0].kind, "endpoint_discovery");
+    assert!(campaign.campaign_ids[0].starts_with("cmp-"));
+    assert_eq!(fake_upstream.requests.lock().unwrap().len(), 2);
 }
 
 #[tokio::test]
@@ -1293,6 +1342,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
             ..BehaviorConfig::default()
         },
         unknown_threats: Default::default(),
+        campaign_correlation: Default::default(),
         bot_protection: BotProtectionConfig {
             backend: BehaviorBackend::Memory,
             ..BotProtectionConfig::default()

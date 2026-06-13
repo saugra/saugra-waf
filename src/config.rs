@@ -118,6 +118,31 @@ pub enum ConfigError {
     InvalidUnknownThreatTrustedLearningClient,
     #[error("unknown_threats.shadow_review_completed must be true before mode can be block")]
     UnknownThreatShadowReviewRequired,
+    #[error("campaign_correlation.state_path must not be blank when backend is local")]
+    InvalidCampaignStatePath,
+    #[error("campaign_correlation.redis_url is required when backend is redis")]
+    MissingCampaignRedisUrl,
+    #[error("campaign_correlation.redis_password must not be blank when provided")]
+    InvalidCampaignRedisPassword,
+    #[error("campaign_correlation.redis_key_prefix must not be blank")]
+    InvalidCampaignRedisKeyPrefix,
+    #[error("campaign_correlation.window and retention must be positive durations")]
+    InvalidCampaignDuration,
+    #[error("campaign_correlation.retention must be greater than or equal to window")]
+    InvalidCampaignRetention,
+    #[error("campaign_correlation.max_events must be greater than zero")]
+    InvalidCampaignMaxEvents,
+    #[error("campaign_correlation.policy_catalog must not be blank")]
+    InvalidCampaignPolicyCatalogPath,
+    #[error("failed to parse campaign policy catalog {path}: {source}")]
+    InvalidCampaignPolicyCatalog {
+        path: String,
+        source: serde_yaml::Error,
+    },
+    #[error("campaign policy catalog version must be 1")]
+    InvalidCampaignPolicyCatalogVersion,
+    #[error("campaign policies must have unique non-empty kinds and positive thresholds")]
+    InvalidCampaignPolicy,
     #[error("bot_protection.score_window must be a positive duration, for example 10m")]
     InvalidBotProtectionScoreWindow,
     #[error(
@@ -237,6 +262,8 @@ pub struct SaugraConfig {
     pub behavior: BehaviorConfig,
     #[serde(default)]
     pub unknown_threats: UnknownThreatConfig,
+    #[serde(default)]
+    pub campaign_correlation: CampaignCorrelationConfig,
     #[serde(default)]
     pub bot_protection: BotProtectionConfig,
     #[serde(default)]
@@ -562,6 +589,107 @@ pub enum UnknownThreatMode {
     Monitor,
     Shadow,
     Block,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CampaignCorrelationConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: CampaignMode,
+    #[serde(default)]
+    pub backend: CampaignBackend,
+    #[serde(default = "default_campaign_state_path")]
+    pub state_path: PathBuf,
+    #[serde(default)]
+    pub redis_url: Option<String>,
+    #[serde(default)]
+    pub redis_password: Option<String>,
+    #[serde(default = "default_campaign_redis_key_prefix")]
+    pub redis_key_prefix: String,
+    #[serde(default = "default_campaign_window")]
+    pub window: String,
+    #[serde(default = "default_campaign_retention")]
+    pub retention: String,
+    #[serde(default = "default_campaign_max_events")]
+    pub max_events: usize,
+    #[serde(default = "default_campaign_policy_catalog")]
+    pub policy_catalog: String,
+    #[serde(skip, default = "default_campaign_policies")]
+    pub policies: Vec<CampaignPolicyConfig>,
+}
+
+impl Default for CampaignCorrelationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: CampaignMode::Monitor,
+            backend: CampaignBackend::Local,
+            state_path: default_campaign_state_path(),
+            redis_url: None,
+            redis_password: None,
+            redis_key_prefix: default_campaign_redis_key_prefix(),
+            window: default_campaign_window(),
+            retention: default_campaign_retention(),
+            max_events: default_campaign_max_events(),
+            policy_catalog: default_campaign_policy_catalog(),
+            policies: default_campaign_policies(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CampaignMode {
+    Off,
+    #[default]
+    Monitor,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CampaignBackend {
+    Memory,
+    #[default]
+    Local,
+    Redis,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CampaignPolicyCatalog {
+    pub version: u16,
+    pub campaigns: Vec<CampaignPolicyConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CampaignPolicyConfig {
+    pub kind: String,
+    #[serde(default = "default_campaign_scope")]
+    pub scope: String,
+    pub score: u16,
+    #[serde(default = "default_campaign_minimum")]
+    pub minimum_events: usize,
+    #[serde(default = "default_campaign_minimum")]
+    pub minimum_clients: usize,
+    #[serde(default = "default_campaign_minimum")]
+    pub minimum_sessions: usize,
+    #[serde(default = "default_campaign_minimum")]
+    pub minimum_routes: usize,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub path_prefixes: Vec<String>,
+    #[serde(default)]
+    pub stages: Vec<CampaignStageConfig>,
+    #[serde(default)]
+    pub minimum_stages: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CampaignStageConfig {
+    pub name: String,
+    #[serde(default)]
+    pub categories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1085,6 +1213,7 @@ impl SaugraConfig {
         let mut config: Self = serde_yaml::from_str(&contents)?;
         config.resolve_threat_path_catalogs()?;
         config.resolve_unknown_threat_signal_catalog()?;
+        config.resolve_campaign_policy_catalog()?;
         Ok(config)
     }
 
@@ -1157,6 +1286,7 @@ impl SaugraConfig {
         }
 
         self.validate_unknown_threats()?;
+        self.validate_campaign_correlation()?;
 
         if self.rate_limit.backend == RateLimitBackend::Redis
             && self
@@ -1457,6 +1587,15 @@ impl SaugraConfig {
         Ok(())
     }
 
+    fn resolve_campaign_policy_catalog(&mut self) -> Result<(), ConfigError> {
+        let path = self.campaign_correlation.policy_catalog.trim();
+        if path.is_empty() {
+            return Err(ConfigError::InvalidCampaignPolicyCatalogPath);
+        }
+        self.campaign_correlation.policies = load_campaign_policy_catalog(path)?.campaigns;
+        Ok(())
+    }
+
     fn validate_behavior(&self) -> Result<(), ConfigError> {
         if parse_duration_seconds(&self.behavior.score_window).is_none() {
             return Err(ConfigError::InvalidBehaviorScoreWindow);
@@ -1668,6 +1807,43 @@ impl SaugraConfig {
             }
         }
 
+        Ok(())
+    }
+
+    fn validate_campaign_correlation(&self) -> Result<(), ConfigError> {
+        let config = &self.campaign_correlation;
+        if config.backend == CampaignBackend::Local && config.state_path.as_os_str().is_empty() {
+            return Err(ConfigError::InvalidCampaignStatePath);
+        }
+        if config.backend == CampaignBackend::Redis
+            && config.redis_url.as_deref().unwrap_or("").trim().is_empty()
+        {
+            return Err(ConfigError::MissingCampaignRedisUrl);
+        }
+        if config
+            .redis_password
+            .as_deref()
+            .is_some_and(|password| password.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidCampaignRedisPassword);
+        }
+        if config.redis_key_prefix.trim().is_empty() {
+            return Err(ConfigError::InvalidCampaignRedisKeyPrefix);
+        }
+        let window =
+            parse_duration_seconds(&config.window).ok_or(ConfigError::InvalidCampaignDuration)?;
+        let retention = parse_duration_seconds(&config.retention)
+            .ok_or(ConfigError::InvalidCampaignDuration)?;
+        if retention < window {
+            return Err(ConfigError::InvalidCampaignRetention);
+        }
+        if config.max_events == 0 {
+            return Err(ConfigError::InvalidCampaignMaxEvents);
+        }
+        if config.policy_catalog.trim().is_empty() {
+            return Err(ConfigError::InvalidCampaignPolicyCatalogPath);
+        }
+        validate_campaign_policies(&config.policies)?;
         Ok(())
     }
 
@@ -2131,6 +2307,42 @@ fn default_unknown_threat_max_routes() -> usize {
     10_000
 }
 
+fn default_campaign_state_path() -> PathBuf {
+    PathBuf::from("logs/saugra-waf-campaign-state.json")
+}
+
+fn default_campaign_window() -> String {
+    "15m".to_string()
+}
+
+fn default_campaign_redis_key_prefix() -> String {
+    "saugra-waf:campaign-correlation".to_string()
+}
+
+fn default_campaign_retention() -> String {
+    "24h".to_string()
+}
+
+fn default_campaign_max_events() -> usize {
+    50_000
+}
+
+fn default_campaign_policy_catalog() -> String {
+    "builtin".to_string()
+}
+
+fn default_campaign_policies() -> Vec<CampaignPolicyConfig> {
+    load_builtin_campaign_policy_catalog().campaigns
+}
+
+fn default_campaign_minimum() -> usize {
+    1
+}
+
+fn default_campaign_scope() -> String {
+    "global".to_string()
+}
+
 fn default_bot_protection_state_path() -> PathBuf {
     PathBuf::from("logs/saugra-waf-bot-state.json")
 }
@@ -2252,6 +2464,8 @@ fn default_bot_protection_owasp_category() -> Option<String> {
 const BUILTIN_THREAT_PATH_CATALOG: &str = include_str!("../configs/intelligence/scanner-paths.yml");
 const BUILTIN_UNKNOWN_THREAT_SIGNAL_CATALOG: &str =
     include_str!("../configs/intelligence/unknown-threat-signals.yml");
+const BUILTIN_CAMPAIGN_POLICY_CATALOG: &str =
+    include_str!("../configs/intelligence/campaign-policies.yml");
 
 fn load_builtin_threat_path_catalog() -> ThreatPathCatalog {
     serde_yaml::from_str(BUILTIN_THREAT_PATH_CATALOG)
@@ -2261,6 +2475,66 @@ fn load_builtin_threat_path_catalog() -> ThreatPathCatalog {
 fn load_builtin_unknown_threat_signal_catalog() -> UnknownThreatSignalCatalog {
     serde_yaml::from_str(BUILTIN_UNKNOWN_THREAT_SIGNAL_CATALOG)
         .expect("bundled unknown-threat signal catalog must be valid YAML")
+}
+
+fn load_builtin_campaign_policy_catalog() -> CampaignPolicyCatalog {
+    serde_yaml::from_str(BUILTIN_CAMPAIGN_POLICY_CATALOG)
+        .expect("bundled campaign policy catalog must be valid YAML")
+}
+
+fn load_campaign_policy_catalog(path: &str) -> Result<CampaignPolicyCatalog, ConfigError> {
+    let catalog = if path == "builtin" {
+        load_builtin_campaign_policy_catalog()
+    } else {
+        let contents = fs::read_to_string(path)?;
+        serde_yaml::from_str(&contents).map_err(|source| {
+            ConfigError::InvalidCampaignPolicyCatalog {
+                path: path.to_string(),
+                source,
+            }
+        })?
+    };
+    if catalog.version != 1 {
+        return Err(ConfigError::InvalidCampaignPolicyCatalogVersion);
+    }
+    validate_campaign_policies(&catalog.campaigns)?;
+    Ok(catalog)
+}
+
+fn validate_campaign_policies(policies: &[CampaignPolicyConfig]) -> Result<(), ConfigError> {
+    let mut kinds = std::collections::BTreeSet::new();
+    for policy in policies {
+        if policy.kind.trim().is_empty()
+            || !matches!(
+                policy.scope.as_str(),
+                "global" | "client" | "session" | "route"
+            )
+            || policy.score == 0
+            || policy.minimum_events == 0
+            || policy.minimum_clients == 0
+            || policy.minimum_sessions == 0
+            || policy.minimum_routes == 0
+            || !kinds.insert(policy.kind.trim())
+            || policy
+                .categories
+                .iter()
+                .any(|value| value.trim().is_empty())
+            || policy
+                .path_prefixes
+                .iter()
+                .any(|value| value.trim().is_empty())
+            || policy.stages.iter().any(|stage| {
+                stage.name.trim().is_empty()
+                    || stage.categories.is_empty()
+                    || stage.categories.iter().any(|value| value.trim().is_empty())
+            })
+            || (!policy.stages.is_empty()
+                && (policy.minimum_stages == 0 || policy.minimum_stages > policy.stages.len()))
+        {
+            return Err(ConfigError::InvalidCampaignPolicy);
+        }
+    }
+    Ok(())
 }
 
 fn load_unknown_threat_signal_catalog(
@@ -3948,6 +4222,29 @@ posture:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidPostureAllowedMethods)
+        ));
+    }
+
+    #[test]
+    fn campaign_redis_backend_requires_a_url() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+campaign_correlation:
+  enabled: true
+  backend: redis
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::MissingCampaignRedisUrl)
         ));
     }
 }

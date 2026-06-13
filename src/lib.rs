@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod behavior;
 pub mod bot;
+pub mod campaign;
 pub mod config;
 pub mod crs_convert;
 pub mod decision;

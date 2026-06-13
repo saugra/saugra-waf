@@ -565,13 +565,13 @@ only reason Saugra blocks a request.
 
 ### Campaign Correlation
 
-- [ ] Correlate low-severity events across clients, sessions, routes, and time
+- [x] Correlate low-severity events across clients, sessions, routes, and time
       windows.
-- [ ] Detect distributed scanning, endpoint discovery, credential attacks, and
+- [x] Detect distributed scanning, endpoint discovery, credential attacks, and
       multi-step attack progression.
-- [ ] Store correlation state in a durable distributed backend.
-- [ ] Produce campaign IDs and include them in events and explanations.
-- [ ] Add deterministic campaign thresholds with monitor-first rollout.
+- [x] Store correlation state in a durable distributed backend.
+- [x] Produce campaign IDs and include them in events and explanations.
+- [x] Add deterministic campaign thresholds with monitor-first rollout.
 
 ### AI Explanations and Tuning
 

@@ -872,6 +872,7 @@ mod tests {
             rate_limit: Default::default(),
             behavior: Default::default(),
             unknown_threats: Default::default(),
+            campaign_correlation: Default::default(),
             bot_protection: Default::default(),
             runtime_policy: Default::default(),
             rules: Default::default(),
@@ -959,6 +960,7 @@ mod tests {
                 None
             },
             unknown_threats: None,
+            campaign: None,
             bot_protection: if category == "bot_protection" {
                 Some(BotProtectionOutcome {
                     enabled: true,

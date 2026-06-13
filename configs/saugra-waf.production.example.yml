@@ -165,6 +165,20 @@ unknown_threats:
       monitor_threshold: 15
       block_threshold: 40
 
+# Shared, monitor-only campaign correlation for multi-instance deployments.
+# It stores route shapes and hashed session fingerprints, never raw cookies.
+campaign_correlation:
+  enabled: false
+  mode: monitor
+  backend: redis
+  redis_url: redis://127.0.0.1:6379
+  # redis_password: replace-with-secret
+  redis_key_prefix: saugra-waf:production:campaign-correlation
+  window: 15m
+  retention: 24h
+  max_events: 50000
+  policy_catalog: /etc/saugra-waf/intelligence/campaign-policies.yml
+
 # Bot protection scores scanner-like behavior, blocklists, and suspicious
 # automation signals. Enable in monitor mode first, then tune thresholds.
 bot_protection:

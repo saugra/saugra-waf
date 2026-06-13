@@ -1,6 +1,31 @@
 use crate::decision::WafDecision;
 
 pub fn explain(decision: &WafDecision) -> String {
+    let campaign_context = decision
+        .campaign
+        .as_ref()
+        .filter(|outcome| !outcome.matches.is_empty())
+        .map(|outcome| {
+            let matches = outcome
+                .matches
+                .iter()
+                .map(|campaign| {
+                    format!(
+                        "{} ({}, score {}, {} events, {} clients, {} sessions, {} routes)",
+                        campaign.campaign_id,
+                        campaign.kind,
+                        campaign.score,
+                        campaign.event_count,
+                        campaign.client_count,
+                        campaign.session_count,
+                        campaign.route_count
+                    )
+                })
+                .collect::<Vec<_>>()
+                .join("; ");
+            format!(" Campaign correlation matched: {matches}.")
+        })
+        .unwrap_or_default();
     let allowlist_context = decision
         .runtime_allowlist
         .as_ref()
@@ -22,6 +47,7 @@ pub fn explain(decision: &WafDecision) -> String {
                 bot_protection.block_threshold,
                 bot_protection.contributors.len(),
             ) + &contributor_path_context(&bot_protection.contributors)
+                + &campaign_context
                 + &allowlist_context;
         }
         if let Some(behavior) = &decision.behavior {
@@ -32,6 +58,7 @@ pub fn explain(decision: &WafDecision) -> String {
                 behavior.score,
                 behavior.block_threshold
             ) + &contributor_path_context(&behavior.contributors)
+                + &campaign_context
                 + &allowlist_context;
         }
         if let Some(outcome) = decision
@@ -59,9 +86,11 @@ pub fn explain(decision: &WafDecision) -> String {
                     .map(|signal| signal.explanation.as_str())
                     .collect::<Vec<_>>()
                     .join(" ")
-            ) + &allowlist_context;
+            ) + &campaign_context
+                + &allowlist_context;
         }
         return "No rules matched this request, so Saugra allowed it.".to_string()
+            + &campaign_context
             + &allowlist_context;
     }
 
@@ -146,6 +175,7 @@ pub fn explain(decision: &WafDecision) -> String {
     ) + &behavior_context
         + &unknown_threat_context
         + &bot_context
+        + &campaign_context
         + &allowlist_context
 }
 
@@ -171,6 +201,7 @@ mod tests {
     use crate::{
         behavior::{BehaviorContributor, BehaviorOutcome},
         bot::BotProtectionOutcome,
+        campaign::{CampaignMatch, CampaignOutcome},
         config::{RuntimeAllowlistEffect, WafMode},
         decision::{WafAction, WafDecision},
         rules::{RuleMatch, RuleSeverity, RuleTarget},
@@ -298,6 +329,41 @@ mod tests {
         ));
         assert!(explanation.contains("Runtime allowlist entry test-ip matched 203.0.113.10"));
         assert!(explanation.contains("SkipBotAndBehaviorBlock"));
+    }
+
+    #[test]
+    fn explanation_includes_campaign_id_and_evidence_counts() {
+        let decision = WafDecision::from_matches(
+            "request-1".to_string(),
+            WafMode::Monitor,
+            vec![rule_match()],
+            5,
+        )
+        .with_campaign(CampaignOutcome {
+            enabled: true,
+            action: WafAction::Monitor,
+            storage_backend: "redis".to_string(),
+            window_seconds: 900,
+            campaign_ids: vec!["cmp-test".to_string()],
+            matches: vec![CampaignMatch {
+                campaign_id: "cmp-test".to_string(),
+                kind: "distributed_scanning".to_string(),
+                score: 60,
+                event_count: 8,
+                client_count: 4,
+                session_count: 4,
+                route_count: 6,
+                stages: Vec::new(),
+                first_seen_at: 1,
+                last_seen_at: 2,
+            }],
+        });
+
+        let explanation = explain(&decision);
+
+        assert!(explanation.contains("cmp-test"));
+        assert!(explanation.contains("distributed_scanning"));
+        assert!(explanation.contains("8 events, 4 clients, 4 sessions, 6 routes"));
     }
 
     fn rule_match() -> RuleMatch {

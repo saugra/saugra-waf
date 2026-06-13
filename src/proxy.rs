@@ -30,6 +30,7 @@ use uuid::Uuid;
 use crate::{
     behavior::{self, BehaviorRequest, BehaviorStore},
     bot::{self, BotProtectionRequest, BotProtectionStore},
+    campaign::{self, CampaignRequest, CampaignStore},
     config::{
         ForwardedHeadersConfig, RouteRateLimitConfig, RuntimeAllowlistEffect, SaugraConfig,
         UpstreamConfig, WafMode,
@@ -51,6 +52,7 @@ pub struct ProxyState {
     rate_limit_store: Arc<dyn RateLimitStore>,
     behavior_store: Arc<dyn BehaviorStore>,
     unknown_threat_store: Arc<dyn UnknownThreatStore>,
+    campaign_store: Arc<dyn CampaignStore>,
     bot_protection_store: Arc<dyn BotProtectionStore>,
     runtime_policy: Arc<RuntimePolicyHandle>,
     event_log_path: PathBuf,
@@ -82,6 +84,9 @@ impl ProxyState {
         let behavior_store = Arc::from(behavior::build_store(&config.behavior)?);
         let unknown_threat_store =
             Arc::from(unknown_threats::build_store(&config.unknown_threats)?);
+        let campaign_store = Arc::from(campaign::build_store_without_redis(
+            &config.campaign_correlation,
+        )?);
         let bot_protection_store = Arc::from(bot::build_store(&config.bot_protection)?);
         let runtime_policy = Arc::new(RuntimePolicyHandle::open(config.runtime_policy.clone()));
 
@@ -93,12 +98,36 @@ impl ProxyState {
             rate_limit_store,
             behavior_store,
             unknown_threat_store,
+            campaign_store,
             bot_protection_store,
             runtime_policy,
             event_log_path,
             event_log_retention,
             rule_set,
         })
+    }
+
+    fn with_campaign_store(
+        config: SaugraConfig,
+        upstream_transport: Arc<dyn UpstreamTransport>,
+        rate_limit_store: Arc<dyn RateLimitStore>,
+        campaign_store: Arc<dyn CampaignStore>,
+        event_log_path: PathBuf,
+        event_log_retention: EventLogRetention,
+    ) -> anyhow::Result<Self> {
+        let original_config = config.clone();
+        let mut bootstrap_config = config;
+        bootstrap_config.campaign_correlation.enabled = false;
+        let mut state = Self::with_transport(
+            bootstrap_config,
+            upstream_transport,
+            rate_limit_store,
+            event_log_path,
+            event_log_retention,
+        )?;
+        state.config = original_config;
+        state.campaign_store = campaign_store;
+        Ok(state)
     }
 
     fn select_upstream(&self, path: &str) -> Option<&UpstreamConfig> {
@@ -166,12 +195,14 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
         max_size_bytes: config.event_log_max_size_bytes()?,
         max_files: config.logging.event_log_max_files,
     };
-    let state = ProxyState::with_transport(
+    let campaign_store = Arc::from(campaign::build_store(&config.campaign_correlation).await?);
+    let state = ProxyState::with_campaign_store(
         config,
         Arc::new(HyperUpstreamTransport {
             client: Client::builder(TokioExecutor::new()).build(HttpConnector::new()),
         }),
         rate_limit_store,
+        campaign_store,
         event_log_path,
         event_log_retention,
     )?;
@@ -364,6 +395,14 @@ async fn proxy_request_inner(
     let matches = state
         .rule_set
         .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
+    let session_id = campaign::session_fingerprint(
+        &client_ip,
+        &user_agent,
+        parts
+            .headers
+            .get(header::COOKIE)
+            .map(|value| value.as_bytes()),
+    );
     let decision = decision_with_behavior_and_bot(
         &state,
         DecisionRequest {
@@ -378,8 +417,10 @@ async fn proxy_request_inner(
             headers: &headers,
             user_agent: &user_agent,
             trusted_forwarded_headers,
+            session_id: &session_id,
         },
-    );
+    )
+    .await;
 
     log_decision(
         &parts.method,
@@ -494,6 +535,14 @@ async fn proxy_websocket_handshake(
         .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
     matches.extend(websocket_policy_matches(&state, &parts.headers));
 
+    let session_id = campaign::session_fingerprint(
+        &client_ip,
+        &user_agent,
+        parts
+            .headers
+            .get(header::COOKIE)
+            .map(|value| value.as_bytes()),
+    );
     let decision = decision_with_behavior_and_bot(
         &state,
         DecisionRequest {
@@ -508,8 +557,10 @@ async fn proxy_websocket_handshake(
             headers: &headers,
             user_agent: &user_agent,
             trusted_forwarded_headers,
+            session_id: &session_id,
         },
-    );
+    )
+    .await;
     let event = websocket_event(
         &upstream,
         &parts.headers,
@@ -916,9 +967,13 @@ struct DecisionRequest<'a> {
     headers: &'a str,
     user_agent: &'a str,
     trusted_forwarded_headers: bool,
+    session_id: &'a str,
 }
 
-fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'_>) -> WafDecision {
+async fn decision_with_behavior_and_bot(
+    state: &ProxyState,
+    request: DecisionRequest<'_>,
+) -> WafDecision {
     let DecisionRequest {
         request_id,
         mut matches,
@@ -931,6 +986,7 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
         headers,
         user_agent,
         trusted_forwarded_headers,
+        session_id,
     } = request;
     let deterministic_matches = matches.clone();
     let mut non_blocking_match_indices = Vec::new();
@@ -1057,6 +1113,58 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
         None
     };
 
+    let mut campaign_categories = deterministic_matches
+        .iter()
+        .map(|rule_match| rule_match.category.clone())
+        .collect::<Vec<_>>();
+    if bot_outcome
+        .as_ref()
+        .is_some_and(|outcome| !outcome.contributors.is_empty())
+    {
+        campaign_categories.push("bot_protection".to_string());
+    }
+    if behavior_outcome.as_ref().is_some_and(|outcome| {
+        outcome
+            .contributors
+            .iter()
+            .any(|contributor| contributor.reason == "scanner_path_probe")
+    }) {
+        campaign_categories.push("scanner_behavior".to_string());
+    }
+    if unknown_threat_outcome
+        .as_ref()
+        .is_some_and(|outcome| !outcome.signals.is_empty())
+    {
+        campaign_categories.push("unknown_threat".to_string());
+    }
+    campaign_categories.sort();
+    campaign_categories.dedup();
+    let campaign_outcome = if state.config.campaign_correlation.enabled && !skip_bot_and_behavior {
+        match state
+            .campaign_store
+            .evaluate(
+                &state.config.campaign_correlation,
+                CampaignRequest {
+                    request_id: &request_id,
+                    client_id: client_ip,
+                    session_id,
+                    path,
+                    categories: &campaign_categories,
+                    server_mode: state.config.server.mode,
+                },
+            )
+            .await
+        {
+            Ok(outcome) => Some(outcome),
+            Err(error) => {
+                warn!(request_id, %error, "campaign correlation failed");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let decision_mode = if allowlist_effect == Some(RuntimeAllowlistEffect::MonitorAll) {
         WafMode::Monitor
     } else {
@@ -1114,6 +1222,13 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
             decision.action = WafAction::Block;
         }
         decision = decision.with_bot_protection(outcome);
+    }
+
+    if let Some(outcome) = campaign_outcome {
+        if outcome.action == WafAction::Monitor && decision.action == WafAction::Allow {
+            decision.action = WafAction::Monitor;
+        }
+        decision = decision.with_campaign(outcome);
     }
 
     if let Some(runtime_allowlist) = runtime_allowlist {
@@ -1306,6 +1421,8 @@ fn log_decision(
         unknown_threat_route_excluded = decision.unknown_threats.as_ref().map(|outcome| outcome.route_excluded).unwrap_or(false),
         unknown_threat_capacity_reached = decision.unknown_threats.as_ref().map(|outcome| outcome.capacity_reached).unwrap_or(false),
         unknown_threat_pruned_routes = decision.unknown_threats.as_ref().map(|outcome| outcome.pruned_routes).unwrap_or(0),
+        campaign_ids = %decision.campaign.as_ref().map(|outcome| outcome.campaign_ids.join(",")).unwrap_or_default(),
+        campaign_matches = decision.campaign.as_ref().map(|outcome| outcome.matches.len()).unwrap_or(0),
         bot_protection_score = decision.bot_protection.as_ref().map(|bot| bot.score).unwrap_or(0),
         bot_protection_action = ?decision.bot_protection.as_ref().map(|bot| bot.action),
         severity = %decision.severity,
@@ -1598,6 +1715,7 @@ mod tests {
             rules: Default::default(),
             behavior: Default::default(),
             unknown_threats: Default::default(),
+            campaign_correlation: Default::default(),
             bot_protection: Default::default(),
             runtime_policy: Default::default(),
             ai: Default::default(),

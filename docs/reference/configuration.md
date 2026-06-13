@@ -193,6 +193,30 @@ feature sets, bucketed body-size learning, and optional trusted-only learning.
 When `trusted_learning_only` is true, `trusted_learning_clients` accepts exact
 IP addresses and IPv4 CIDRs.
 
+## Campaign Correlation
+
+Campaign correlation combines rule, bot, behavior, and unknown-threat
+observations over a bounded time window. It stores only client identifiers,
+hashed session fingerprints, route shapes, categories, and request IDs.
+
+```yaml
+campaign_correlation:
+  enabled: true
+  mode: monitor
+  backend: redis
+  redis_url: redis://127.0.0.1:6379
+  redis_key_prefix: saugra-waf:production:campaign-correlation
+  window: 15m
+  retention: 24h
+  max_events: 50000
+  policy_catalog: /etc/saugra-waf/intelligence/campaign-policies.yml
+```
+
+Use `redis` for multiple Saugra instances. The bundled policy catalog detects
+distributed scanning, endpoint discovery, credential attacks, and multi-step
+progression. Correlation is monitor-only; campaign IDs and evidence counts are
+included in security events and `saugra-waf explain`.
+
 ## Forwarded Headers
 
 Only trust client IP and protocol headers from known reverse proxies. An

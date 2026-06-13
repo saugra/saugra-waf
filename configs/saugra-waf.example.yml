@@ -109,6 +109,24 @@ unknown_threats:
       monitor_threshold: 15
       block_threshold: 40
 
+# Correlates privacy-minimized security observations into monitor-only attack
+# campaigns. Use Redis for multi-instance production deployments.
+campaign_correlation:
+  enabled: false
+  mode: monitor
+  backend: local
+  state_path: logs/saugra-waf-campaign-state.json
+  # For production:
+  # backend: redis
+  # redis_url: redis://127.0.0.1:6379
+  # redis_password: ${SAUGRA_REDIS_PASSWORD}
+  redis_key_prefix: saugra-waf:campaign-correlation
+  window: 15m
+  retention: 24h
+  max_events: 50000
+  # "builtin" embeds configs/intelligence/campaign-policies.yml.
+  policy_catalog: builtin
+
 bot_protection:
   enabled: true
   mode: monitor
