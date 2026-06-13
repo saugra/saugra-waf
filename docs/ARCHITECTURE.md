@@ -343,7 +343,23 @@ Explanation behavior:
 - suggest possible tuning direction
 - classify event type
 
-Saugra may use deterministic templates, an LLM integration, or both. Blocking remains deterministic and based on rules, rate limits, and explicit configuration.
+Saugra uses a provider-neutral asynchronous interface with local Ollama as the
+default, a deterministic local fallback, and an optional command-based adapter.
+The command adapter can connect to operator-selected remote services such as
+OpenAI, Gemini, or an internal model gateway. Native provider-specific HTTP
+clients are not implemented yet.
+Before a model or adapter runs, Saugra builds a minimized input containing route
+shapes, query parameter names, rule
+metadata, scores, baseline signals, behavior history, and campaign counts. Raw
+query values, request bodies, cookies, authorization values, client addresses,
+and upstream credentials are excluded.
+
+Provider output is advisory. Tuning suggestions are restricted to narrow,
+reviewable configuration changes and are never applied automatically. Each
+invocation is written to a JSONL audit trail with model, prompt version, input
+digest, output, latency, fallback status, and failure state. Blocking remains
+deterministic and based on rules, rate limits, scoring, and explicit
+configuration.
 
 Example:
 
@@ -608,6 +624,11 @@ older than the configured retention count.
 `saugra-waf logs tail` and `saugra-waf explain <request-id>` read across the active and
 rotated event files so recent audit and explanation workflows continue after
 rotation.
+
+A request ID is available only while its event remains in those files.
+Retention is based on bytes and file count rather than event age. The shipped
+settings of `100mb` and `10` retain up to one active file and ten rotated files,
+or approximately 1.1 GB. They do not guarantee a fixed number of days.
 
 ## Future Architecture
 

@@ -419,8 +419,32 @@ async fn main() -> anyhow::Result<()> {
                     upstream.name, upstream.host, upstream.target
                 );
             }
+            let explanation = ai::explain_event(&config.ai, &event).await?;
             println!();
-            println!("{}", ai::explain(&event.decision));
+            println!("{}", explanation.explanation);
+            if !explanation.tuning_suggestions.is_empty() {
+                println!();
+                println!("Tuning suggestions (review before applying):");
+                for suggestion in &explanation.tuning_suggestions {
+                    println!(
+                        "- {} at {}: {} Proposed value: {}",
+                        suggestion.kind,
+                        suggestion.config_path,
+                        suggestion.rationale,
+                        suggestion.proposed_value.replace('\n', "; ")
+                    );
+                }
+            }
+            println!();
+            println!(
+                "Explanation provider: {} model={} prompt={} digest={} latency_ms={} fallback={}",
+                explanation.provider,
+                explanation.model,
+                explanation.prompt_version,
+                explanation.input_digest,
+                explanation.latency_ms,
+                explanation.fallback_used
+            );
             println!("{}", serde_json::to_string_pretty(&event.decision)?);
             Ok(())
         }

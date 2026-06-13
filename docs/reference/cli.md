@@ -41,8 +41,10 @@ saugra-waf explain <request-id>
 ```
 
 `logs tail` shows recent security events. `logs summary` aggregates recent
-actions and categories. `explain` retrieves the stored decision associated
-with a request ID.
+actions and categories. `explain` retrieves the stored decision, invokes the
+configured explain-only provider with sanitized metadata, prints bounded tuning
+suggestions, and records an AI audit event. Provider failures fall back to the
+deterministic local explanation.
 
 ## Runtime Policy
 

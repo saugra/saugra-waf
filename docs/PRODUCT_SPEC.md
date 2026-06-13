@@ -404,6 +404,9 @@ bot_protection:
 ai:
   enabled: true
   mode: explain_only
+  provider: ollama
+  ollama_url: http://127.0.0.1:11434
+  model: qwen3:4b
 
 logging:
   format: json
@@ -423,6 +426,13 @@ Supported modes:
 ## 8. AI-Assisted Features
 
 AI should assist, not fully control blocking decisions.
+
+Model-backed explanations are optional. Low-resource or restricted deployments
+can use `ai.enabled: false` or `ai.provider: local` and retain deterministic
+explanations. Local Ollama is the default model provider. Remote services such
+as OpenAI, Gemini, or an internal gateway are currently supported through the
+operator-managed command adapter; native provider-specific clients remain
+planned work.
 
 Recommended AI features:
 
@@ -823,14 +833,29 @@ Options:
 
 Production baseline:
 
-- Local explain-only module
-- Optional LLM API integration
+- Deterministic local explanations that work with `ai.enabled: false`
+- Optional local Ollama provider for explain-only analysis
+- Provider-neutral asynchronous explanation interface
+- Optional remote model APIs through an operator-managed command adapter
+- Sanitized model input that excludes request values, bodies, credentials,
+  client addresses, and upstream secrets
+- Structured and bounded explanation output with deterministic validation and
+  fallback
+- Narrow tuning suggestions that require human review and are never applied
+  automatically
+- Auditable model, prompt version, input digest, latency, output, and failure
+  records
 
-Later:
+Planned:
 
-- Local ONNX model
-- Anomaly detection model
-- Privacy-preserving local inference
+- Native OpenAI-compatible and Gemini providers with secret references,
+  endpoint allowlisting, TLS enforcement, and provider rate-limit handling
+- Optional lightweight local inference backend, such as ONNX, when it provides
+  a measurable resource or deployment advantage over Ollama
+- Versioned model evaluation and replay tooling for sanitized security cases
+- Privacy and residency controls for remote providers
+- Model-assisted anomaly research in shadow mode only; deterministic policy
+  remains the authority for monitor and block decisions
 
 ## 23. Final Recommendation
 

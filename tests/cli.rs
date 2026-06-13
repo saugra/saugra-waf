@@ -246,6 +246,7 @@ impl CliFixture {
         let runtime_policy_path = dir.path().join("runtime-policy.json");
         let behavior_state_path = dir.path().join("behavior-state.json");
         let bot_state_path = dir.path().join("bot-state.json");
+        let ai_audit_path = dir.path().join("ai-audit.jsonl");
         let summary_path = dir.path().join("summary.json");
         let cleanup_dir = dir.path().join("cleanup");
         fs::create_dir_all(&cleanup_dir).unwrap();
@@ -276,6 +277,9 @@ behavior:
 bot_protection:
   backend: local
   state_path: {}
+ai:
+  provider: local
+  audit_log_path: {}
 runtime_policy:
   path: {}
 rules:
@@ -302,6 +306,7 @@ storage_cleanup:
 "#,
                 behavior_state_path.display(),
                 bot_state_path.display(),
+                ai_audit_path.display(),
                 runtime_policy_path.display(),
                 event_log_path.display(),
                 summary_path.display(),

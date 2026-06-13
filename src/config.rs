@@ -175,6 +175,22 @@ pub enum ConfigError {
     InvalidRuntimePolicyDefaultDuration,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
+    #[error("ai.provider must be ollama, local, or command")]
+    InvalidAiProvider,
+    #[error("ai.ollama_url must be a local HTTP URL")]
+    InvalidAiOllamaUrl,
+    #[error("ai.command must not be blank when ai.provider is command")]
+    MissingAiCommand,
+    #[error("ai.prompt_version, ai.model, and ai.audit_log_path must not be blank")]
+    InvalidAiMetadata,
+    #[error("ai.audit_log_max_size must be a positive byte size")]
+    InvalidAiAuditLogMaxSize,
+    #[error("ai.audit_log_max_files must be greater than zero")]
+    InvalidAiAuditLogMaxFiles,
+    #[error("ai.timeout must be a positive duration")]
+    InvalidAiTimeout,
+    #[error("ai.max_tuning_suggestions must be greater than zero")]
+    InvalidAiSuggestionLimit,
     #[error("rules.inbound_anomaly_threshold must be greater than zero")]
     InvalidAnomalyThreshold,
     #[error("rules paranoia levels must be greater than zero")]
@@ -1098,6 +1114,28 @@ pub struct AiConfig {
     pub enabled: bool,
     #[serde(default = "default_ai_mode")]
     pub mode: String,
+    #[serde(default = "default_ai_provider")]
+    pub provider: String,
+    #[serde(default = "default_ai_ollama_url")]
+    pub ollama_url: String,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub command_args: Vec<String>,
+    #[serde(default = "default_ai_model")]
+    pub model: String,
+    #[serde(default = "default_ai_prompt_version")]
+    pub prompt_version: String,
+    #[serde(default = "default_ai_timeout")]
+    pub timeout: String,
+    #[serde(default = "default_ai_audit_log_path")]
+    pub audit_log_path: PathBuf,
+    #[serde(default = "default_ai_audit_log_max_size")]
+    pub audit_log_max_size: String,
+    #[serde(default = "default_ai_audit_log_max_files")]
+    pub audit_log_max_files: usize,
+    #[serde(default = "default_ai_max_tuning_suggestions")]
+    pub max_tuning_suggestions: usize,
 }
 
 impl Default for AiConfig {
@@ -1105,6 +1143,17 @@ impl Default for AiConfig {
         Self {
             enabled: true,
             mode: default_ai_mode(),
+            provider: default_ai_provider(),
+            ollama_url: default_ai_ollama_url(),
+            command: None,
+            command_args: Vec::new(),
+            model: default_ai_model(),
+            prompt_version: default_ai_prompt_version(),
+            timeout: default_ai_timeout(),
+            audit_log_path: default_ai_audit_log_path(),
+            audit_log_max_size: default_ai_audit_log_max_size(),
+            audit_log_max_files: default_ai_audit_log_max_files(),
+            max_tuning_suggestions: default_ai_max_tuning_suggestions(),
         }
     }
 }
@@ -1316,6 +1365,42 @@ impl SaugraConfig {
 
         if self.ai.enabled && self.ai.mode != "explain_only" {
             return Err(ConfigError::InvalidAiMode);
+        }
+        if !matches!(self.ai.provider.as_str(), "ollama" | "local" | "command") {
+            return Err(ConfigError::InvalidAiProvider);
+        }
+        if !is_local_ollama_url(&self.ai.ollama_url) {
+            return Err(ConfigError::InvalidAiOllamaUrl);
+        }
+        if self.ai.enabled
+            && self.ai.provider == "command"
+            && self
+                .ai
+                .command
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+        {
+            return Err(ConfigError::MissingAiCommand);
+        }
+        if self.ai.prompt_version.trim().is_empty()
+            || self.ai.model.trim().is_empty()
+            || self.ai.audit_log_path.as_os_str().is_empty()
+        {
+            return Err(ConfigError::InvalidAiMetadata);
+        }
+        if parse_byte_size(&self.ai.audit_log_max_size).is_none() {
+            return Err(ConfigError::InvalidAiAuditLogMaxSize);
+        }
+        if self.ai.audit_log_max_files == 0 {
+            return Err(ConfigError::InvalidAiAuditLogMaxFiles);
+        }
+        if parse_duration_seconds(&self.ai.timeout).is_none() {
+            return Err(ConfigError::InvalidAiTimeout);
+        }
+        if self.ai.max_tuning_suggestions == 0 {
+            return Err(ConfigError::InvalidAiSuggestionLimit);
         }
 
         if self.rules.inbound_anomaly_threshold == 0 {
@@ -2599,6 +2684,57 @@ fn default_scanner_paths() -> Vec<String> {
 
 fn default_ai_mode() -> String {
     "explain_only".to_string()
+}
+
+fn default_ai_provider() -> String {
+    "ollama".to_string()
+}
+
+fn default_ai_model() -> String {
+    "qwen3:4b".to_string()
+}
+
+fn default_ai_ollama_url() -> String {
+    "http://127.0.0.1:11434".to_string()
+}
+
+fn default_ai_prompt_version() -> String {
+    "saugra-explain-v1".to_string()
+}
+
+fn default_ai_timeout() -> String {
+    "60s".to_string()
+}
+
+fn default_ai_audit_log_path() -> PathBuf {
+    PathBuf::from("logs/saugra-waf-ai-audit.jsonl")
+}
+
+fn default_ai_audit_log_max_size() -> String {
+    "100mb".to_string()
+}
+
+fn default_ai_audit_log_max_files() -> usize {
+    10
+}
+
+fn default_ai_max_tuning_suggestions() -> usize {
+    3
+}
+
+fn is_local_ollama_url(value: &str) -> bool {
+    let value = value.trim().trim_end_matches('/');
+    let Some(authority) = value.strip_prefix("http://") else {
+        return false;
+    };
+    let authority = authority.split('/').next().unwrap_or_default();
+    if matches!(authority, "localhost" | "127.0.0.1" | "[::1]") {
+        return true;
+    }
+    ["localhost:", "127.0.0.1:", "[::1]:"]
+        .iter()
+        .find_map(|prefix| authority.strip_prefix(prefix))
+        .is_some_and(|port| port.parse::<u16>().is_ok())
 }
 
 fn default_log_format() -> String {
@@ -4246,5 +4382,69 @@ campaign_correlation:
             config.validate(),
             Err(ConfigError::MissingCampaignRedisUrl)
         ));
+    }
+
+    #[test]
+    fn command_ai_provider_requires_a_command() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  enabled: true
+  mode: explain_only
+  provider: command
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::MissingAiCommand)
+        ));
+    }
+
+    #[test]
+    fn ai_defaults_to_local_ollama_with_qwen3() {
+        let config = AiConfig::default();
+
+        assert_eq!(config.provider, "ollama");
+        assert_eq!(config.ollama_url, "http://127.0.0.1:11434");
+        assert_eq!(config.model, "qwen3:4b");
+        assert_eq!(config.timeout, "60s");
+    }
+
+    #[test]
+    fn rejects_non_local_ollama_url() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  provider: ollama
+  ollama_url: https://models.example.com
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidAiOllamaUrl)
+        ));
+    }
+
+    #[test]
+    fn accepts_custom_loopback_ollama_port() {
+        assert!(is_local_ollama_url("http://localhost:11435"));
+        assert!(is_local_ollama_url("http://127.0.0.1:11435/api"));
+        assert!(is_local_ollama_url("http://[::1]:11435"));
     }
 }

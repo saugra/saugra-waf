@@ -575,16 +575,32 @@ only reason Saugra blocks a request.
 
 ### AI Explanations and Tuning
 
-- [ ] Define a provider-neutral asynchronous explanation interface.
-- [ ] Redact secrets and minimize payload data before any external model call.
-- [ ] Explain route-baseline deviations, rule matches, behavior history, and
+- [x] Define a provider-neutral asynchronous explanation interface.
+- [x] Redact secrets and minimize payload data before any external model call.
+- [x] Explain route-baseline deviations, rule matches, behavior history, and
       campaign context.
-- [ ] Generate narrow tuning suggestions such as route exclusions or threshold
+- [x] Generate narrow tuning suggestions such as route exclusions or threshold
       changes.
-- [ ] Record model, prompt version, input digest, output, latency, and failure
+- [x] Record model, prompt version, input digest, output, latency, and failure
       state for auditability.
-- [ ] Keep deterministic local explanations available when AI is disabled or
+- [x] Keep deterministic local explanations available when AI is disabled or
       unavailable.
+- [ ] Add native OpenAI-compatible remote provider configuration with secret
+      references, endpoint allowlisting, TLS enforcement, and rate-limit tests.
+- [ ] Add native Gemini provider configuration with the same sanitization,
+      audit, timeout, and deterministic-fallback guarantees.
+- [ ] Evaluate an optional lightweight local inference backend, such as ONNX,
+      and adopt it only when benchmarks show a meaningful resource or
+      deployment advantage over Ollama.
+- [ ] Add versioned model evaluation and replay tooling for sanitized security
+      cases, including schema, privacy, grounding, suggestion-scope, quality,
+      and latency regression checks.
+- [ ] Add remote-provider privacy and residency controls, including explicit
+      provider enablement, data-region policy, retention disclosure, auditable
+      secret references, and a local-only deployment mode.
+- [ ] Research model-assisted anomaly analysis in shadow mode with offline
+      evaluation and operator review; deterministic policy must remain the
+      authority for monitor and block decisions.
 
 ### Rule Drafting and Replay
 

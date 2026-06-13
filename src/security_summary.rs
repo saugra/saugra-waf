@@ -38,6 +38,10 @@ pub struct SecuritySummary {
     pub top_source_ips: Vec<SummaryCount>,
     pub top_targeted_paths: Vec<SummaryCount>,
     pub important_blocked_request_ids: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_log_max_size: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub event_log_max_files: Option<usize>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -72,6 +76,8 @@ pub fn generate_from_config(config: &SaugraConfig) -> anyhow::Result<SecuritySum
         &config.security_summary.timezone,
     );
     summary.app_hostname = summary_app_hostname(config);
+    summary.event_log_max_size = Some(config.logging.event_log_max_size.clone());
+    summary.event_log_max_files = Some(config.logging.event_log_max_files);
     Ok(summary)
 }
 
@@ -164,6 +170,8 @@ pub fn generate(
         top_source_ips: top_counts(source_ips, 10),
         top_targeted_paths: top_counts(paths, 10),
         important_blocked_request_ids,
+        event_log_max_size: None,
+        event_log_max_files: None,
     }
 }
 
@@ -357,8 +365,24 @@ fn render_summary_text(summary: &SecuritySummary) -> String {
             text.push_str(&format!("- {request_id}\n"));
         }
     }
-    text.push_str("\nExplain a request on the server with: saugra-waf explain <request-id>\n");
+    text.push_str("\nExplain a request on the server with:\n");
+    text.push_str("  saugra-waf explain <request-id>\n");
+    text.push_str("Warning: ");
+    text.push_str(&summary_retention_text(summary));
+    text.push('\n');
     text
+}
+
+fn summary_retention_text(summary: &SecuritySummary) -> String {
+    match (
+        summary.event_log_max_size.as_deref(),
+        summary.event_log_max_files,
+    ) {
+        (Some(max_size), Some(max_files)) => format!(
+            "Request IDs remain explainable only while their events are in the active log or {max_files} retained rotated files of up to {max_size} each. Retention is volume-based, not a fixed number of days."
+        ),
+        _ => "Request IDs remain explainable only while their events are in the active or retained rotated logs. Retention is volume-based, not a fixed number of days.".to_string(),
+    }
 }
 
 fn append_text_counts(text: &mut String, title: &str, counts: &[SummaryCount]) {
@@ -442,7 +466,13 @@ fn render_summary_html(summary: &SecuritySummary) -> String {
           {blocked_ids}
           <tr>
             <td style="padding:18px 28px 24px;color:#6b7280;font-size:12px;border-top:1px solid #e5e7eb;">
-              This report is generated from local Saugra security events. Use <code>saugra-waf explain &lt;request-id&gt;</code> on the server for detailed analysis of a specific request.
+              <div>This report is generated from local Saugra security events. Use the following command on the server for detailed analysis of a specific request:</div>
+              <div style="margin:10px 0 12px;">
+                <code style="display:inline-block;padding:7px 10px;border:1px solid #d1d5db;border-radius:4px;background:#f3f4f6;color:#111827;font-family:'Courier New',Courier,monospace;font-size:12px;">saugra-waf explain &lt;request-id&gt;</code>
+              </div>
+              <div style="padding:9px 11px;border-left:3px solid #d97706;background:#fffbeb;color:#92400e;">
+                <strong>Warning:</strong> {retention_text}
+              </div>
             </td>
           </tr>
         </table>
@@ -468,6 +498,7 @@ fn render_summary_html(summary: &SecuritySummary) -> String {
         ips = html_count_section("Top Source IPs", &summary.top_source_ips),
         paths = html_count_section("Top Targeted Paths", &summary.top_targeted_paths),
         blocked_ids = html_blocked_ids(&summary.important_blocked_request_ids),
+        retention_text = html_escape(&summary_retention_text(summary)),
     )
 }
 
@@ -831,6 +862,8 @@ mod tests {
                 count: 4_969,
             }],
             important_blocked_request_ids: Vec::new(),
+            event_log_max_size: Some("100mb".to_string()),
+            event_log_max_files: Some(10),
         };
 
         let message = build_email_message(
@@ -846,6 +879,11 @@ mod tests {
         assert!(message.contains("text-align:center"));
         assert!(message.contains("saugra-waf explain &lt;request-id&gt;"));
         assert!(message.contains("saugra-waf explain <request-id>"));
+        assert!(message.contains("font-family:'Courier New',Courier,monospace"));
+        assert!(message.contains("<strong>Warning:</strong>"));
+        assert!(message.contains("Warning: Request IDs remain explainable"));
+        assert!(message.contains("active log or 10 retained rotated files of up to 100mb each"));
+        assert!(message.contains("Retention is volume-based, not a fixed number of days."));
         assert!(!message.contains("--config /etc/saugra-waf/saugra-waf.yml"));
         assert!(message.contains("41,408"));
         assert!(message.contains("SAUGRA-BOT-PROTECTION-001"));

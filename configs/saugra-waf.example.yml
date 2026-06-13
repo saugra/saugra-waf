@@ -194,11 +194,29 @@ rules:
 ai:
   enabled: true
   mode: explain_only
+  provider: ollama
+  ollama_url: http://127.0.0.1:11434
+  model: qwen3:4b
+  prompt_version: saugra-explain-v1
+  timeout: 60s
+  audit_log_path: logs/saugra-waf-ai-audit.jsonl
+  audit_log_max_size: 100mb
+  audit_log_max_files: 10
+  max_tuning_suggestions: 3
+  # On hosts below 4 GB RAM, set enabled: false or provider: local.
+  # A 4 GB / 2-core shared host should use qwen3:1.7b, not qwen3:4b.
+  # Deterministic fallback is automatic when Ollama is unavailable.
+  # OpenAI, Gemini, and other remote APIs use an operator-managed adapter:
+  # provider: command
+  # command: /usr/local/bin/saugra-ai-adapter
+  # command_args: ["--provider", "example"]
 
 logging:
   format: json
   level: info
   event_log_path: logs/saugra-waf-events.jsonl
+  # Request IDs remain explainable while their events are in the active log or
+  # these retained rotated files. Retention is volume-based, not day-based.
   event_log_max_size: 100mb
   event_log_max_files: 10
   timezone: UTC

@@ -71,6 +71,11 @@ Use a request ID from an event to inspect the decision:
 saugra-waf explain <request-id>
 ```
 
+Request IDs are retained with their security events. By default, Saugra reads
+the active event log and ten rotated files of up to 100 MB each. Retention is
+volume-based rather than a fixed number of days, so high-traffic deployments
+should size and archive event storage according to their audit requirements.
+
 ## Put a Public Proxy in Front
 
 The recommended production request path is:

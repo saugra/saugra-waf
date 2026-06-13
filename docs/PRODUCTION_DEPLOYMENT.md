@@ -17,6 +17,7 @@ switch to `block` after tuning.
 - Redis for production rate limiting
 - Nginx or Apache as the public web server
 - Writable event log directory, for example `/var/log/saugra-waf`
+- Ollama on loopback when optional AI explanations are enabled
 
 ## Install Saugra on Ubuntu or Debian
 
@@ -68,6 +69,7 @@ The package installs:
 - bundled rule packs under `/etc/saugra-waf/rules/` when missing
 - bundled standards data under `/etc/saugra-waf/standards/` when missing
 - bundled scanner catalogs under `/etc/saugra-waf/intelligence/` when missing
+- Ollama model policy and evaluation fixtures under `/etc/saugra-waf/ollama/`
 - writable runtime paths under `/var/log/saugra-waf` and `/var/lib/saugra-waf`
 
 Confirm the binary and generated service are available:
@@ -113,6 +115,23 @@ systemctl enable --now redis-server
 systemctl enable --now saugra-waf
 systemctl status saugra-waf
 ```
+
+For optional local AI explanations, install Ollama separately, then create the
+versioned packaged model:
+
+```bash
+ollama pull qwen3:4b
+ollama create saugra-explainer:v1 -f /etc/saugra-waf/ollama/Modelfile
+```
+
+Set `ai.model: saugra-explainer:v1`. Keep Ollama on `127.0.0.1`; it is outside
+the request decision path. Follow [Ollama operations](OLLAMA.md) before
+promoting or upgrading a model.
+
+Ollama is not required. Low-resource hosts should set `ai.enabled: false` or
+`ai.provider: local`. Remote model services can be isolated behind Saugra's
+operator-managed command adapter. See
+[AI explanation providers](AI_PROVIDERS.md) for sizing and provider choices.
 
 Check Saugra locally before changing Nginx or Apache:
 
@@ -173,7 +192,7 @@ Create the service user and directories:
 
 ```bash
 useradd --system --home /var/lib/saugra-waf --shell /usr/sbin/nologin saugra-waf
-mkdir -p /etc/saugra-waf/rules /etc/saugra-waf/standards /var/log/saugra-waf /var/lib/saugra-waf
+mkdir -p /etc/saugra-waf/rules /etc/saugra-waf/standards /etc/saugra-waf/ollama /var/log/saugra-waf /var/lib/saugra-waf
 chown -R saugra-waf:saugra-waf /var/log/saugra-waf /var/lib/saugra-waf
 ```
 
@@ -183,6 +202,7 @@ Install the config:
 cp configs/saugra-waf.production.example.yml /etc/saugra-waf/saugra-waf.yml
 cp configs/rules/REQUEST-*.yml /etc/saugra-waf/rules/
 cp configs/standards/*.yml /etc/saugra-waf/standards/
+cp configs/ollama/Modelfile configs/ollama/evaluation-cases.jsonl /etc/saugra-waf/ollama/
 editor /etc/saugra-waf/saugra-waf.yml
 ```
 

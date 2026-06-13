@@ -86,6 +86,19 @@ rate_limit:
 Security events must use bounded, queryable storage. Configure the JSONL event
 path, rotation size, and retained file count under `logging`.
 
+```yaml
+logging:
+  event_log_path: /var/log/saugra-waf/saugra-waf-events.jsonl
+  event_log_max_size: 100mb
+  event_log_max_files: 10
+```
+
+`event_log_max_files` counts retained rotated files in addition to the active
+file. These settings retain approximately 1.1 GB at most. Request IDs can be
+used with `saugra-waf explain` only while their events remain in the active or
+rotated files. Retention is based on log volume; there is currently no
+time-based event-retention field.
+
 ## Unknown-Threat Monitoring
 
 `unknown_threats` learns request shapes per normalized route from clean
@@ -216,6 +229,99 @@ Use `redis` for multiple Saugra instances. The bundled policy catalog detects
 distributed scanning, endpoint discovery, credential attacks, and multi-step
 progression. Correlation is monitor-only; campaign IDs and evidence counts are
 included in security events and `saugra-waf explain`.
+
+## AI Explanations
+
+AI remains explain-only and cannot change request decisions. The default
+provider uses local Ollama with deterministic fallback:
+
+```yaml
+ai:
+  enabled: true
+  mode: explain_only
+  provider: ollama
+  ollama_url: http://127.0.0.1:11434
+  model: qwen3:4b
+  prompt_version: saugra-explain-v1
+  timeout: 60s
+  audit_log_path: /var/log/saugra-waf/saugra-waf-ai-audit.jsonl
+  audit_log_max_size: 100mb
+  audit_log_max_files: 30
+  max_tuning_suggestions: 3
+```
+
+Install Ollama locally, start its service, and pull the default model:
+
+```bash
+ollama pull qwen3:4b
+```
+
+For production model creation, evaluation, upgrades, rollback, and offline
+training guardrails, use the [Ollama operations guide](../OLLAMA.md).
+
+Saugra calls `POST /api/generate` over loopback with streaming disabled and a
+JSON schema for the response. If Ollama is unavailable, times out, or returns
+invalid output, `saugra-waf explain` uses the deterministic local explanation.
+Set `provider: local` to disable model calls explicitly.
+
+To disable model-backed explanations completely while retaining deterministic
+`explain` output:
+
+```yaml
+ai:
+  enabled: false
+  mode: explain_only
+```
+
+See [AI explanation providers](../AI_PROVIDERS.md) for minimum resource
+guidance and remote OpenAI, Gemini, or model-gateway integration through the
+command adapter.
+
+The `command` provider supports another operator-managed model gateway:
+
+```yaml
+ai:
+  enabled: true
+  mode: explain_only
+  provider: command
+  command: /usr/local/bin/saugra-ai-adapter
+  command_args: ["--provider", "example"]
+  model: example-model
+  prompt_version: saugra-explain-v1
+  timeout: 60s
+  audit_log_path: /var/log/saugra-waf/saugra-waf-ai-audit.jsonl
+  audit_log_max_size: 100mb
+  audit_log_max_files: 30
+```
+
+Saugra writes one sanitized JSON object to the adapter's standard input. It
+contains query parameter names, route shapes, rule metadata, bounded scores,
+baseline signals, behavior reasons, and campaign counts. It excludes query
+values, bodies, cookies, authorization data, client addresses, and upstream
+credentials.
+
+The adapter must return:
+
+```json
+{
+  "explanation": "Human-readable explanation.",
+  "tuning_suggestions": [
+    {
+      "kind": "route_threshold_review",
+      "config_path": "unknown_threats.routes",
+      "rationale": "Review repeated legitimate events before tuning.",
+      "proposed_value": "path: /api/:id\nmonitor_threshold: 25"
+    }
+  ]
+}
+```
+
+Suggestions are filtered to scoped rule exclusions, unknown-threat route
+threshold reviews, and behavior route threshold reviews. Saugra never applies
+them automatically. Every invocation records provider, model, prompt version,
+input digest, output, latency, fallback state, and sanitized failure details in
+the audit JSONL file. Provider errors and timeouts return the deterministic
+local explanation.
 
 ## Forwarded Headers
 

@@ -30,6 +30,8 @@ assets = [
   ["configs/rules/*.yml", "usr/share/saugra-waf/rules/", "644"],
   ["configs/standards/*.yml", "usr/share/saugra-waf/standards/", "644"],
   ["configs/intelligence/*.yml", "usr/share/saugra-waf/intelligence/", "644"],
+  ["configs/ollama/Modelfile", "usr/share/saugra-waf/ollama/Modelfile", "644"],
+  ["configs/ollama/evaluation-cases.jsonl", "usr/share/saugra-waf/ollama/evaluation-cases.jsonl", "644"],
   ["configs/saugra-waf.production.example.yml", "usr/share/doc/saugra-waf/saugra-waf.production.example.yml", "644"],
   ["configs/nginx.production.example.conf", "usr/share/doc/saugra-waf/nginx.production.example.conf", "644"],
   ["configs/apache.production.example.conf", "usr/share/doc/saugra-waf/apache.production.example.conf", "644"],
@@ -39,6 +41,8 @@ assets = [
   ["TRADEMARKS.md", "usr/share/doc/saugra-waf/TRADEMARKS.md", "644"],
   ["docs/LICENSING.md", "usr/share/doc/saugra-waf/LICENSING.md", "644"],
   ["docs/PRODUCTION_DEPLOYMENT.md", "usr/share/doc/saugra-waf/PRODUCTION_DEPLOYMENT.md", "644"],
+  ["docs/AI_PROVIDERS.md", "usr/share/doc/saugra-waf/AI_PROVIDERS.md", "644"],
+  ["docs/OLLAMA.md", "usr/share/doc/saugra-waf/OLLAMA.md", "644"],
   ["docs/DEBIAN_PACKAGING.md", "usr/share/doc/saugra-waf/DEBIAN_PACKAGING.md", "644"],
 ]
 maintainer-scripts = "packaging/debian"
@@ -57,7 +61,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 thiserror = "1.0"
-tokio = { version = "1.39", features = ["io-util", "macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1.39", features = ["io-util", "macros", "process", "rt-multi-thread", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }

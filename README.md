@@ -243,6 +243,21 @@ Explain a recorded request decision:
 cargo run --bin saugra-waf -- explain <request-id> --config configs/saugra-waf.example.yml
 ```
 
+AI explanations use local Ollama with `qwen3:4b` by default and fall back to
+Saugra's deterministic local explanation when Ollama is unavailable:
+
+```bash
+ollama pull qwen3:4b
+```
+
+See [Ollama operations](docs/OLLAMA.md) for installation, the versioned Saugra
+`Modelfile`, evaluation, upgrades, rollback, and optional offline fine-tuning
+guardrails.
+
+Ollama is optional. See [AI explanation providers](docs/AI_PROVIDERS.md) for
+model-free operation, minimum server resources, smaller local models, and
+remote API integration through the command adapter.
+
 Run local deployment posture checks:
 
 ```bash

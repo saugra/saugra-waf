@@ -68,6 +68,8 @@ traffic and security events before enabling blocking.
 | Understand every major YAML section | [Configuration reference](reference/configuration.md) |
 | Find a command | [CLI reference](reference/cli.md) |
 | Run and troubleshoot a server | [Administration guide](ADMIN_GUIDE.md) |
+| Install and operate local AI explanations | [Ollama operations](OLLAMA.md) |
+| Choose local, disabled, or remote AI | [AI explanation providers](AI_PROVIDERS.md) |
 | Review OWASP coverage | [OWASP Top 10 strategy](OWASP_TOP_10_STRATEGY.md) |
 
 ## Current Scope
@@ -76,6 +78,8 @@ The current production-oriented foundation includes HTTP and WebSocket
 proxying, route-based upstream selection, external YAML rule packs, monitor and
 block modes, Redis-backed rate limiting, behavior and bot scoring, structured
 JSONL security events, runtime policy controls, and operator CLI workflows.
+Local Ollama provides optional explain-only analysis with deterministic
+fallback, bounded tuning suggestions, and a separate audit log.
 
 For release status and planned work, see the
 [public roadmap](https://github.com/saugra/saugra-waf/blob/main/ROADMAP.md).

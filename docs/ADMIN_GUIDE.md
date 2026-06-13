@@ -46,7 +46,8 @@ sudo apt install saugra-waf
 ```
 
 The package installs the CLI, systemd service, monitor-first production config,
-rule packs, standards, intelligence catalogs, and writable runtime directories.
+rule packs, standards, intelligence catalogs, Ollama model policy and evaluation
+fixtures, and writable runtime directories.
 Confirm the installation:
 
 ```bash
@@ -81,6 +82,23 @@ routes:
 Keep `server.mode`, `behavior.mode`, and `bot_protection.mode` set to `monitor`
 during the initial rollout. Also review `forwarded_headers.trusted_proxies`,
 rate-limit routes, and the Redis connection settings for the deployment.
+
+When AI explanations are enabled, install Ollama, create the packaged Saugra
+model, and keep its API on loopback:
+
+```bash
+ollama pull qwen3:4b
+ollama create saugra-explainer:v1 -f /etc/saugra-waf/ollama/Modelfile
+```
+
+Set `ai.model: saugra-explainer:v1`. The model is optional, never blocks
+traffic, and falls back to the deterministic explanation. See
+[Ollama operations](OLLAMA.md) for installation and evaluation.
+
+On a server with less than 4 GB RAM, use `ai.enabled: false` or
+`ai.provider: local`. A 4 GB, 2-core shared server should use at most
+`qwen3:1.7b`; the default `qwen3:4b` should start at 8 GB RAM. See
+[AI explanation providers](AI_PROVIDERS.md) for sizing and remote API adapters.
 
 Validate the configuration, then start Redis and Saugra:
 
@@ -513,6 +531,14 @@ directories do not grow forever. Event logs already rotate with
 for generated summary files, summary admin events, and explicit report
 directories you opt in. Baseline cleanup uses `unknown_threats.retention`.
 
+Request IDs remain available to `saugra-waf explain <request-id>` only while
+their security events remain in the active or retained rotated event logs.
+Retention is volume-based, not time-based. With the shipped `100mb` size and
+`10` rotated-file settings, Saugra retains one active file plus ten rotated
+files, for an approximate 1.1 GB ceiling. A busy deployment can therefore lose
+old request IDs sooner than a quiet deployment. There is currently no
+day-based event-retention setting.
+
 Start with a dry run:
 
 ```bash
@@ -880,11 +906,26 @@ saugra-waf test-config
 systemctl restart saugra-waf
 ```
 
+### Ollama Explanation Problems
+
+```bash
+systemctl status ollama --no-pager
+curl -s http://127.0.0.1:11434/api/version
+ollama list
+saugra-waf explain <request-id>
+tail -n 20 /var/log/saugra-waf/saugra-waf-ai-audit.jsonl
+```
+
+Saugra continues with its deterministic explanation when Ollama fails. Set
+`ai.provider: local` for an explicit rollback while investigating.
+
 ## Useful Files
 
 - `/etc/saugra-waf/saugra-waf.yml`: active config
 - `/etc/saugra-waf/rules/`: active rule packs
+- `/etc/saugra-waf/ollama/`: model policy and sanitized evaluation fixtures
 - `/var/lib/saugra-waf/runtime-policy.json`: runtime allow/block policy
 - `/var/lib/saugra-waf/saugra-waf-behavior-state.json`: local behavior state
 - `/var/lib/saugra-waf/saugra-waf-bot-state.json`: local bot protection state
 - `/var/log/saugra-waf/saugra-waf-events.jsonl`: security events
+- `/var/log/saugra-waf/saugra-waf-ai-audit.jsonl`: AI explanation audit records
