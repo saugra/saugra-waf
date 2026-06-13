@@ -8,7 +8,7 @@ use clap::{Parser, Subcommand};
 use saugra_waf::{
     ai, behavior, bot, config::SaugraConfig, crs_convert, event_store,
     event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rules, runtime_policy,
-    security_summary, standards, storage_cleanup,
+    security_summary, standards, storage_cleanup, unknown_threats,
 };
 
 const INSTALLED_CONFIG_PATH: &str = "/etc/saugra-waf/saugra-waf.yml";
@@ -87,10 +87,15 @@ enum Commands {
         #[command(subcommand)]
         command: SummaryCommand,
     },
-    /// Remove stale generated files according to configured retention policy.
+    /// Remove stale generated files and local baseline entries.
     Cleanup {
         #[command(subcommand)]
         command: CleanupCommand,
+    },
+    /// Review unknown-threat shadow and enforcement candidates.
+    UnknownThreats {
+        #[command(subcommand)]
+        command: UnknownThreatCommand,
     },
 }
 
@@ -285,6 +290,17 @@ enum CleanupCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum UnknownThreatCommand {
+    /// Summarize retained unknown-threat candidates for false-positive review.
+    Report {
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(short, long, default_value_t = 1000)]
+        limit: usize,
+    },
+}
+
 fn default_config_path() -> PathBuf {
     if let Some(path) = env::var_os(CONFIG_ENV_VAR).filter(|value| !value.is_empty()) {
         return PathBuf::from(path);
@@ -443,6 +459,25 @@ async fn main() -> anyhow::Result<()> {
         Commands::State { command } => handle_state(command),
         Commands::Summary { command } => handle_summary(command),
         Commands::Cleanup { command } => handle_cleanup(command),
+        Commands::UnknownThreats { command } => handle_unknown_threats(command),
+    }
+}
+
+fn handle_unknown_threats(command: UnknownThreatCommand) -> anyhow::Result<()> {
+    match command {
+        UnknownThreatCommand::Report { config, limit } => {
+            let config = load_valid_config(&config)?;
+            let events = event_store::tail(
+                Path::new(&config.logging.event_log_path),
+                event_log_retention(&config)?,
+                limit,
+            )?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&unknown_threats::shadow_report(&events))?
+            );
+            Ok(())
+        }
     }
 }
 

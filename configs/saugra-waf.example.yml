@@ -77,15 +77,37 @@ behavior:
 # only from requests with no deterministic rule matches and never stores bodies.
 unknown_threats:
   enabled: false
+  mode: monitor
+  shadow_review_completed: false
   backend: local
   state_path: logs/saugra-waf-unknown-threat-state.json
   minimum_observations: 100
   monitor_threshold: 20
-  unseen_method_score: 20
-  unseen_content_type_score: 15
-  unseen_query_parameter_score: 10
+  block_threshold: 40
+  minimum_independent_signals: 2
+  minimum_baseline_age: 7d
+  minimum_block_observations: 1000
+  # "builtin" embeds configs/intelligence/unknown-threat-signals.yml.
+  signal_catalog: builtin
   body_size_multiplier: 4
-  body_size_score: 15
+  promotion_observations: 3
+  trusted_learning_only: false
+  trusted_learning_clients: []
+  max_methods_per_route: 16
+  max_content_types_per_route: 32
+  max_query_parameters_per_route: 256
+  retention: 30d
+  max_routes: 10000
+  excluded_paths:
+    - /_saugra-waf/health
+  routes:
+    - path: /uploads
+      learning_enabled: false
+    - path: /admin
+      high_risk: true
+      minimum_observations: 200
+      monitor_threshold: 15
+      block_threshold: 40
 
 bot_protection:
   enabled: true
@@ -183,6 +205,8 @@ storage_cleanup:
   enabled: true
   schedule: daily
   run_time: "02:30"
+  # This command also prunes the local unknown-threat state using
+  # unknown_threats.retention.
   # Start new deployments with dry_run true. Switch to false after reviewing
   # `saugra-waf cleanup run --dry-run --config configs/saugra-waf.example.yml`.
   dry_run: true

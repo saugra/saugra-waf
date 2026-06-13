@@ -40,11 +40,19 @@ pub fn explain(decision: &WafDecision) -> String {
             .filter(|outcome| !outcome.signals.is_empty())
         {
             return format!(
-                "No request rules matched. Unknown-threat score is {}/{} for route {} with {} signal(s): {}.",
+                "No request rules matched. Unknown-threat score is {}/{} for monitor and {}/{} for block on route {} with {} signal(s). Would block: {}. Enforcement gates: {}. {}",
                 outcome.score,
                 outcome.threshold,
+                outcome.score,
+                outcome.block_threshold,
                 outcome.route_shape,
                 outcome.signals.len(),
+                outcome.would_block,
+                if outcome.enforcement_gates.is_empty() {
+                    "none".to_string()
+                } else {
+                    outcome.enforcement_gates.join(", ")
+                },
                 outcome
                     .signals
                     .iter()
@@ -87,11 +95,19 @@ pub fn explain(decision: &WafDecision) -> String {
         .filter(|outcome| !outcome.signals.is_empty())
         .map(|outcome| {
             format!(
-                " Unknown-threat score is {}/{} for route {} with {} signal(s): {}.",
+                " Unknown-threat score is {}/{} for monitor and {}/{} for block on route {} with {} signal(s). Would block: {}. Enforcement gates: {}. {}",
                 outcome.score,
                 outcome.threshold,
+                outcome.score,
+                outcome.block_threshold,
                 outcome.route_shape,
                 outcome.signals.len(),
+                outcome.would_block,
+                if outcome.enforcement_gates.is_empty() {
+                    "none".to_string()
+                } else {
+                    outcome.enforcement_gates.join(", ")
+                },
                 outcome
                     .signals
                     .iter()

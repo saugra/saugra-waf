@@ -6,7 +6,10 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 
-use crate::config::{SaugraConfig, StorageCleanupTargetConfig};
+use crate::{
+    config::{BehaviorBackend, SaugraConfig, StorageCleanupTargetConfig},
+    unknown_threats::{self, UnknownThreatCleanupReport},
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StorageCleanupReport {
@@ -17,6 +20,8 @@ pub struct StorageCleanupReport {
     pub skipped_files: usize,
     pub freed_bytes: u64,
     pub files: Vec<StorageCleanupFile>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unknown_threats: Option<UnknownThreatCleanupReport>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -41,7 +46,14 @@ pub fn run_from_config(
     dry_run_override: Option<bool>,
 ) -> anyhow::Result<StorageCleanupReport> {
     let dry_run = dry_run_override.unwrap_or(config.storage_cleanup.dry_run);
-    run(&config.storage_cleanup.targets, dry_run, unix_seconds_now())
+    let mut report = run(&config.storage_cleanup.targets, dry_run, unix_seconds_now())?;
+    if config.unknown_threats.backend == BehaviorBackend::Local {
+        report.unknown_threats = Some(unknown_threats::cleanup_local_state(
+            &config.unknown_threats,
+            dry_run,
+        )?);
+    }
+    Ok(report)
 }
 
 pub fn run(
@@ -57,6 +69,7 @@ pub fn run(
         skipped_files: 0,
         freed_bytes: 0,
         files: Vec::new(),
+        unknown_threats: None,
     };
 
     for target in targets {

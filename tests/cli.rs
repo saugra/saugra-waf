@@ -32,6 +32,8 @@ fn cli_cleanup_dry_run_prints_report_json() {
     assert_eq!(report["dry_run"], true);
     assert!(report["scanned_targets"].as_u64().unwrap() >= 1);
     assert!(report["files"].is_array());
+    assert_eq!(report["unknown_threats"]["dry_run"], true);
+    assert!(report["unknown_threats"]["routes_removed"].is_number());
 }
 
 #[test]
@@ -83,6 +85,10 @@ fn cli_read_only_inspection_commands_run() {
         (
             vec!["summary", "daily", "--config", &config],
             "\"total_security_events\"",
+        ),
+        (
+            vec!["unknown-threats", "report", "--config", &config],
+            "\"would_block_candidates\"",
         ),
     ];
 

@@ -544,22 +544,23 @@ only reason Saugra blocks a request.
       anomaly detection.
 - [ ] Add a Redis or equivalent shared baseline backend before supporting
       multi-instance enforcement.
-- [ ] Add bounded baseline retention, route cardinality limits, and scheduled
-      cleanup.
-- [ ] Add explicit route exclusions and route-specific learning policies.
+- [x] Add bounded baseline retention and route cardinality limits.
+- [x] Add scheduled cleanup for inactive local baseline stores through the
+      existing cleanup command and documented systemd timer.
+- [x] Add explicit route exclusions and route-specific learning policies.
 
 ### Deterministic Unknown-Threat Policy
 
-- [ ] Add independently configurable signal weights through a validated data
+- [x] Add independently configurable signal weights through a validated data
       file rather than hard-coded production policy.
-- [ ] Require at least two independent anomaly signals for automatic blocking.
-- [ ] Add observation-age and traffic-volume requirements before a baseline can
+- [x] Require at least two independent anomaly signals for automatic blocking.
+- [x] Add observation-age and traffic-volume requirements before a baseline can
       become blocking-eligible.
-- [ ] Prevent automatic blocking on newly observed routes.
-- [ ] Add route-specific thresholds and high-risk route policies.
-- [ ] Add shadow evaluation and false-positive reports before enabling block
+- [x] Prevent automatic blocking on newly observed routes.
+- [x] Add route-specific thresholds and high-risk route policies.
+- [x] Add shadow evaluation and false-positive reports before enabling block
       mode.
-- [ ] Add baseline poisoning defenses, including trusted-learning traffic,
+- [x] Add baseline poisoning defenses, including trusted-learning traffic,
       bounded updates, and quarantine of anomalous observations.
 
 ### Campaign Correlation

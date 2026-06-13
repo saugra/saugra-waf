@@ -1038,11 +1038,13 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
             &state.config.unknown_threats,
             UnknownThreatRequest {
                 path,
+                client_id: client_ip,
                 method,
                 content_type,
                 query,
                 body_size,
                 eligible_for_learning: deterministic_matches.is_empty(),
+                server_mode: state.config.server.mode,
             },
         ) {
             Ok(outcome) => Some(outcome),
@@ -1082,8 +1084,24 @@ fn decision_with_behavior_and_bot(state: &ProxyState, request: DecisionRequest<'
     };
 
     if let Some(outcome) = unknown_threat_outcome {
-        if outcome.action == WafAction::Monitor && decision.action == WafAction::Allow {
-            decision.action = WafAction::Monitor;
+        if let Some(rule_match) = unknown_threats::unknown_threat_rule_match(&outcome) {
+            decision.severity = rule_match.severity.to_string();
+            decision.risk_score = rule_match.severity.risk_score();
+            decision.explanation = rule_match.explanation.clone();
+            if let Some(category) = &rule_match.owasp_category {
+                decision.owasp_category = Some(category.clone());
+                if !decision.owasp_categories.contains(category) {
+                    decision.owasp_categories.push(category.clone());
+                }
+            }
+            decision.matched_rules.push(rule_match);
+        }
+        match outcome.action {
+            WafAction::Block => decision.action = WafAction::Block,
+            WafAction::Monitor if decision.action == WafAction::Allow => {
+                decision.action = WafAction::Monitor;
+            }
+            WafAction::Allow | WafAction::Monitor => {}
         }
         decision = decision.with_unknown_threats(outcome);
     }
@@ -1281,6 +1299,13 @@ fn log_decision(
         behavior_action = ?decision.behavior.as_ref().map(|behavior| behavior.action),
         unknown_threat_score = decision.unknown_threats.as_ref().map(|outcome| outcome.score).unwrap_or(0),
         unknown_threat_action = ?decision.unknown_threats.as_ref().map(|outcome| outcome.action),
+        unknown_threat_would_block = decision.unknown_threats.as_ref().map(|outcome| outcome.would_block).unwrap_or(false),
+        unknown_threat_block_eligible = decision.unknown_threats.as_ref().map(|outcome| outcome.block_eligible).unwrap_or(false),
+        unknown_threat_signals = decision.unknown_threats.as_ref().map(|outcome| outcome.signals.len()).unwrap_or(0),
+        unknown_threat_baseline_age_seconds = decision.unknown_threats.as_ref().map(|outcome| outcome.baseline_age_seconds).unwrap_or(0),
+        unknown_threat_route_excluded = decision.unknown_threats.as_ref().map(|outcome| outcome.route_excluded).unwrap_or(false),
+        unknown_threat_capacity_reached = decision.unknown_threats.as_ref().map(|outcome| outcome.capacity_reached).unwrap_or(false),
+        unknown_threat_pruned_routes = decision.unknown_threats.as_ref().map(|outcome| outcome.pruned_routes).unwrap_or(0),
         bot_protection_score = decision.bot_protection.as_ref().map(|bot| bot.score).unwrap_or(0),
         bot_protection_action = ?decision.bot_protection.as_ref().map(|bot| bot.action),
         severity = %decision.severity,

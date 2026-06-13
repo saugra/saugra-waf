@@ -225,10 +225,16 @@ Generate a daily security summary from local event logs:
 cargo run --bin saugra-waf -- summary daily --config configs/saugra-waf.example.yml
 ```
 
-Preview stale generated file cleanup:
+Preview stale generated file and unknown-threat baseline cleanup:
 
 ```bash
 cargo run --bin saugra-waf -- cleanup run --dry-run --config configs/saugra-waf.example.yml
+```
+
+Review unknown-threat shadow candidates:
+
+```bash
+cargo run --bin saugra-waf -- unknown-threats report --config configs/saugra-waf.example.yml
 ```
 
 Explain a recorded request decision:

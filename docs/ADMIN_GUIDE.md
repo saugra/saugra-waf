@@ -506,11 +506,12 @@ tail -n 20 /var/log/saugra-waf/saugra-waf-security-summary-admin-events.jsonl
 
 ## Storage Cleanup
 
-Saugra can remove stale generated files so `/var/log/saugra-waf` and report
+Saugra can remove stale generated files and expired local unknown-threat route
+baselines so `/var/log/saugra-waf`, `/var/lib/saugra-waf`, and report
 directories do not grow forever. Event logs already rotate with
-`logging.event_log_max_size` and `logging.event_log_max_files`; storage cleanup
-is for generated summary files, summary admin events, and explicit report
-directories you opt in.
+`logging.event_log_max_size` and `logging.event_log_max_files`; file cleanup is
+for generated summary files, summary admin events, and explicit report
+directories you opt in. Baseline cleanup uses `unknown_threats.retention`.
 
 Start with a dry run:
 
@@ -547,6 +548,13 @@ storage_cleanup:
 
 Cleanup only scans the configured target directories, only considers regular
 files matching the prefix/suffix pattern, and skips directories and symlinks.
+For local unknown-threat state, the JSON report includes route counts before
+and after cleanup. Dry runs do not modify either files or baseline state.
+
+The proxy and cleanup command coordinate local baseline access with the same
+lock and atomic file replacement, so the systemd timer can run while Saugra is
+serving traffic.
+
 For report cleanup, use predictable file names and narrow patterns:
 
 ```yaml
@@ -592,6 +600,50 @@ Enable it with:
 systemctl enable --now saugra-waf-cleanup.timer
 systemctl list-timers --all | grep saugra-waf-cleanup
 ```
+
+## Unknown-Threat Rollout
+
+Keep unknown-threat policy in `monitor` while the route baselines warm up. Move
+to `shadow` only after expected application routes have stable traffic:
+
+```yaml
+unknown_threats:
+  enabled: true
+  mode: shadow
+  shadow_review_completed: false
+```
+
+Review retained candidates:
+
+```bash
+saugra-waf unknown-threats report --limit 1000
+saugra-waf explain <sample-request-id>
+```
+
+The report highlights would-block volume, gated candidates, single-signal
+pressure, new-baseline pressure, top route shapes, and sample request IDs.
+Treat these as false-positive review candidates; the report does not claim to
+know whether application-specific traffic is legitimate.
+
+Only explicitly configured high-risk routes are eligible for blocking. After
+review and tuning, acknowledge the shadow review:
+
+```yaml
+server:
+  mode: block
+
+unknown_threats:
+  mode: block
+  shadow_review_completed: true
+  routes:
+    - path: /admin
+      high_risk: true
+      block_threshold: 40
+```
+
+Saugra still requires the configured baseline age, observation volume, score,
+and independent-signal count. Removing `high_risk: true` immediately returns a
+route to monitor-only behavior.
 
 ## Incident Workflows
 

@@ -69,11 +69,19 @@ runtime policy semantics and incident procedures.
 ## Reports and Maintenance
 
 Additional commands cover security summaries, external report ingestion, and
-local storage cleanup. Their exact options can evolve between releases:
+local storage cleanup. `cleanup run` also prunes expired local unknown-threat
+route baselines according to `unknown_threats.retention`. Its exact options can
+evolve between releases:
 
 ```bash
 saugra-waf --help
 saugra-waf <command> --help
+```
+
+Review unknown-threat shadow candidates before enabling guarded block mode:
+
+```bash
+saugra-waf unknown-threats report --limit 1000
 ```
 
 Prefer the help output from the installed release whenever it differs from the

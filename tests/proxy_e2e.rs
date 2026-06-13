@@ -16,7 +16,8 @@ use saugra_waf::{
         AiConfig, BehaviorBackend, BehaviorConfig, BehaviorMode, BotProtectionConfig,
         BotProtectionLists, LoggingConfig, ProxyRouteConfig, RateLimitBackend, RateLimitConfig,
         RuleExclusionConfig, RuleSettings, RuntimeAllowlistEffect, RuntimePolicyConfig,
-        SaugraConfig, SecurityConfig, ServerConfig, UpstreamConfig, WafMode,
+        SaugraConfig, SecurityConfig, ServerConfig, UnknownThreatMode, UnknownThreatRouteConfig,
+        UpstreamConfig, WafMode,
     },
     decision::WafAction,
     event_store::{self, EventLogRetention},
@@ -348,6 +349,84 @@ async fn block_mode_blocks_combined_findings_at_anomaly_threshold() {
     assert_eq!(events[0].decision.action, WafAction::Block);
     assert_eq!(events[0].decision.anomaly_score, 6);
     assert_eq!(events[0].decision.matched_rules.len(), 2);
+}
+
+#[tokio::test]
+async fn guarded_unknown_threat_policy_blocks_mature_high_risk_route() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.unknown_threats.enabled = true;
+    config.unknown_threats.mode = UnknownThreatMode::Block;
+    config.unknown_threats.backend = BehaviorBackend::Memory;
+    config.unknown_threats.shadow_review_completed = true;
+    config.unknown_threats.minimum_observations = 2;
+    config.unknown_threats.minimum_block_observations = 2;
+    config.unknown_threats.minimum_baseline_age = "1s".to_string();
+    config.unknown_threats.monitor_threshold = 10;
+    config.unknown_threats.block_threshold = 20;
+    config.unknown_threats.promotion_observations = 1;
+    config.unknown_threats.routes = vec![UnknownThreatRouteConfig {
+        path: "/admin".to_string(),
+        high_risk: true,
+        ..UnknownThreatRouteConfig::default()
+    }];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for id in [42, 43] {
+        let request = Request::builder()
+            .uri(format!("/admin/{id}?page=1"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        assert_eq!(
+            proxy_request(State(state.clone()), request)
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let request = Request::builder()
+        .method(Method::DELETE)
+        .uri("/admin/44?page=1")
+        .header(header::CONTENT_TYPE, "text/plain")
+        .body(Body::from("ok"))
+        .unwrap();
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let outcome = events
+        .last()
+        .unwrap()
+        .decision
+        .unknown_threats
+        .as_ref()
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(events.last().unwrap().decision.action, WafAction::Block);
+    assert!(outcome.would_block);
+    assert!(outcome.block_eligible);
+    assert_eq!(outcome.signals.len(), 2);
+    assert!(events
+        .last()
+        .unwrap()
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-UNKNOWN-THREAT-001"));
+    assert_eq!(events.last().unwrap().decision.risk_score, 80);
+    assert!(fake_upstream.requests.lock().unwrap().len() == 2);
 }
 
 #[tokio::test]

@@ -124,15 +124,46 @@ behavior:
 # until a shared baseline backend is configured in a future release.
 unknown_threats:
   enabled: false
+  # Roll out as monitor, then shadow. Run `saugra-waf unknown-threats report`
+  # before setting mode to block and shadow_review_completed to true.
+  mode: monitor
+  shadow_review_completed: false
   backend: local
   state_path: /var/lib/saugra-waf/saugra-waf-unknown-threat-state.json
   minimum_observations: 100
   monitor_threshold: 20
-  unseen_method_score: 20
-  unseen_content_type_score: 15
-  unseen_query_parameter_score: 10
+  block_threshold: 40
+  minimum_independent_signals: 2
+  minimum_baseline_age: 7d
+  minimum_block_observations: 1000
+  # The Debian package seeds this operator-managed catalog from the bundled
+  # default. Validate changes with `saugra-waf test-config` before restart.
+  signal_catalog: /etc/saugra-waf/intelligence/unknown-threat-signals.yml
   body_size_multiplier: 4
-  body_size_score: 15
+  # Novel values are quarantined until repeated and route feature sets are
+  # bounded to reduce baseline poisoning and state growth.
+  promotion_observations: 3
+  trusted_learning_only: false
+  # Set trusted_learning_only to true when a trusted replay, staging proxy, or
+  # known client range supplies baseline traffic.
+  trusted_learning_clients: []
+  max_methods_per_route: 16
+  max_content_types_per_route: 32
+  max_query_parameters_per_route: 256
+  retention: 30d
+  max_routes: 10000
+  excluded_paths:
+    - /_saugra-waf/health
+  routes:
+    # Disable learning where request shapes are intentionally unbounded.
+    - path: /uploads
+      learning_enabled: false
+    # Sensitive routes can require more trusted observations before monitoring.
+    - path: /admin
+      high_risk: true
+      minimum_observations: 200
+      monitor_threshold: 15
+      block_threshold: 40
 
 # Bot protection scores scanner-like behavior, blocklists, and suspicious
 # automation signals. Enable in monitor mode first, then tune thresholds.
@@ -294,7 +325,8 @@ security_summary:
     #     - security@example.com
     #   sendmail_path: /usr/sbin/sendmail
 
-# Storage cleanup removes stale generated files so local disks do not fill up.
+# Storage cleanup removes stale generated files and prunes expired routes from
+# the local unknown-threat baseline so local disks do not fill up.
 # Event logs already rotate through logging.event_log_max_size and
 # logging.event_log_max_files. Use storage_cleanup for generated summaries,
 # summary admin-event files, and any explicit local report/output directories
