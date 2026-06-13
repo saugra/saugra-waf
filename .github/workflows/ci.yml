@@ -29,6 +29,11 @@ jobs:
       - name: Install documentation dependencies
         run: pip install --requirement docs/requirements.txt
 
+      - name: Audit documentation dependencies
+        run: |
+          pip install pip-audit
+          pip-audit --requirement docs/requirements.txt
+
       - name: Build documentation
         run: mkdocs build --strict
 
@@ -72,3 +77,9 @@ jobs:
           token: ${{ env.CODECOV_TOKEN }}
           files: lcov.info
           fail_ci_if_error: false
+
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@cargo-audit
+
+      - name: Audit Rust dependencies
+        run: cargo audit
