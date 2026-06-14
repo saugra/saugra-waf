@@ -22,7 +22,7 @@ Production deployment examples live in:
 
 - `configs/nginx.production.example.conf`
 - `configs/apache.production.example.conf`
-- `docs/PRODUCTION_DEPLOYMENT.md`
+- `docs/ADMIN_GUIDE.md`
 
 ## Design Philosophy
 
@@ -48,8 +48,7 @@ OWASP Top 10 coverage should be modeled as layered controls, not only request
 regex rules. Request rules handle visible payloads, rate limits handle abuse
 over time, posture checks validate deployment assumptions, external report
 ingestion captures supply chain evidence, and durable logs provide audit and
-tuning evidence. The detailed strategy lives in
-`docs/OWASP_TOP_10_STRATEGY.md`.
+tuning evidence. The [security model](#security-model) defines that strategy.
 
 ## Main Components
 
@@ -276,7 +275,7 @@ force a deterministic block.
 
 Runtime policy changes must be observable. Security events and
 `explain <request-id>` should show when an allowlist entry affected the
-decision. The detailed plan lives in `docs/RUNTIME_ALLOWLIST.md`.
+decision. Operational use is documented in `docs/ADMIN_GUIDE.md`.
 
 ### 6. Decision Engine
 
@@ -343,8 +342,9 @@ Explanation behavior:
 - suggest possible tuning direction
 - classify event type
 
-Saugra uses a provider-neutral asynchronous interface with local Ollama as the
-default, a deterministic local fallback, and an optional command-based adapter.
+Saugra uses a provider-neutral asynchronous interface with loopback llama.cpp
+and Qwen3 0.6B as the lightweight default, local Ollama as an alternative, a
+deterministic local fallback, and an optional command-based adapter.
 The command adapter can connect to operator-selected remote services such as
 OpenAI, Gemini, or an internal model gateway. Native provider-specific HTTP
 clients are not implemented yet.
@@ -580,7 +580,7 @@ currently maps `t:urlDecode`, `t:urlDecodeUni`, and `t:lowercase`, honors
 `t:none`, and reports unsupported transform actions as skipped imports.
 
 The CRS import workflow and unsupported feature list are documented in
-`docs/CRS_IMPORT.md`.
+the [Rule Packs And CRS Import](#rule-packs-and-crs-import) section.
 
 Next rule-engine milestones:
 
@@ -588,6 +588,51 @@ Next rule-engine milestones:
 - Add fixtures for every imported CRS category before marking that category
   production-supported.
 - Keep unsupported CRS features explicitly documented.
+
+### Rule Packs And CRS Import
+
+Saugra runs native YAML rule packs. The CRS converter is an offline migration
+tool, not a ModSecurity compatibility layer:
+
+```bash
+saugra-waf rules convert-crs \
+  --input /path/to/coreruleset/rules \
+  --output /etc/saugra-waf/rules/converted-crs.yml
+saugra-waf test-config
+```
+
+Supported CRS input includes `SecRule` with `@rx` or `@pmFromFile`, mapped
+request targets, severity and paranoia tags, and ordered `t:none`,
+`t:urlDecode`, `t:urlDecodeUni`, and `t:lowercase` transforms. Unsupported
+operators, chained rules, complex selectors, collection updates, phase side
+effects, and unknown transforms are reported as `unsupported_imports`.
+Converted packs must be reviewed and deployed in monitor mode first.
+
+## Security Model
+
+Saugra is a defense-in-depth control, not a replacement for application
+authorization, dependency management, operating-system hardening, or security
+testing.
+
+Blocking is deterministic: request rules, rate limits, behavior and bot
+thresholds, unknown-threat policy gates, runtime policy, and explicit operator
+configuration. AI can explain retained evidence and propose tuning, but cannot
+be the sole reason for blocking or activate generated rules.
+
+OWASP Top 10:2025 coverage is layered:
+
+| Layer | Coverage |
+| --- | --- |
+| Request rules | Injection, traversal, XSS, command execution, suspicious protocol and parser inputs |
+| Policy checks | HTTPS, methods, headers, uploads, and forwarded-header assumptions |
+| Behavior controls | Scanning, brute force, credential abuse, and distributed campaigns |
+| External reports | SBOM, dependency, container, and CI security findings |
+| Evidence | Durable events, summaries, explanations, posture, and coverage commands |
+
+This mapping describes Saugra controls; it is not proof that a protected
+application is compliant. Sensitive bodies, credentials, cookies, tokens, and
+authorization values must be masked or excluded. Forwarded identity is trusted
+only from configured proxies, and production state must be durable and bounded.
 
 ## API and Dashboard Architecture
 

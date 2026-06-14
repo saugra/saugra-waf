@@ -175,9 +175,67 @@ struct OllamaExplanationProvider {
     model: String,
 }
 
+struct LlamaCppExplanationProvider {
+    base_url: String,
+    model: String,
+}
+
 #[derive(Debug, Deserialize)]
 struct OllamaGenerateResponse {
     response: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatCompletionResponse {
+    choices: Vec<ChatCompletionChoice>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatCompletionChoice {
+    message: ChatCompletionMessage,
+}
+
+#[derive(Debug, Deserialize)]
+struct ChatCompletionMessage {
+    content: String,
+}
+
+#[async_trait]
+impl ExplanationProvider for LlamaCppExplanationProvider {
+    fn name(&self) -> &str {
+        "llama_cpp"
+    }
+
+    fn model(&self) -> &str {
+        &self.model
+    }
+
+    async fn explain(&self, input: &ExplanationInput) -> anyhow::Result<ProviderOutput> {
+        let payload = llama_cpp_request_payload(&self.model, input)?;
+        let uri = llama_cpp_chat_completions_url(&self.base_url);
+        let request = Request::post(uri)
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&payload)?))
+            .context("failed to build llama.cpp request")?;
+        let client: Client<HttpConnector, Body> =
+            Client::builder(TokioExecutor::new()).build(HttpConnector::new());
+        let response = client
+            .request(request)
+            .await
+            .context("failed to connect to local llama.cpp server")?;
+        let status = response.status();
+        let body = to_bytes(response.map(Body::new).into_body(), 1024 * 1024)
+            .await
+            .context("failed to read llama.cpp response")?;
+        if status != StatusCode::OK {
+            return Err(anyhow::anyhow!(
+                "llama.cpp returned HTTP {}: {}",
+                status,
+                String::from_utf8_lossy(&body)
+            ));
+        }
+        parse_chat_completion_response(&body, "llama.cpp")
+    }
 }
 
 #[async_trait]
@@ -309,6 +367,12 @@ pub async fn explain_event(
 fn build_provider(config: &AiConfig) -> Box<dyn ExplanationProvider> {
     if config.enabled {
         match config.provider.as_str() {
+            "llama_cpp" => {
+                return Box::new(LlamaCppExplanationProvider {
+                    base_url: config.llama_cpp_url.clone(),
+                    model: config.model.clone(),
+                });
+            }
             "ollama" => {
                 return Box::new(OllamaExplanationProvider {
                     base_url: config.ollama_url.clone(),
@@ -527,51 +591,86 @@ fn ollama_request_payload(
 ) -> anyhow::Result<serde_json::Value> {
     Ok(json!({
         "model": model,
-        "system": "You are Saugra WAF's explain-only security analyst. Explain only the supplied deterministic evidence. Never claim to have blocked traffic, never invent request data, and return only JSON matching the supplied schema. Do not restate numeric scores or thresholds; Saugra reports those deterministically. Never infer a false positive from one event. Tuning suggestions must be narrow review actions after confirmed legitimate traffic, must name the supplied rule and route, and must never disable the WAF or a complete rule category.",
-        "prompt": format!(
-            "Explain this sanitized Saugra security event in at most 80 words. Provide at most one concise tuning review suggestion when justified:\n{}",
-            serde_json::to_string(input)?
-        ),
+        "system": explanation_system_prompt(),
+        "prompt": explanation_user_prompt(input)?,
         "stream": false,
         "think": false,
-        "format": {
-            "type": "object",
-            "properties": {
-                "explanation": {"type": "string", "maxLength": 600},
-                "tuning_suggestions": {
-                    "type": "array",
-                    "maxItems": 1,
-                    "items": {
-                        "type": "object",
-                        "properties": {
-                            "kind": {
-                                "type": "string",
-                                "enum": [
-                                    "route_threshold_review",
-                                    "scoped_rule_exclusion_review",
-                                    "behavior_threshold_review"
-                                ]
-                            },
-                            "config_path": {
-                                "type": "string",
-                                "enum": [
-                                    "unknown_threats.routes",
-                                    "rules.exclusions",
-                                    "behavior.route_overrides"
-                                ]
-                            },
-                            "rationale": {"type": "string", "maxLength": 240},
-                            "proposed_value": {"type": "string", "maxLength": 240}
-                        },
-                        "required": ["kind", "config_path", "rationale", "proposed_value"]
-                    }
-                }
-            },
-            "required": ["explanation", "tuning_suggestions"]
-        },
+        "format": explanation_output_schema(),
         "options": {
             "temperature": 0,
             "num_predict": 256
+        }
+    }))
+}
+
+fn explanation_system_prompt() -> &'static str {
+    "You are Saugra WAF's explain-only security analyst. Explain only the supplied deterministic evidence. Never claim to have blocked traffic, never invent request data, and return only JSON matching the supplied schema. Do not restate numeric scores or thresholds; Saugra reports those deterministically. Never infer a false positive from one event. Tuning suggestions must be narrow review actions after confirmed legitimate traffic, must name the supplied rule and route, and must never disable the WAF or a complete rule category."
+}
+
+fn explanation_user_prompt(input: &ExplanationInput) -> anyhow::Result<String> {
+    Ok(format!(
+        "Explain this sanitized Saugra security event in at most 80 words. Provide at most one concise tuning review suggestion when justified:\n{}",
+        serde_json::to_string(input)?
+    ))
+}
+
+fn explanation_output_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "properties": {
+            "explanation": {"type": "string", "maxLength": 600},
+            "tuning_suggestions": {
+                "type": "array",
+                "maxItems": 1,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "kind": {
+                            "type": "string",
+                            "enum": [
+                                "route_threshold_review",
+                                "scoped_rule_exclusion_review",
+                                "behavior_threshold_review"
+                            ]
+                        },
+                        "config_path": {
+                            "type": "string",
+                            "enum": [
+                                "unknown_threats.routes",
+                                "rules.exclusions",
+                                "behavior.route_overrides"
+                            ]
+                        },
+                        "rationale": {"type": "string", "maxLength": 240},
+                        "proposed_value": {"type": "string", "maxLength": 240}
+                    },
+                    "required": ["kind", "config_path", "rationale", "proposed_value"]
+                }
+            }
+        },
+        "required": ["explanation", "tuning_suggestions"]
+    })
+}
+
+fn llama_cpp_request_payload(
+    model: &str,
+    input: &ExplanationInput,
+) -> anyhow::Result<serde_json::Value> {
+    Ok(json!({
+        "model": model,
+        "messages": [
+            {"role": "system", "content": explanation_system_prompt()},
+            {"role": "user", "content": explanation_user_prompt(input)?}
+        ],
+        "stream": false,
+        "temperature": 0.1,
+        "max_tokens": 256,
+        "chat_template_kwargs": {
+            "enable_thinking": false
+        },
+        "response_format": {
+            "type": "json_schema",
+            "schema": explanation_output_schema()
         }
     }))
 }
@@ -585,12 +684,38 @@ fn ollama_generate_url(base_url: &str) -> String {
     }
 }
 
+fn llama_cpp_chat_completions_url(base_url: &str) -> String {
+    let base_url = base_url.trim_end_matches('/');
+    if base_url.ends_with("/v1") {
+        format!("{base_url}/chat/completions")
+    } else {
+        format!("{base_url}/v1/chat/completions")
+    }
+}
+
 fn parse_ollama_response(body: &[u8]) -> anyhow::Result<ProviderOutput> {
     let response: OllamaGenerateResponse =
         serde_json::from_slice(body).context("Ollama response must be valid JSON")?;
     let output: ProviderOutput = serde_json::from_str(&response.response)
         .context("Ollama generated response must match the explanation JSON schema")?;
     Ok(output)
+}
+
+fn parse_chat_completion_response(
+    body: &[u8],
+    provider_name: &str,
+) -> anyhow::Result<ProviderOutput> {
+    let response: ChatCompletionResponse = serde_json::from_slice(body)
+        .with_context(|| format!("{provider_name} response must be valid JSON"))?;
+    let content = response
+        .choices
+        .first()
+        .map(|choice| choice.message.content.as_str())
+        .filter(|content| !content.trim().is_empty())
+        .with_context(|| format!("{provider_name} response must contain assistant content"))?;
+    serde_json::from_str(content).with_context(|| {
+        format!("{provider_name} generated response must match the explanation JSON schema")
+    })
 }
 
 fn validate_provider_explanation(
@@ -605,7 +730,7 @@ fn validate_provider_explanation(
         && normalized.contains("threshold")
         && normalized.contains("above");
     if links_risk_to_threshold || calls_equal_score_above {
-        anyhow::bail!("Ollama explanation contradicted deterministic score data");
+        anyhow::bail!("model explanation contradicted deterministic score data");
     }
     Ok(())
 }
@@ -809,7 +934,7 @@ fn sha256(input: &[u8]) -> String {
             b = a;
             a = temp1.wrapping_add(temp2);
         }
-        for (slot, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h].into_iter()) {
+        for (slot, value) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
             *slot = slot.wrapping_add(value);
         }
     }
@@ -818,8 +943,7 @@ fn sha256(input: &[u8]) -> String {
 
 fn sanitize_failure(failure: &str) -> String {
     failure
-        .replace('\n', " ")
-        .replace('\r', " ")
+        .replace(['\n', '\r'], " ")
         .chars()
         .take(512)
         .collect()
@@ -1376,6 +1500,41 @@ mod tests {
     }
 
     #[test]
+    fn llama_cpp_payload_requests_non_streaming_structured_output() {
+        let event = SecurityEvent::new(
+            "GET",
+            "/search",
+            "q=secret",
+            WafDecision::from_matches(
+                "request-llama-cpp".to_string(),
+                WafMode::Monitor,
+                vec![rule_match()],
+                5,
+            ),
+        );
+        let input = sanitized_input(&AiConfig::default(), &event);
+        let payload = llama_cpp_request_payload("saugra-qwen3-0.6b", &input).unwrap();
+
+        assert_eq!(payload["model"], "saugra-qwen3-0.6b");
+        assert_eq!(payload["stream"], false);
+        assert_eq!(payload["max_tokens"], 256);
+        assert_eq!(payload["chat_template_kwargs"]["enable_thinking"], false);
+        assert_eq!(payload["response_format"]["type"], "json_schema");
+        assert_eq!(
+            payload["response_format"]["schema"]["properties"]["tuning_suggestions"]["maxItems"],
+            1
+        );
+        assert!(payload["messages"][0]["content"]
+            .as_str()
+            .unwrap()
+            .contains("Do not restate numeric scores or thresholds"));
+        assert!(!payload["messages"][1]["content"]
+            .as_str()
+            .unwrap()
+            .contains("secret"));
+    }
+
+    #[test]
     fn rejects_provider_explanations_that_reinterpret_scores() {
         let event = SecurityEvent::new(
             "GET",
@@ -1490,6 +1649,35 @@ mod tests {
             ollama_generate_url("http://127.0.0.1:11434/api/"),
             "http://127.0.0.1:11434/api/generate"
         );
+    }
+
+    #[test]
+    fn builds_llama_cpp_chat_url_from_host_or_v1_base() {
+        assert_eq!(
+            llama_cpp_chat_completions_url("http://127.0.0.1:8080"),
+            "http://127.0.0.1:8080/v1/chat/completions"
+        );
+        assert_eq!(
+            llama_cpp_chat_completions_url("http://127.0.0.1:8080/v1/"),
+            "http://127.0.0.1:8080/v1/chat/completions"
+        );
+    }
+
+    #[test]
+    fn parses_llama_cpp_structured_chat_completion_response() {
+        let body = br#"{
+          "choices": [{
+            "message": {
+              "role": "assistant",
+              "content": "{\"explanation\":\"Local llama.cpp explanation.\",\"tuning_suggestions\":[]}"
+            }
+          }]
+        }"#;
+
+        let output = parse_chat_completion_response(body, "llama.cpp").unwrap();
+
+        assert_eq!(output.explanation, "Local llama.cpp explanation.");
+        assert!(output.tuning_suggestions.is_empty());
     }
 
     #[test]

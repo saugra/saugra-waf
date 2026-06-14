@@ -446,7 +446,8 @@ Initial scope:
       file after Saugra starts.
 - [x] Add optional reset commands for local behavior and bot state by client ID.
 
-See `docs/RUNTIME_ALLOWLIST.md` for the design.
+The implemented design is documented in `docs/ADMIN_GUIDE.md` and
+`docs/ARCHITECTURE.md`.
 
 ### Admin Guide and Operator Runbooks
 
@@ -589,9 +590,13 @@ only reason Saugra blocks a request.
       references, endpoint allowlisting, TLS enforcement, and rate-limit tests.
 - [ ] Add native Gemini provider configuration with the same sanitization,
       audit, timeout, and deterministic-fallback guarantees.
-- [ ] Evaluate an optional lightweight local inference backend, such as ONNX,
-      and adopt it only when benchmarks show a meaningful resource or
-      deployment advantage over Ollama.
+- [ ] Benchmark `llama.cpp` with a small quantized model such as Qwen3 0.6B
+      against Ollama using the same sanitized explanation and rule-drafting
+      evaluation cases. Complete production sizing guidance only after schema
+      validity, grounding, latency, peak memory, and deployment measurements
+      confirm the expected advantage.
+- [x] Add a loopback-only `llama.cpp` provider with schema-constrained bounded
+      output, audit records, timeouts, and deterministic fallback.
 - [ ] Add versioned model evaluation and replay tooling for sanitized security
       cases, including schema, privacy, grounding, suggestion-scope, quality,
       and latency regression checks.
@@ -606,10 +611,22 @@ only reason Saugra blocks a request.
 
 - [ ] Convert repeated, reviewed anomalies into draft Saugra YAML rules.
 - [ ] Require human approval before publishing generated rules.
-- [ ] Validate and compile generated rules before activation.
-- [ ] Replay sanitized historical traffic against proposed rules.
+- [x] Validate and compile an inactive rule pack with
+      `saugra-waf rules validate --input <draft.yml>`.
+- [x] Replay path and query targets from retained security events with
+      `saugra-waf rules replay --input <draft.yml>`. Report unavailable retained
+      targets instead of implying complete replay coverage.
 - [ ] Report false-positive impact and attack-case coverage.
 - [ ] Deploy accepted rules in monitor mode before block mode.
+- [ ] Add a versioned draft manifest containing source anomaly IDs, generator
+      provider and model, prompt version, input digest, reviewer, approval
+      timestamp, replay report digest, and publication state.
+- [ ] Keep generated drafts outside configured active rule directories and
+      require an explicit publish command after validation, replay, and human
+      approval.
+- [ ] Add labeled sanitized replay fixtures so legitimate-traffic impact and
+      attack-case coverage are measured separately from unlabeled historical
+      event overlap.
 
 ### Security and Privacy Guardrails
 

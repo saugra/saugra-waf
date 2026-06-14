@@ -175,10 +175,12 @@ pub enum ConfigError {
     InvalidRuntimePolicyDefaultDuration,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
-    #[error("ai.provider must be ollama, local, or command")]
+    #[error("ai.provider must be llama_cpp, ollama, local, or command")]
     InvalidAiProvider,
     #[error("ai.ollama_url must be a local HTTP URL")]
     InvalidAiOllamaUrl,
+    #[error("ai.llama_cpp_url must be a local HTTP URL")]
+    InvalidAiLlamaCppUrl,
     #[error("ai.command must not be blank when ai.provider is command")]
     MissingAiCommand,
     #[error("ai.prompt_version, ai.model, and ai.audit_log_path must not be blank")]
@@ -1118,6 +1120,8 @@ pub struct AiConfig {
     pub provider: String,
     #[serde(default = "default_ai_ollama_url")]
     pub ollama_url: String,
+    #[serde(default = "default_ai_llama_cpp_url")]
+    pub llama_cpp_url: String,
     #[serde(default)]
     pub command: Option<String>,
     #[serde(default)]
@@ -1145,6 +1149,7 @@ impl Default for AiConfig {
             mode: default_ai_mode(),
             provider: default_ai_provider(),
             ollama_url: default_ai_ollama_url(),
+            llama_cpp_url: default_ai_llama_cpp_url(),
             command: None,
             command_args: Vec::new(),
             model: default_ai_model(),
@@ -1366,11 +1371,17 @@ impl SaugraConfig {
         if self.ai.enabled && self.ai.mode != "explain_only" {
             return Err(ConfigError::InvalidAiMode);
         }
-        if !matches!(self.ai.provider.as_str(), "ollama" | "local" | "command") {
+        if !matches!(
+            self.ai.provider.as_str(),
+            "llama_cpp" | "ollama" | "local" | "command"
+        ) {
             return Err(ConfigError::InvalidAiProvider);
         }
-        if !is_local_ollama_url(&self.ai.ollama_url) {
+        if self.ai.provider == "ollama" && !is_local_http_url(&self.ai.ollama_url) {
             return Err(ConfigError::InvalidAiOllamaUrl);
+        }
+        if self.ai.provider == "llama_cpp" && !is_local_http_url(&self.ai.llama_cpp_url) {
+            return Err(ConfigError::InvalidAiLlamaCppUrl);
         }
         if self.ai.enabled
             && self.ai.provider == "command"
@@ -2687,15 +2698,19 @@ fn default_ai_mode() -> String {
 }
 
 fn default_ai_provider() -> String {
-    "ollama".to_string()
+    "llama_cpp".to_string()
 }
 
 fn default_ai_model() -> String {
-    "qwen3:4b".to_string()
+    "saugra-qwen3-0.6b".to_string()
 }
 
 fn default_ai_ollama_url() -> String {
     "http://127.0.0.1:11434".to_string()
+}
+
+fn default_ai_llama_cpp_url() -> String {
+    "http://127.0.0.1:8080".to_string()
 }
 
 fn default_ai_prompt_version() -> String {
@@ -2722,7 +2737,7 @@ fn default_ai_max_tuning_suggestions() -> usize {
     3
 }
 
-fn is_local_ollama_url(value: &str) -> bool {
+fn is_local_http_url(value: &str) -> bool {
     let value = value.trim().trim_end_matches('/');
     let Some(authority) = value.strip_prefix("http://") else {
         return false;
@@ -4409,12 +4424,13 @@ ai:
     }
 
     #[test]
-    fn ai_defaults_to_local_ollama_with_qwen3() {
+    fn ai_defaults_to_local_llama_cpp_with_small_qwen3() {
         let config = AiConfig::default();
 
-        assert_eq!(config.provider, "ollama");
+        assert_eq!(config.provider, "llama_cpp");
+        assert_eq!(config.llama_cpp_url, "http://127.0.0.1:8080");
         assert_eq!(config.ollama_url, "http://127.0.0.1:11434");
-        assert_eq!(config.model, "qwen3:4b");
+        assert_eq!(config.model, "saugra-qwen3-0.6b");
         assert_eq!(config.timeout, "60s");
     }
 
@@ -4443,8 +4459,31 @@ ai:
 
     #[test]
     fn accepts_custom_loopback_ollama_port() {
-        assert!(is_local_ollama_url("http://localhost:11435"));
-        assert!(is_local_ollama_url("http://127.0.0.1:11435/api"));
-        assert!(is_local_ollama_url("http://[::1]:11435"));
+        assert!(is_local_http_url("http://localhost:11435"));
+        assert!(is_local_http_url("http://127.0.0.1:11435/api"));
+        assert!(is_local_http_url("http://[::1]:11435"));
+    }
+
+    #[test]
+    fn rejects_non_local_llama_cpp_url() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  provider: llama_cpp
+  llama_cpp_url: http://models.example.com:8080
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidAiLlamaCppUrl)
+        ));
     }
 }

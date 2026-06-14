@@ -149,6 +149,69 @@ fn cli_explain_reads_recorded_event() {
 }
 
 #[test]
+fn cli_validates_and_replays_inactive_rule_pack() {
+    let fixture = CliFixture::new();
+    let draft_path = fixture._dir.path().join("draft-rules.yml");
+    fs::write(
+        &draft_path,
+        r#"
+metadata:
+  name: cli-draft
+  version: draft-1
+rules:
+  - id: DRAFT-CLI-001
+    name: CLI Probe
+    category: local_policy
+    severity: medium
+    targets:
+      - query
+    pattern: "(?i)draft-probe"
+    explanation: A reviewed draft probe matched.
+"#,
+    )
+    .unwrap();
+    event_store::append(
+        &fixture.event_log_path,
+        EventLogRetention {
+            max_size_bytes: 1024 * 1024,
+            max_files: 3,
+        },
+        &SecurityEvent::new(
+            "GET",
+            "/search",
+            "q=draft-probe",
+            WafDecision::from_matches(
+                "cli-replay-1".to_string(),
+                saugra_waf::config::WafMode::Monitor,
+                Vec::new(),
+                5,
+            ),
+        ),
+    )
+    .unwrap();
+
+    let draft = draft_path.display().to_string();
+    let validate = saugra_waf_cmd(["rules", "validate", "--input", &draft]);
+    assert_success(&validate);
+    assert!(stdout(&validate).contains("rule pack OK"));
+    assert!(stdout(&validate).contains("compiled=1"));
+
+    let replay = saugra_waf_cmd([
+        "rules",
+        "replay",
+        "--input",
+        &draft,
+        "--config",
+        &fixture.config_arg(),
+    ]);
+    assert_success(&replay);
+    let report: serde_json::Value = serde_json::from_slice(&replay.stdout).unwrap();
+    assert_eq!(report["total_events"], 1);
+    assert_eq!(report["matched_events"], 1);
+    assert_eq!(report["previously_allowed_review_candidates"], 1);
+}
+
+#[test]
 fn cli_discovers_config_from_environment() {
     let fixture = CliFixture::new();
     let output =

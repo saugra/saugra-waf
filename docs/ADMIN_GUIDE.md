@@ -83,22 +83,25 @@ Keep `server.mode`, `behavior.mode`, and `bot_protection.mode` set to `monitor`
 during the initial rollout. Also review `forwarded_headers.trusted_proxies`,
 rate-limit routes, and the Redis connection settings for the deployment.
 
-When AI explanations are enabled, install Ollama, create the packaged Saugra
-model, and keep its API on loopback:
+When model-backed AI explanations are enabled, install `llama-server` and keep
+its API on loopback:
 
 ```bash
-ollama pull qwen3:4b
-ollama create saugra-explainer:v1 -f /etc/saugra-waf/ollama/Modelfile
+llama-server \
+  -hf Qwen/Qwen3-0.6B-GGUF:Q8_0 \
+  --alias saugra-qwen3-0.6b \
+  --host 127.0.0.1 --port 8080 \
+  --ctx-size 2048 --threads 1 --parallel 1 --jinja --no-webui
 ```
 
-Set `ai.model: saugra-explainer:v1`. The model is optional, never blocks
-traffic, and falls back to the deterministic explanation. See
-[Ollama operations](OLLAMA.md) for installation and evaluation.
+The model is optional, never blocks traffic, and falls back to the deterministic
+explanation. The [AI explanations](#ai-explanations) section covers
+installation, resource limits, and evaluation.
 
-On a server with less than 4 GB RAM, use `ai.enabled: false` or
-`ai.provider: local`. A 4 GB, 2-core shared server should use at most
-`qwen3:1.7b`; the default `qwen3:4b` should start at 8 GB RAM. See
-[AI explanation providers](AI_PROVIDERS.md) for sizing and remote API adapters.
+On a server with less than 2 GB RAM, use `ai.enabled: false` or
+`ai.provider: local`. A 4 GB, 2-core shared server can start with Qwen3 0.6B Q8,
+a 2048-token context, and one inference thread. See
+the [AI explanations](#ai-explanations) section for sizing and remote adapters.
 
 Validate the configuration, then start Redis and Saugra:
 
@@ -127,6 +130,90 @@ If startup or forwarding fails, inspect:
 journalctl -u saugra-waf -n 100 --no-pager
 ss -ltnp
 ```
+
+## AI Explanations
+
+AI is optional and explain-only. Rules, rate limits, behavior scoring,
+unknown-threat policy, and campaign correlation remain authoritative.
+
+For model-free operation:
+
+```yaml
+ai:
+  enabled: false
+  mode: explain_only
+```
+
+`saugra-waf explain <request-id>` still returns the deterministic explanation.
+Use `provider: local` when a configured AI deployment needs an immediate
+rollback without disabling its audit settings.
+
+### Lightweight llama.cpp
+
+The default model-backed provider is llama.cpp with Qwen3 0.6B Q8:
+
+```bash
+llama-server \
+  -hf Qwen/Qwen3-0.6B-GGUF:Q8_0 \
+  --alias saugra-qwen3-0.6b \
+  --host 127.0.0.1 --port 8080 \
+  --ctx-size 2048 --threads 1 --parallel 1 \
+  --batch-size 128 --jinja --no-webui
+```
+
+```yaml
+ai:
+  enabled: true
+  mode: explain_only
+  provider: llama_cpp
+  llama_cpp_url: http://127.0.0.1:8080
+  model: saugra-qwen3-0.6b
+  timeout: 60s
+```
+
+The package includes
+`/usr/share/saugra-waf/llama-cpp/saugra-waf-llama-cpp.service` as an optional
+hardened systemd example. Keep port `8080` private, do not enable llama.cpp
+tools, and pre-populate the model cache for production.
+
+| Shared host | Guidance |
+| --- | --- |
+| Less than 2 GB RAM | Use `enabled: false` or `provider: local`. |
+| 2-3 GB RAM, 1-2 cores | Use Qwen3 0.6B Q8 with one thread for occasional explanations. |
+| 4 GB RAM, 2 cores | Use Qwen3 0.6B Q8 with a 2048-token context. |
+| 8 GB RAM or more | Use a larger model only after measured evaluation. |
+
+### Ollama And Remote Providers
+
+Ollama remains supported:
+
+```yaml
+ai:
+  enabled: true
+  provider: ollama
+  ollama_url: http://127.0.0.1:11434
+  model: qwen3:4b
+```
+
+OpenAI, Gemini, and internal gateways currently use the command adapter:
+
+```yaml
+ai:
+  enabled: true
+  provider: command
+  command: /usr/local/bin/saugra-ai-adapter
+  command_args: ["--provider", "openai"]
+  model: operator-selected-model
+```
+
+Keep API credentials in the adapter environment or a secret store, never in
+Saugra YAML or command arguments. Model input excludes query values, request
+bodies, cookies, authorization data, client addresses, and upstream
+credentials. Every failure falls back to the deterministic explanation.
+
+Model-generated rules are untrusted drafts. Keep them outside active rule
+directories, run `rules validate` and `rules replay`, require human approval,
+and deploy accepted rules in monitor mode first.
 
 ## Upgrade To The Newest Version
 
@@ -906,17 +993,16 @@ saugra-waf test-config
 systemctl restart saugra-waf
 ```
 
-### Ollama Explanation Problems
+### llama.cpp Explanation Problems
 
 ```bash
-systemctl status ollama --no-pager
-curl -s http://127.0.0.1:11434/api/version
-ollama list
+systemctl status saugra-waf-llama-cpp --no-pager
+curl -s http://127.0.0.1:8080/health
 saugra-waf explain <request-id>
 tail -n 20 /var/log/saugra-waf/saugra-waf-ai-audit.jsonl
 ```
 
-Saugra continues with its deterministic explanation when Ollama fails. Set
+Saugra continues with its deterministic explanation when llama.cpp fails. Set
 `ai.provider: local` for an explicit rollback while investigating.
 
 ## Useful Files

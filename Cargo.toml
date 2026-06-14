@@ -30,6 +30,7 @@ assets = [
   ["configs/rules/*.yml", "usr/share/saugra-waf/rules/", "644"],
   ["configs/standards/*.yml", "usr/share/saugra-waf/standards/", "644"],
   ["configs/intelligence/*.yml", "usr/share/saugra-waf/intelligence/", "644"],
+  ["configs/llama-cpp/saugra-waf-llama-cpp.service", "usr/share/saugra-waf/llama-cpp/saugra-waf-llama-cpp.service", "644"],
   ["configs/ollama/Modelfile", "usr/share/saugra-waf/ollama/Modelfile", "644"],
   ["configs/ollama/evaluation-cases.jsonl", "usr/share/saugra-waf/ollama/evaluation-cases.jsonl", "644"],
   ["configs/saugra-waf.production.example.yml", "usr/share/doc/saugra-waf/saugra-waf.production.example.yml", "644"],
@@ -40,10 +41,9 @@ assets = [
   ["NOTICE", "usr/share/doc/saugra-waf/NOTICE", "644"],
   ["TRADEMARKS.md", "usr/share/doc/saugra-waf/TRADEMARKS.md", "644"],
   ["docs/LICENSING.md", "usr/share/doc/saugra-waf/LICENSING.md", "644"],
-  ["docs/PRODUCTION_DEPLOYMENT.md", "usr/share/doc/saugra-waf/PRODUCTION_DEPLOYMENT.md", "644"],
-  ["docs/AI_PROVIDERS.md", "usr/share/doc/saugra-waf/AI_PROVIDERS.md", "644"],
-  ["docs/OLLAMA.md", "usr/share/doc/saugra-waf/OLLAMA.md", "644"],
-  ["docs/DEBIAN_PACKAGING.md", "usr/share/doc/saugra-waf/DEBIAN_PACKAGING.md", "644"],
+  ["docs/ADMIN_GUIDE.md", "usr/share/doc/saugra-waf/ADMIN_GUIDE.md", "644"],
+  ["docs/ARCHITECTURE.md", "usr/share/doc/saugra-waf/ARCHITECTURE.md", "644"],
+  ["docs/RELEASE_PROCESS.md", "usr/share/doc/saugra-waf/RELEASE_PROCESS.md", "644"],
 ]
 maintainer-scripts = "packaging/debian"
 

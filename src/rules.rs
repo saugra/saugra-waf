@@ -1,11 +1,15 @@
-use std::{fs, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
 use percent_encoding::percent_decode_str;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::config::{RuleExclusionConfig, RuleSettings};
+use crate::{
+    config::{RuleExclusionConfig, RuleSettings},
+    decision::WafAction,
+    event_store::SecurityEvent,
+};
 
 #[derive(Debug, Error)]
 pub enum RuleError {
@@ -171,6 +175,22 @@ pub struct RuleExclusionReport {
     pub disabled_categories: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RuleReplayReport {
+    pub total_events: usize,
+    pub matched_events: usize,
+    pub unmatched_events: usize,
+    pub previously_allowed_review_candidates: usize,
+    pub previously_monitored_matches: usize,
+    pub previously_blocked_matches: usize,
+    pub prior_rule_detection_events: usize,
+    pub prior_rule_detection_overlap: usize,
+    pub rule_match_counts: BTreeMap<String, usize>,
+    pub replayed_targets: Vec<String>,
+    pub unavailable_targets: Vec<String>,
+    pub limitations: Vec<String>,
+}
+
 impl RuleSet {
     pub fn rules(&self) -> &[BuiltinRule] {
         &self.rules
@@ -215,6 +235,97 @@ impl RuleSet {
             .into_iter()
             .filter(|rule_match| !is_excluded(rule_match, parts, exclusions))
             .collect()
+    }
+}
+
+pub fn validate_rule_file(
+    path: &Path,
+    paranoia_level: u8,
+) -> Result<(RuleSet, RuleFileLoadReport), RuleError> {
+    let (rules, report) = load_rule_file(path, paranoia_level)?;
+    Ok((RuleSet { rules }, report))
+}
+
+pub fn replay_events(rule_set: &RuleSet, events: &[SecurityEvent]) -> RuleReplayReport {
+    let mut matched_events = 0;
+    let mut previously_allowed_review_candidates = 0;
+    let mut previously_monitored_matches = 0;
+    let mut previously_blocked_matches = 0;
+    let mut prior_rule_detection_events = 0;
+    let mut prior_rule_detection_overlap = 0;
+    let mut rule_match_counts = BTreeMap::new();
+
+    for event in events {
+        let prior_rule_detection = !event.decision.matched_rules.is_empty();
+        if prior_rule_detection {
+            prior_rule_detection_events += 1;
+        }
+
+        let matches = rule_set.inspect(&RequestParts {
+            path: &event.path,
+            query: &event.query,
+            ..RequestParts::default()
+        });
+        if matches.is_empty() {
+            continue;
+        }
+
+        matched_events += 1;
+        if prior_rule_detection {
+            prior_rule_detection_overlap += 1;
+        }
+        match event.decision.action {
+            WafAction::Allow => previously_allowed_review_candidates += 1,
+            WafAction::Monitor => previously_monitored_matches += 1,
+            WafAction::Block => previously_blocked_matches += 1,
+        }
+        for rule_match in matches {
+            *rule_match_counts.entry(rule_match.rule_id).or_insert(0) += 1;
+        }
+    }
+
+    let mut replayed_targets = Vec::new();
+    let mut unavailable_targets = Vec::new();
+    for rule in rule_set.rules() {
+        let target = rule.target.to_string();
+        let destination = match rule.target {
+            RuleTarget::Path | RuleTarget::Query => &mut replayed_targets,
+            RuleTarget::Headers | RuleTarget::Body | RuleTarget::UserAgent => {
+                &mut unavailable_targets
+            }
+        };
+        destination.push(target);
+    }
+    replayed_targets.sort();
+    replayed_targets.dedup();
+    unavailable_targets.sort();
+    unavailable_targets.dedup();
+
+    let mut limitations = vec![
+        "Previously allowed matches are review candidates, not confirmed false positives."
+            .to_string(),
+        "Prior rule-detection overlap is not a labeled attack-case coverage metric.".to_string(),
+    ];
+    if !unavailable_targets.is_empty() {
+        limitations.push(format!(
+            "Retained security events cannot replay these request targets: {}.",
+            unavailable_targets.join(", ")
+        ));
+    }
+
+    RuleReplayReport {
+        total_events: events.len(),
+        matched_events,
+        unmatched_events: events.len().saturating_sub(matched_events),
+        previously_allowed_review_candidates,
+        previously_monitored_matches,
+        previously_blocked_matches,
+        prior_rule_detection_events,
+        prior_rule_detection_overlap,
+        rule_match_counts,
+        replayed_targets,
+        unavailable_targets,
+        limitations,
     }
 }
 
@@ -714,7 +825,11 @@ impl TryFrom<RuleDefinition> for BuiltinRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{RuleExclusionConfig, RuleSettings};
+    use crate::{
+        config::{RuleExclusionConfig, RuleSettings, WafMode},
+        decision::WafDecision,
+        event_store::SecurityEvent,
+    };
     use std::collections::BTreeSet;
 
     #[test]
@@ -1420,5 +1535,76 @@ rules:
         .unwrap_err();
 
         assert!(matches!(error, RuleError::InvalidMetadata { .. }));
+    }
+
+    #[test]
+    fn validates_and_replays_a_draft_rule_pack_without_activating_it() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("draft-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+metadata:
+  name: reviewed-draft
+  version: draft-1
+rules:
+  - id: DRAFT-LOCAL-001
+    name: Repeated Probe
+    category: local_policy
+    severity: medium
+    targets:
+      - query
+      - body
+    pattern: "(?i)needle"
+    explanation: A reviewed repeated probe matched.
+"#,
+        )
+        .unwrap();
+
+        let (rule_set, report) = validate_rule_file(&rule_path, u8::MAX).unwrap();
+        assert_eq!(report.entries, 1);
+        assert_eq!(report.compiled_rules, 2);
+
+        let prior_match = rule_set.inspect(&RequestParts {
+            query: "probe=needle",
+            ..RequestParts::default()
+        });
+        let events = vec![
+            SecurityEvent::new(
+                "GET",
+                "/search",
+                "probe=needle",
+                WafDecision::from_matches("allowed".to_string(), WafMode::Monitor, Vec::new(), 5),
+            ),
+            SecurityEvent::new(
+                "GET",
+                "/search",
+                "safe=1",
+                WafDecision::from_matches(
+                    "monitored".to_string(),
+                    WafMode::Monitor,
+                    prior_match.clone(),
+                    5,
+                ),
+            ),
+            SecurityEvent::new(
+                "GET",
+                "/search",
+                "probe=needle",
+                WafDecision::from_matches("blocked".to_string(), WafMode::Block, prior_match, 3),
+            ),
+        ];
+
+        let replay = replay_events(&rule_set, &events);
+
+        assert_eq!(replay.total_events, 3);
+        assert_eq!(replay.matched_events, 2);
+        assert_eq!(replay.previously_allowed_review_candidates, 1);
+        assert_eq!(replay.previously_blocked_matches, 1);
+        assert_eq!(replay.prior_rule_detection_events, 2);
+        assert_eq!(replay.prior_rule_detection_overlap, 1);
+        assert_eq!(replay.rule_match_counts["DRAFT-LOCAL-001"], 2);
+        assert_eq!(replay.replayed_targets, vec!["query"]);
+        assert_eq!(replay.unavailable_targets, vec!["body"]);
     }
 }

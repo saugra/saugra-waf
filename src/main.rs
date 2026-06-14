@@ -114,6 +114,22 @@ enum RulesCommand {
         #[arg(short, long, default_value_os_t = default_config_path())]
         config: PathBuf,
     },
+    /// Validate and compile one inactive Saugra YAML rule pack.
+    Validate {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(long, default_value_t = u8::MAX)]
+        paranoia_level: u8,
+    },
+    /// Replay one inactive rule pack against retained security events.
+    Replay {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(short, long, default_value_t = 1000)]
+        limit: usize,
+    },
     /// Convert supported OWASP CRS regex rules into Saugra YAML.
     ConvertCrs {
         #[arg(short, long)]
@@ -360,6 +376,44 @@ async fn main() -> anyhow::Result<()> {
                         rule.name
                     );
                 }
+                Ok(())
+            }
+            RulesCommand::Validate {
+                input,
+                paranoia_level,
+            } => {
+                let (_rule_set, report) = rules::validate_rule_file(&input, paranoia_level)?;
+                println!("rule pack OK: {}", input.display());
+                println!(
+                    "entries={} enabled={} disabled={} compiled={} active={} filtered={}",
+                    report.entries,
+                    report.enabled_entries,
+                    report.disabled_entries,
+                    report.compiled_rules,
+                    report.active_rules,
+                    report.filtered_by_paranoia
+                );
+                for warning in report.warnings {
+                    println!("warning: {warning}");
+                }
+                Ok(())
+            }
+            RulesCommand::Replay {
+                input,
+                config,
+                limit,
+            } => {
+                let config = load_valid_config(&config)?;
+                let (rule_set, _report) = rules::validate_rule_file(&input, u8::MAX)?;
+                let events = event_store::tail(
+                    Path::new(&config.logging.event_log_path),
+                    event_log_retention(&config)?,
+                    limit,
+                )?;
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&rules::replay_events(&rule_set, &events))?
+                );
                 Ok(())
             }
             RulesCommand::ConvertCrs { input, output } => {

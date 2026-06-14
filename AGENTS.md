@@ -69,8 +69,9 @@ saugra-waf/
 │   ├── laravel-apache/
 │   └── express-nginx/
 ├── docs/
+│   ├── ADMIN_GUIDE.md
 │   ├── ARCHITECTURE.md
-│   └── PRODUCT_SPEC.md
+│   └── RELEASE_PROCESS.md
 ├── ROADMAP.md
 ├── tests/
 │   ├── integration/
@@ -326,12 +327,31 @@ Coverage expectations:
 
 Keep documentation practical and production-focused:
 
-- README quick start
-- PRODUCT_SPEC.md product specification
-- ARCHITECTURE.md technical architecture
-- ROADMAP.md public implementation roadmap
-- deployment examples
-- deployment and verification commands
+- `README.md` is the primary documentation entry point and quick start.
+- `docs/ADMIN_GUIDE.md` owns installation, configuration, deployment,
+  operations, AI providers, and troubleshooting.
+- `docs/ARCHITECTURE.md` owns technical design, security model, rule formats,
+  and developer-facing implementation concepts.
+- `docs/RELEASE_PROCESS.md` owns packaging, APT repository, signing, and release
+  procedures.
+- `ROADMAP.md` owns planned and completed product work.
+- Deployment examples should stay beside their configuration or example code.
+
+Documentation constraints:
+
+- Update an existing canonical document instead of creating a new `.md` file.
+- Create a new Markdown file only when the content has a distinct audience,
+  lifecycle, or legal/community purpose that does not fit an existing owner.
+- Before creating a document, search the repository for an existing section
+  covering the topic and extend or reorganize it.
+- Do not create one-document-per-feature notes, temporary implementation plans,
+  duplicate quick starts, or separate guides for each provider or platform.
+- Keep one source of truth for each command, configuration field, installation
+  flow, and operational procedure. Link to it instead of copying it.
+- When replacing documentation, merge any still-useful content, delete the
+  superseded file, and repair all links in the same change.
+- Keep `docs/index.md` as a short website pointer to `README.md` and the
+  canonical guides; do not duplicate the README there.
 
 ## Production Readiness Definition
 

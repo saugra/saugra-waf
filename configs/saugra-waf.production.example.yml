@@ -277,18 +277,19 @@ rules:
 ai:
   enabled: true
   mode: explain_only
-  # Ollama is local-only. External adapters still receive only sanitized input.
-  provider: ollama
-  ollama_url: http://127.0.0.1:11434
-  model: qwen3:4b
+  # llama.cpp is local-only. External adapters still receive sanitized input.
+  provider: llama_cpp
+  llama_cpp_url: http://127.0.0.1:8080
+  model: saugra-qwen3-0.6b
   prompt_version: saugra-explain-v1
   timeout: 60s
   audit_log_path: /var/log/saugra-waf/saugra-waf-ai-audit.jsonl
   audit_log_max_size: 100mb
   audit_log_max_files: 30
   max_tuning_suggestions: 3
-  # On hosts below 4 GB RAM, set enabled: false or provider: local.
-  # A 4 GB / 2-core shared host should use qwen3:1.7b, not qwen3:4b.
+  # Use Qwen3 0.6B Q8 with a 2048-token context and one inference thread on a
+  # constrained shared host. Below 2 GB RAM, use enabled: false or local.
+  # Ollama remains available with provider: ollama and ollama_url.
   # OpenAI, Gemini, and other remote APIs use an operator-managed adapter.
   # provider: command
   # command: /usr/local/bin/saugra-ai-adapter
