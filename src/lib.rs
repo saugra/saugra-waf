@@ -12,6 +12,7 @@ pub mod posture;
 pub mod proxy;
 pub mod rate_limit;
 pub mod reports;
+pub mod rule_drafts;
 pub mod rules;
 pub mod runtime_policy;
 pub mod security_summary;

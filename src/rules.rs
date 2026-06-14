@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
+use anyhow::Context;
 use percent_encoding::percent_decode_str;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -215,6 +216,30 @@ pub struct RuleReplayReport {
     pub replayed_targets: Vec<String>,
     pub unavailable_targets: Vec<String>,
     pub limitations: Vec<String>,
+    pub labeled_total_cases: usize,
+    pub labeled_legitimate_cases: usize,
+    pub labeled_attack_cases: usize,
+    pub labeled_legitimate_matches: usize,
+    pub labeled_attack_matches: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct LabeledReplayCase {
+    id: String,
+    label: String,
+    #[serde(default = "default_replay_method")]
+    method: String,
+    path: String,
+    #[serde(default)]
+    query: String,
+    #[serde(default)]
+    headers: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    user_agent: String,
+    #[serde(default)]
+    content_type: String,
 }
 
 impl RuleSet {
@@ -409,7 +434,60 @@ pub fn replay_events_with_exclusions(
         replayed_targets,
         unavailable_targets,
         limitations,
+        labeled_total_cases: 0,
+        labeled_legitimate_cases: 0,
+        labeled_attack_cases: 0,
+        labeled_legitimate_matches: 0,
+        labeled_attack_matches: 0,
     }
+}
+
+pub fn attach_labeled_replay(
+    report: &mut RuleReplayReport,
+    rule_set: &RuleSet,
+    exclusions: &[RuleExclusionConfig],
+    fixture_path: &Path,
+) -> anyhow::Result<()> {
+    let contents = fs::read_to_string(fixture_path)?;
+    for line in contents.lines().filter(|line| !line.trim().is_empty()) {
+        let case: LabeledReplayCase =
+            serde_json::from_str(line).context("labeled replay fixture must be valid JSONL")?;
+        anyhow::ensure!(
+            matches!(case.label.as_str(), "legitimate" | "attack"),
+            "labeled replay case {} must use label legitimate or attack",
+            case.id
+        );
+        let matches = rule_set.inspect_with_exclusions(
+            &RequestParts {
+                method: &case.method,
+                path: &case.path,
+                query: &case.query,
+                headers: &case.headers,
+                body: &case.body,
+                user_agent: &case.user_agent,
+                content_type: &case.content_type,
+                trusted_proxy: false,
+            },
+            exclusions,
+        );
+        report.labeled_total_cases += 1;
+        if case.label == "legitimate" {
+            report.labeled_legitimate_cases += 1;
+            if !matches.is_empty() {
+                report.labeled_legitimate_matches += 1;
+            }
+        } else {
+            report.labeled_attack_cases += 1;
+            if !matches.is_empty() {
+                report.labeled_attack_matches += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn default_replay_method() -> String {
+    "GET".to_string()
 }
 
 impl RuleExclusionReport {
@@ -1538,6 +1616,31 @@ rules:
         assert_eq!(report.matches_before_exclusions, 1);
         assert_eq!(report.matches_after_exclusions, 0);
         assert_eq!(report.excluded_events, 1);
+    }
+
+    #[test]
+    fn labeled_replay_separates_legitimate_impact_and_attack_coverage() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let fixture = temp_dir.path().join("cases.jsonl");
+        std::fs::write(
+            &fixture,
+            r#"{"id":"legitimate","label":"legitimate","path":"/search","query":"q=summer"}
+{"id":"attack","label":"attack","path":"/search","query":"q=%27%20OR%201%3D1--"}
+"#,
+        )
+        .unwrap();
+        let rule_set = RuleSet {
+            rules: builtin_rules().unwrap(),
+        };
+        let mut report = replay_events(&rule_set, &[]);
+
+        attach_labeled_replay(&mut report, &rule_set, &[], &fixture).unwrap();
+
+        assert_eq!(report.labeled_total_cases, 2);
+        assert_eq!(report.labeled_legitimate_cases, 1);
+        assert_eq!(report.labeled_legitimate_matches, 0);
+        assert_eq!(report.labeled_attack_cases, 1);
+        assert_eq!(report.labeled_attack_matches, 1);
     }
 
     #[test]

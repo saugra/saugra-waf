@@ -49,7 +49,7 @@ cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 Current test status:
 
 ```txt
-276 tests pass in a normal local/CI environment, including the two WebSocket
+288 tests pass in a normal local/CI environment, including the two WebSocket
 raw-socket tunnel tests.
 ```
 
@@ -604,45 +604,51 @@ only reason Saugra blocks a request.
       state for auditability.
 - [x] Keep deterministic local explanations available when AI is disabled or
       unavailable.
-- [ ] Add native OpenAI-compatible remote provider configuration with secret
+- [x] Add native OpenAI-compatible remote provider configuration with secret
       references, endpoint allowlisting, TLS enforcement, and rate-limit tests.
-- [ ] Add native Gemini provider configuration with the same sanitization,
+- [x] Add native Gemini provider configuration with the same sanitization,
       audit, timeout, and deterministic-fallback guarantees.
 - [ ] Benchmark `llama.cpp` with a small quantized model such as Qwen3 0.6B
       against Ollama using the same sanitized explanation and rule-drafting
       evaluation cases. Complete production sizing guidance only after schema
       validity, grounding, latency, peak memory, and deployment measurements
       confirm the expected advantage.
+      - 2026-06-14 local llama.cpp baseline: Qwen3 0.6B Q8, 2048-token context,
+        one inference thread, 1.17 GiB peak RSS, and 7.8-11.2 second case
+        latency. The strict provider-neutral suite passed 0/6 cases because the
+        model restated scores and omitted required deterministic identifiers.
+        Keep deterministic fallback enabled; Ollama comparison and model
+        qualification remain open.
 - [x] Add a loopback-only `llama.cpp` provider with schema-constrained bounded
       output, audit records, timeouts, and deterministic fallback.
-- [ ] Add versioned model evaluation and replay tooling for sanitized security
+- [x] Add versioned model evaluation and replay tooling for sanitized security
       cases, including schema, privacy, grounding, suggestion-scope, quality,
       and latency regression checks.
-- [ ] Add remote-provider privacy and residency controls, including explicit
+- [x] Add remote-provider privacy and residency controls, including explicit
       provider enablement, data-region policy, retention disclosure, auditable
       secret references, and a local-only deployment mode.
-- [ ] Research model-assisted anomaly analysis in shadow mode with offline
+- [x] Research model-assisted anomaly analysis in shadow mode with offline
       evaluation and operator review; deterministic policy must remain the
       authority for monitor and block decisions.
 
 ### Rule Drafting and Replay
 
-- [ ] Convert repeated, reviewed anomalies into draft Saugra YAML rules.
-- [ ] Require human approval before publishing generated rules.
+- [x] Convert repeated, reviewed anomalies into draft Saugra YAML rules.
+- [x] Require human approval before publishing generated rules.
 - [x] Validate and compile an inactive rule pack with
       `saugra-waf rules validate --input <draft.yml>`.
 - [x] Replay path and query targets from retained security events with
       `saugra-waf rules replay --input <draft.yml>`. Report unavailable retained
       targets instead of implying complete replay coverage.
-- [ ] Report false-positive impact and attack-case coverage.
-- [ ] Deploy accepted rules in monitor mode before block mode.
-- [ ] Add a versioned draft manifest containing source anomaly IDs, generator
+- [x] Report false-positive impact and attack-case coverage.
+- [x] Deploy accepted rules in monitor mode before block mode.
+- [x] Add a versioned draft manifest containing source anomaly IDs, generator
       provider and model, prompt version, input digest, reviewer, approval
       timestamp, replay report digest, and publication state.
-- [ ] Keep generated drafts outside configured active rule directories and
+- [x] Keep generated drafts outside configured active rule directories and
       require an explicit publish command after validation, replay, and human
       approval.
-- [ ] Add labeled sanitized replay fixtures so legitimate-traffic impact and
+- [x] Add labeled sanitized replay fixtures so legitimate-traffic impact and
       attack-case coverage are measured separately from unlabeled historical
       event overlap.
 

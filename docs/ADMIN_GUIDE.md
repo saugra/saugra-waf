@@ -152,6 +152,60 @@ rollback without disabling its audit settings.
 
 The default model-backed provider is llama.cpp with Qwen3 0.6B Q8:
 
+#### Install On Ubuntu
+
+Ubuntu 24.04 does not provide a `llama-server` package in its default
+repositories. Install the build dependencies and build the server from the
+official llama.cpp source:
+
+```bash
+sudo apt update
+sudo apt install -y build-essential cmake git libcurl4-openssl-dev libssl-dev
+
+git clone --depth 1 https://github.com/ggml-org/llama.cpp.git ~/llama.cpp
+
+cmake -S ~/llama.cpp -B ~/llama.cpp/build \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DLLAMA_BUILD_TESTS=OFF
+
+cmake --build ~/llama.cpp/build --target llama-server -j2
+```
+
+For a user-managed development installation, place the binary in
+`~/.local/bin`, which must be on `PATH`:
+
+```bash
+install -Dm755 ~/llama.cpp/build/bin/llama-server \
+  ~/.local/bin/llama-server
+llama-server --version
+```
+
+For the packaged systemd example, install the binary at the path used by the
+service:
+
+```bash
+sudo install -Dm755 ~/llama.cpp/build/bin/llama-server \
+  /usr/local/bin/llama-server
+/usr/local/bin/llama-server --version
+```
+
+Production deployments should build a reviewed llama.cpp release or pinned
+commit rather than tracking the repository's moving default branch.
+
+If the shell still reports `llama-server: command not found` after a user
+installation, start a new shell or confirm that `~/.local/bin` is present in
+`PATH`:
+
+```bash
+command -v llama-server
+printf '%s\n' "$PATH"
+```
+
+#### Start And Verify
+
+Start the loopback-only explanation server:
+
 ```bash
 llama-server \
   -hf Qwen/Qwen3-0.6B-GGUF:Q8_0 \
@@ -160,6 +214,17 @@ llama-server \
   --ctx-size 2048 --threads 1 --parallel 1 \
   --batch-size 128 --jinja --no-webui
 ```
+
+The first launch downloads the selected GGUF model from Hugging Face and caches
+it locally. In another terminal, wait for the model to load and then check the
+server:
+
+```bash
+curl -s http://127.0.0.1:8080/health
+```
+
+A ready server returns a JSON response with an `ok` status. Keep port `8080`
+bound to loopback; it is an internal inference endpoint, not a public service.
 
 ```yaml
 ai:
@@ -171,10 +236,65 @@ ai:
   timeout: 60s
 ```
 
-The package includes
-`/usr/share/saugra-waf/llama-cpp/saugra-waf-llama-cpp.service` as an optional
-hardened systemd example. Keep port `8080` private, do not enable llama.cpp
-tools, and pre-populate the model cache for production.
+#### Run In Production With systemd
+
+The process shown above is llama.cpp's `llama-server`, not an Ollama server.
+Ollama is a separate supported provider that normally listens on port `11434`.
+
+Do not keep `llama-server` attached to an interactive terminal in production.
+Use the maintained
+[`configs/llama-cpp/saugra-waf-llama-cpp.service`](../configs/llama-cpp/saugra-waf-llama-cpp.service)
+unit, which runs under the dedicated `saugra-waf` account, binds only to
+`127.0.0.1:8080`, restarts after failures, provides a persistent model cache,
+and applies process hardening and resource limits.
+
+When deploying from a source checkout, install and start the unit with:
+
+```bash
+sudo install -Dm644 configs/llama-cpp/saugra-waf-llama-cpp.service \
+  /etc/systemd/system/saugra-waf-llama-cpp.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now saugra-waf-llama-cpp
+```
+
+Packaged installations provide the same unit at
+`/usr/share/saugra-waf/llama-cpp/saugra-waf-llama-cpp.service`. Install that
+copy instead:
+
+```bash
+sudo install -Dm644 \
+  /usr/share/saugra-waf/llama-cpp/saugra-waf-llama-cpp.service \
+  /etc/systemd/system/saugra-waf-llama-cpp.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now saugra-waf-llama-cpp
+```
+
+The first service start downloads the model into the persistent
+`/var/cache/saugra-waf-llama-cpp` cache. Complete this deployment step before
+enabling the `llama_cpp` provider in Saugra, then confirm that the model loaded:
+
+```bash
+sudo journalctl -u saugra-waf-llama-cpp -f
+```
+
+While following the service log, run the health check in another terminal:
+
+```bash
+curl -s http://127.0.0.1:8080/health
+```
+
+Stop following the journal with `Ctrl-C` after the log reports `model loaded`
+and the health endpoint returns an `ok` status. Then restart Saugra so it uses
+the ready provider:
+
+```bash
+sudo systemctl restart saugra-waf
+sudo systemctl status saugra-waf-llama-cpp saugra-waf --no-pager
+```
+
+Keep port `8080` private and do not enable llama.cpp tools. Saugra continues to
+use deterministic explanations if the model service becomes unavailable; AI
+output never becomes blocking authority.
 
 | Shared host | Guidance |
 | --- | --- |
@@ -214,6 +334,68 @@ credentials. Every failure falls back to the deterministic explanation.
 Model-generated rules are untrusted drafts. Keep them outside active rule
 directories, run `rules validate` and `rules replay`, require human approval,
 and deploy accepted rules in monitor mode first.
+
+Run the versioned sanitized provider evaluation suite:
+
+```bash
+sudo saugra-waf ai evaluate \
+  --cases /usr/share/saugra-waf/ai/evaluation-cases.jsonl \
+  --output /var/lib/saugra-waf/ai-evaluation.json
+```
+
+The command exits unsuccessfully when any case fails. Do not qualify a model for
+production explanations by schema validity alone: require every case to pass
+privacy, deterministic grounding, prompt-injection resistance, suggestion
+scope, and quality checks. Review each case's sanitized `explanation`,
+`suggestion_kinds`, failures, and latency in the report.
+
+If evaluation fails, keep deterministic fallback enabled and either tune the
+prompt/model offline or select another model. Do not weaken grounding or privacy
+checks merely to make a small model pass. Repeat the suite after every model,
+quantization, prompt, llama.cpp, or hardware change.
+
+Review retained unknown-threat events in advisory-only AI shadow mode:
+
+```bash
+sudo saugra-waf ai anomaly-shadow \
+  --limit 100 \
+  --output /var/lib/saugra-waf/ai-anomaly-shadow.json
+```
+
+This command cannot change monitor or block decisions. Its report records
+`authority: deterministic_policy_only` and `enforcement_changes: 0`.
+
+For native remote providers, set `allow_remote: true`, `local_only: false`, use
+an allowlisted HTTPS endpoint, and place the API key in the environment variable
+named by `api_key_env`. Record the provider's contractual data region and
+retention policy in configuration.
+
+Create and publish a reviewed repeated-anomaly draft:
+
+```bash
+sudo saugra-waf rules draft \
+  --request-id <request-id-1> \
+  --request-id <request-id-2> \
+  --output /var/lib/saugra-waf/drafts/reviewed-route.yml
+
+sudo saugra-waf rules replay \
+  --input /var/lib/saugra-waf/drafts/reviewed-route.yml \
+  --fixtures /usr/share/saugra-waf/ai/rule-replay-cases.jsonl \
+  --output /var/lib/saugra-waf/drafts/replay.json
+
+sudo saugra-waf rules approve \
+  --input /var/lib/saugra-waf/drafts/reviewed-route.yml \
+  --reviewer security@example.com \
+  --replay-report /var/lib/saugra-waf/drafts/replay.json
+
+sudo saugra-waf rules publish \
+  --input /var/lib/saugra-waf/drafts/reviewed-route.yml \
+  --destination /etc/saugra-waf/rules/reviewed-route.yml
+```
+
+Publication fails unless the draft is approved and `server.mode` is `monitor`.
+Add the published destination to `rules.files` only after reviewing the staged
+monitor results.
 
 To inspect one active signature's baseline severity, performance-cost tier,
 targets, transforms, pattern, and design intent, pass its rule identifier:
@@ -1047,7 +1229,8 @@ Saugra continues with its deterministic explanation when llama.cpp fails. Set
 
 - `/etc/saugra-waf/saugra-waf.yml`: active config
 - `/etc/saugra-waf/rules/`: active rule packs
-- `/etc/saugra-waf/ollama/`: model policy and sanitized evaluation fixtures
+- `/etc/saugra-waf/ai/`: provider-neutral sanitized evaluation and replay fixtures
+- `/etc/saugra-waf/ollama/`: optional Ollama model policy
 - `/var/lib/saugra-waf/runtime-policy.json`: runtime allow/block policy
 - `/var/lib/saugra-waf/saugra-waf-behavior-state.json`: local behavior state
 - `/var/lib/saugra-waf/saugra-waf-bot-state.json`: local bot protection state

@@ -175,12 +175,22 @@ pub enum ConfigError {
     InvalidRuntimePolicyDefaultDuration,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
-    #[error("ai.provider must be llama_cpp, ollama, local, or command")]
+    #[error("ai.provider must be llama_cpp, ollama, openai_compatible, gemini, local, or command")]
     InvalidAiProvider,
     #[error("ai.ollama_url must be a local HTTP URL")]
     InvalidAiOllamaUrl,
     #[error("ai.llama_cpp_url must be a local HTTP URL")]
     InvalidAiLlamaCppUrl,
+    #[error("remote AI providers require ai.allow_remote: true and ai.local_only: false")]
+    RemoteAiNotEnabled,
+    #[error("ai.endpoint must be an allowlisted HTTPS URL for remote providers")]
+    InvalidAiRemoteEndpoint,
+    #[error("ai.api_key_env must name a non-empty environment variable for remote providers")]
+    InvalidAiApiKeyEnv,
+    #[error(
+        "ai.data_region and ai.retention_policy must be explicitly documented for remote providers"
+    )]
+    InvalidAiPrivacyPolicy,
     #[error("ai.command must not be blank when ai.provider is command")]
     MissingAiCommand,
     #[error("ai.prompt_version, ai.model, and ai.audit_log_path must not be blank")]
@@ -1151,6 +1161,20 @@ pub struct AiConfig {
     #[serde(default = "default_ai_llama_cpp_url")]
     pub llama_cpp_url: String,
     #[serde(default)]
+    pub allow_remote: bool,
+    #[serde(default = "default_true")]
+    pub local_only: bool,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub endpoint_allowlist: Vec<String>,
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+    #[serde(default)]
+    pub data_region: Option<String>,
+    #[serde(default)]
+    pub retention_policy: Option<String>,
+    #[serde(default)]
     pub command: Option<String>,
     #[serde(default)]
     pub command_args: Vec<String>,
@@ -1178,6 +1202,13 @@ impl Default for AiConfig {
             provider: default_ai_provider(),
             ollama_url: default_ai_ollama_url(),
             llama_cpp_url: default_ai_llama_cpp_url(),
+            allow_remote: false,
+            local_only: true,
+            endpoint: None,
+            endpoint_allowlist: Vec::new(),
+            api_key_env: None,
+            data_region: None,
+            retention_policy: None,
             command: None,
             command_args: Vec::new(),
             model: default_ai_model(),
@@ -1401,7 +1432,7 @@ impl SaugraConfig {
         }
         if !matches!(
             self.ai.provider.as_str(),
-            "llama_cpp" | "ollama" | "local" | "command"
+            "llama_cpp" | "ollama" | "openai_compatible" | "gemini" | "local" | "command"
         ) {
             return Err(ConfigError::InvalidAiProvider);
         }
@@ -1410,6 +1441,36 @@ impl SaugraConfig {
         }
         if self.ai.provider == "llama_cpp" && !is_local_http_url(&self.ai.llama_cpp_url) {
             return Err(ConfigError::InvalidAiLlamaCppUrl);
+        }
+        if matches!(self.ai.provider.as_str(), "openai_compatible" | "gemini") {
+            if !self.ai.allow_remote || self.ai.local_only {
+                return Err(ConfigError::RemoteAiNotEnabled);
+            }
+            let endpoint = self.ai.endpoint.as_deref().unwrap_or_default();
+            if !is_allowlisted_https_url(endpoint, &self.ai.endpoint_allowlist) {
+                return Err(ConfigError::InvalidAiRemoteEndpoint);
+            }
+            if self
+                .ai
+                .api_key_env
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(ConfigError::InvalidAiApiKeyEnv);
+            }
+            if self
+                .ai
+                .data_region
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+                || self
+                    .ai
+                    .retention_policy
+                    .as_deref()
+                    .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(ConfigError::InvalidAiPrivacyPolicy);
+            }
         }
         if self.ai.enabled
             && self.ai.provider == "command"
@@ -2826,6 +2887,23 @@ fn is_local_http_url(value: &str) -> bool {
         .iter()
         .find_map(|prefix| authority.strip_prefix(prefix))
         .is_some_and(|port| port.parse::<u16>().is_ok())
+}
+
+fn is_allowlisted_https_url(value: &str, allowlist: &[String]) -> bool {
+    let Some(authority) = value.trim().strip_prefix("https://") else {
+        return false;
+    };
+    let host = authority
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .split(':')
+        .next()
+        .unwrap_or_default();
+    !host.is_empty()
+        && allowlist
+            .iter()
+            .any(|allowed| allowed.trim().eq_ignore_ascii_case(host))
 }
 
 fn default_log_format() -> String {
@@ -4636,6 +4714,53 @@ forwarded_headers:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidForwardedHeadersIdentityAssertion)
+        ));
+    }
+
+    #[test]
+    fn accepts_hardened_remote_ai_provider_configuration() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  provider: openai_compatible
+  allow_remote: true
+  local_only: false
+  endpoint: https://api.example.com/v1/chat/completions
+  endpoint_allowlist: [api.example.com]
+  api_key_env: SAUGRA_AI_API_KEY
+  data_region: operator-documented
+  retention_policy: no-training-contract
+"#,
+        )
+        .unwrap();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_remote_ai_without_opt_in_or_https_allowlist() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  provider: gemini
+  endpoint: http://api.example.com/generate
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::RemoteAiNotEnabled)
         ));
     }
 }

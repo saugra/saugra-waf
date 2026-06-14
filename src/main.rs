@@ -7,8 +7,8 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use saugra_waf::{
     ai, behavior, bot, config::SaugraConfig, crs_convert, event_store,
-    event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rules, runtime_policy,
-    security_summary, standards, storage_cleanup, unknown_threats,
+    event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rule_drafts, rules,
+    runtime_policy, security_summary, standards, storage_cleanup, unknown_threats,
 };
 
 const INSTALLED_CONFIG_PATH: &str = "/etc/saugra-waf/saugra-waf.yml";
@@ -97,6 +97,11 @@ enum Commands {
         #[command(subcommand)]
         command: UnknownThreatCommand,
     },
+    /// Evaluate configured explanation providers against sanitized fixtures.
+    Ai {
+        #[command(subcommand)]
+        command: AiCommand,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -135,6 +140,37 @@ enum RulesCommand {
         config: PathBuf,
         #[arg(short, long, default_value_t = 1000)]
         limit: usize,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        fixtures: Option<PathBuf>,
+    },
+    /// Create a deterministic draft rule from repeated reviewed anomalies.
+    Draft {
+        #[arg(long = "request-id", required = true, action = clap::ArgAction::Append)]
+        request_ids: Vec<String>,
+        #[arg(short, long)]
+        output: PathBuf,
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+    },
+    /// Record human approval and bind a replay report to a draft manifest.
+    Approve {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(long)]
+        reviewer: String,
+        #[arg(long)]
+        replay_report: PathBuf,
+    },
+    /// Publish an approved draft while the configured server remains in monitor mode.
+    Publish {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(short, long)]
+        destination: PathBuf,
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
     },
     /// Convert supported OWASP CRS regex rules into Saugra YAML.
     ConvertCrs {
@@ -142,6 +178,28 @@ enum RulesCommand {
         input: PathBuf,
         #[arg(short, long)]
         output: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AiCommand {
+    /// Run versioned sanitized explanation evaluation cases.
+    Evaluate {
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(long, default_value = "configs/ai/evaluation-cases.jsonl")]
+        cases: PathBuf,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Produce an offline advisory review of retained unknown-threat events.
+    AnomalyShadow {
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(short, long, default_value_t = 100)]
+        limit: usize,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -457,6 +515,8 @@ async fn main() -> anyhow::Result<()> {
                 input,
                 config,
                 limit,
+                output,
+                fixtures,
             } => {
                 let config = load_valid_config(&config)?;
                 let (rule_set, _report) = rules::validate_rule_file(&input, u8::MAX)?;
@@ -465,13 +525,69 @@ async fn main() -> anyhow::Result<()> {
                     event_log_retention(&config)?,
                     limit,
                 )?;
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&rules::replay_events_with_exclusions(
+                let mut report = rules::replay_events_with_exclusions(
+                    &rule_set,
+                    &events,
+                    &config.rules.exclusions,
+                );
+                if let Some(fixtures) = fixtures {
+                    rules::attach_labeled_replay(
+                        &mut report,
                         &rule_set,
-                        &events,
                         &config.rules.exclusions,
-                    ))?
+                        &fixtures,
+                    )?;
+                }
+                let encoded = serde_json::to_string_pretty(&report)?;
+                if let Some(output) = output {
+                    std::fs::write(&output, format!("{encoded}\n"))?;
+                    println!("replay report written: {}", output.display());
+                } else {
+                    println!("{encoded}");
+                }
+                Ok(())
+            }
+            RulesCommand::Draft {
+                request_ids,
+                output,
+                config,
+            } => {
+                let config = load_valid_config(&config)?;
+                let events = event_store::read_all(
+                    Path::new(&config.logging.event_log_path),
+                    event_log_retention(&config)?,
+                )?;
+                let manifest = rule_drafts::create_draft(
+                    &events,
+                    &request_ids,
+                    &output,
+                    &config.ai.provider,
+                    &config.ai.model,
+                    &config.ai.prompt_version,
+                )?;
+                println!("draft rule written: {}", output.display());
+                println!("draft manifest written: {}", manifest.display());
+                Ok(())
+            }
+            RulesCommand::Approve {
+                input,
+                reviewer,
+                replay_report,
+            } => {
+                rule_drafts::approve_draft(&input, &reviewer, &replay_report)?;
+                println!("draft approved: {}", input.display());
+                Ok(())
+            }
+            RulesCommand::Publish {
+                input,
+                destination,
+                config,
+            } => {
+                let config = load_valid_config(&config)?;
+                rule_drafts::publish_draft(&input, &destination, &config)?;
+                println!(
+                    "draft published for monitor rollout: {}",
+                    destination.display()
                 );
                 Ok(())
             }
@@ -597,6 +713,50 @@ async fn main() -> anyhow::Result<()> {
         Commands::Summary { command } => handle_summary(command),
         Commands::Cleanup { command } => handle_cleanup(command),
         Commands::UnknownThreats { command } => handle_unknown_threats(command),
+        Commands::Ai { command } => match command {
+            AiCommand::Evaluate {
+                config,
+                cases,
+                output,
+            } => {
+                let config = load_valid_config(&config)?;
+                let report = ai::evaluate_provider(&config.ai, &cases).await?;
+                let encoded = serde_json::to_string_pretty(&report)?;
+                if let Some(output) = output {
+                    std::fs::write(&output, format!("{encoded}\n"))?;
+                    println!("AI evaluation report written: {}", output.display());
+                } else {
+                    println!("{encoded}");
+                }
+                anyhow::ensure!(
+                    report.failed_cases == 0,
+                    "{} AI evaluation cases failed",
+                    report.failed_cases
+                );
+                Ok(())
+            }
+            AiCommand::AnomalyShadow {
+                config,
+                limit,
+                output,
+            } => {
+                let config = load_valid_config(&config)?;
+                let events = event_store::tail(
+                    Path::new(&config.logging.event_log_path),
+                    event_log_retention(&config)?,
+                    limit,
+                )?;
+                let report = ai::anomaly_shadow_review(&config.ai, &events).await?;
+                let encoded = serde_json::to_string_pretty(&report)?;
+                if let Some(output) = output {
+                    std::fs::write(&output, format!("{encoded}\n"))?;
+                    println!("AI anomaly shadow report written: {}", output.display());
+                } else {
+                    println!("{encoded}");
+                }
+                Ok(())
+            }
+        },
     }
 }
 

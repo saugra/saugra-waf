@@ -206,6 +206,9 @@ ai:
   audit_log_max_size: 100mb
   audit_log_max_files: 10
   max_tuning_suggestions: 3
+  allow_remote: false
+  local_only: true
+  endpoint_allowlist: []
   # llama.cpp should run with Qwen3 0.6B Q8, a 2048-token context, and one
   # inference thread on constrained shared hosts. Below 2 GB RAM, use
   # enabled: false or provider: local.
@@ -214,10 +217,10 @@ ai:
   # provider: ollama
   # ollama_url: http://127.0.0.1:11434
   # model: qwen3:4b
-  # OpenAI, Gemini, and other remote APIs use an operator-managed adapter:
-  # provider: command
-  # command: /usr/local/bin/saugra-ai-adapter
-  # command_args: ["--provider", "example"]
+  # Native remote providers require allow_remote: true, local_only: false,
+  # an HTTPS endpoint whose host is in endpoint_allowlist, and an environment
+  # variable secret reference in api_key_env. Also document data_region and
+  # retention_policy before enabling.
 
 logging:
   format: json

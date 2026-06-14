@@ -343,11 +343,9 @@ Explanation behavior:
 - classify event type
 
 Saugra uses a provider-neutral asynchronous interface with loopback llama.cpp
-and Qwen3 0.6B as the lightweight default, local Ollama as an alternative, a
-deterministic local fallback, and an optional command-based adapter.
-The command adapter can connect to operator-selected remote services such as
-OpenAI, Gemini, or an internal model gateway. Native provider-specific HTTP
-clients are not implemented yet.
+and Qwen3 0.6B as the lightweight default, local Ollama as an alternative,
+native OpenAI-compatible and Gemini HTTPS providers, a deterministic local
+fallback, and an optional command-based adapter.
 Before a model or adapter runs, Saugra builds a minimized input containing route
 shapes, query parameter names, rule
 metadata, scores, baseline signals, behavior history, and campaign counts. Raw
@@ -360,6 +358,35 @@ invocation is written to a JSONL audit trail with model, prompt version, input
 digest, output, latency, fallback status, and failure state. Blocking remains
 deterministic and based on rules, rate limits, scoring, and explicit
 configuration.
+
+All event fields are treated as untrusted data rather than model instructions.
+Provider explanations must preserve the deterministic action and relevant rule,
+behavior, unknown-threat, and campaign identifiers. Model-written score or
+threshold narration is rejected because Saugra renders those values
+deterministically. Missing evidence, malformed structured output, timeout, or
+grounding failure activates the deterministic local fallback.
+
+Remote providers are disabled unless `allow_remote: true` and
+`local_only: false`. Their endpoint must use HTTPS and match
+`endpoint_allowlist`; credentials are read through `api_key_env`, not YAML.
+Operators must document `data_region` and `retention_policy` before validation
+succeeds.
+
+Versioned provider-neutral sanitized cases run through `saugra-waf ai
+evaluate`. The report includes the sanitized explanation and suggestion kinds,
+and tracks schema/provider failures, forbidden privacy fields, prompt-injection
+resistance, grounding checks, suggestion scope, required and forbidden quality
+phrases, and latency.
+`saugra-waf ai anomaly-shadow` applies the same sanitized explanation path to
+retained unknown-threat events for offline operator review. The report cannot
+alter decisions and declares deterministic policy as the only enforcement
+authority.
+
+Generated rule drafts use a separate reviewed lifecycle: `rules draft`,
+`rules replay --fixtures`, `rules approve`, then `rules publish`. Draft
+manifests bind source anomaly IDs, generator metadata, input and replay digests,
+reviewer, approval time, and publication state. Publishing requires monitor
+mode and never edits configured active rule files automatically.
 
 Example:
 

@@ -216,6 +216,112 @@ rules:
 }
 
 #[test]
+fn cli_evaluates_ai_and_publishes_reviewed_rule_draft() {
+    let fixture = CliFixture::new();
+    for request_id in ["draft-source-1", "draft-source-2"] {
+        event_store::append(
+            &fixture.event_log_path,
+            EventLogRetention {
+                max_size_bytes: 1024 * 1024,
+                max_files: 3,
+            },
+            &SecurityEvent::new(
+                "GET",
+                "/reviewed/anomaly",
+                "",
+                WafDecision::from_matches(
+                    request_id.to_string(),
+                    saugra_waf::config::WafMode::Monitor,
+                    Vec::new(),
+                    5,
+                ),
+            ),
+        )
+        .unwrap();
+    }
+
+    let cases = fixture._dir.path().join("ai-cases.jsonl");
+    fs::write(
+        &cases,
+        r#"{"id":"local","input":{"action":"monitor","route_shape":"/reviewed/anomaly"},"expected":{"must_include":["evaluation fallback"],"must_not_include":["secret"],"allowed_suggestion_kinds":[],"maximum_suggestions":0}}"#,
+    )
+    .unwrap();
+    let evaluation = fixture._dir.path().join("evaluation.json");
+    let output = saugra_waf_cmd([
+        "ai",
+        "evaluate",
+        "--config",
+        &fixture.config_arg(),
+        "--cases",
+        &cases.display().to_string(),
+        "--output",
+        &evaluation.display().to_string(),
+    ]);
+    assert_success(&output);
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&fs::read(&evaluation).unwrap()).unwrap()
+            ["passed_cases"],
+        1
+    );
+
+    let draft = fixture._dir.path().join("drafts").join("route.yml");
+    let draft_arg = draft.display().to_string();
+    let output = saugra_waf_cmd([
+        "rules",
+        "draft",
+        "--request-id",
+        "draft-source-1",
+        "--request-id",
+        "draft-source-2",
+        "--output",
+        &draft_arg,
+        "--config",
+        &fixture.config_arg(),
+    ]);
+    assert_success(&output);
+
+    let replay = fixture._dir.path().join("replay.json");
+    let replay_arg = replay.display().to_string();
+    let output = saugra_waf_cmd([
+        "rules",
+        "replay",
+        "--input",
+        &draft_arg,
+        "--config",
+        &fixture.config_arg(),
+        "--output",
+        &replay_arg,
+    ]);
+    assert_success(&output);
+
+    let output = saugra_waf_cmd([
+        "rules",
+        "approve",
+        "--input",
+        &draft_arg,
+        "--reviewer",
+        "reviewer@example.com",
+        "--replay-report",
+        &replay_arg,
+    ]);
+    assert_success(&output);
+
+    let published = fixture._dir.path().join("published").join("route.yml");
+    let output = saugra_waf_cmd([
+        "rules",
+        "publish",
+        "--input",
+        &draft_arg,
+        "--destination",
+        &published.display().to_string(),
+        "--config",
+        &fixture.config_arg(),
+    ]);
+    assert_success(&output);
+    assert!(published.exists());
+}
+
+#[test]
 fn cli_discovers_config_from_environment() {
     let fixture = CliFixture::new();
     let output =

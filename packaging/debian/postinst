@@ -36,6 +36,7 @@ ensure_dir /etc/saugra-waf root saugra-waf 0750
 ensure_dir /etc/saugra-waf/rules root saugra-waf 0750
 ensure_dir /etc/saugra-waf/standards root saugra-waf 0750
 ensure_dir /etc/saugra-waf/intelligence root saugra-waf 0750
+ensure_dir /etc/saugra-waf/ai root saugra-waf 0750
 ensure_dir /etc/saugra-waf/ollama root saugra-waf 0750
 ensure_dir /var/lib/saugra-waf saugra-waf saugra-waf 0750
 ensure_dir /var/log/saugra-waf saugra-waf adm 0750
@@ -58,7 +59,11 @@ for catalog in /usr/share/saugra-waf/intelligence/*.yml; do
 done
 
 copy_if_missing /usr/share/saugra-waf/ollama/Modelfile /etc/saugra-waf/ollama/Modelfile 0640 root saugra-waf
-copy_if_missing /usr/share/saugra-waf/ollama/evaluation-cases.jsonl /etc/saugra-waf/ollama/evaluation-cases.jsonl 0640 root saugra-waf
+
+for fixture in /usr/share/saugra-waf/ai/*.jsonl; do
+  [ -e "$fixture" ] || continue
+  copy_if_missing "$fixture" "/etc/saugra-waf/ai/$(basename "$fixture")" 0640 root saugra-waf
+done
 
 if command -v systemctl >/dev/null; then
   systemctl daemon-reload || true

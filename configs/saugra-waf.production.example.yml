@@ -306,13 +306,15 @@ ai:
   audit_log_max_size: 100mb
   audit_log_max_files: 30
   max_tuning_suggestions: 3
+  allow_remote: false
+  local_only: true
+  endpoint_allowlist: []
   # Use Qwen3 0.6B Q8 with a 2048-token context and one inference thread on a
   # constrained shared host. Below 2 GB RAM, use enabled: false or local.
   # Ollama remains available with provider: ollama and ollama_url.
-  # OpenAI, Gemini, and other remote APIs use an operator-managed adapter.
-  # provider: command
-  # command: /usr/local/bin/saugra-ai-adapter
-  # command_args: ["--provider", "example"]
+  # Native OpenAI-compatible and Gemini providers require explicit remote
+  # enablement, HTTPS endpoint allowlisting, an environment secret reference,
+  # and documented data-region and retention policy.
 
 # Structured event logs are the administrator-facing source of truth for block
 # reasons, explanations, and request references shown to users.
