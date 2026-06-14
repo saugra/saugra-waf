@@ -36,7 +36,9 @@ use crate::{
         UpstreamConfig, WafMode,
     },
     decision::{WafAction, WafDecision},
-    event_store::{self, EventLogRetention, SecurityEvent, UpstreamEvent, WebSocketEvent},
+    event_store::{
+        self, EventLogRetention, RequestEvidence, SecurityEvent, UpstreamEvent, WebSocketEvent,
+    },
     rate_limit::{self, RateLimitExceeded, RateLimitPolicy, RateLimitStore},
     rules::{self, RequestParts, RuleMatch, RuleSet, RuleSeverity, RuleTarget},
     runtime_policy::RuntimePolicyHandle,
@@ -322,6 +324,11 @@ async fn proxy_request_inner(
                     path: parts.uri.path(),
                     query: parts.uri.query().unwrap_or_default(),
                     client_ip: &client_ip,
+                    evidence: request_evidence(
+                        parts.uri.query().unwrap_or_default(),
+                        &parts.headers,
+                        0,
+                    ),
                 },
                 &decision,
                 &upstream,
@@ -386,11 +393,14 @@ async fn proxy_request_inner(
     let body_for_rules = String::from_utf8_lossy(&body_bytes);
 
     let request_parts = RequestParts {
+        method: parts.method.as_str(),
         path: &path,
         query: &query,
         headers: &headers,
         body: &body_for_rules,
         user_agent: &user_agent,
+        content_type: &content_type,
+        trusted_proxy: trusted_forwarded_headers,
     };
     let matches = state
         .rule_set
@@ -438,6 +448,7 @@ async fn proxy_request_inner(
             path: &path,
             query: &query,
             client_ip: &client_ip,
+            evidence: request_evidence(&query, &parts.headers, body_bytes.len()),
         },
         &decision,
         &upstream,
@@ -524,11 +535,14 @@ async fn proxy_websocket_handshake(
         .to_string();
 
     let request_parts = RequestParts {
+        method: parts.method.as_str(),
         path: &path,
         query: &query,
         headers: &headers,
         body: "",
         user_agent: &user_agent,
+        content_type: &content_type,
+        trusted_proxy: trusted_forwarded_headers,
     };
     let mut matches = state
         .rule_set
@@ -589,6 +603,7 @@ async fn proxy_websocket_handshake(
             path: &path,
             query: &query,
             client_ip: &client_ip,
+            evidence: request_evidence(&query, &parts.headers, 0),
         },
         &decision,
         &upstream,
@@ -1446,6 +1461,7 @@ struct EventRequest<'a> {
     path: &'a str,
     query: &'a str,
     client_ip: &'a str,
+    evidence: RequestEvidence,
 }
 
 fn record_event(
@@ -1462,7 +1478,8 @@ fn record_event(
         decision.clone(),
         request.client_ip,
         &state.config.logging.timezone,
-    );
+    )
+    .with_evidence(request.evidence);
     event = event.with_upstream(UpstreamEvent {
         name: upstream.name.clone(),
         host: upstream.host.clone(),
@@ -1481,6 +1498,44 @@ fn record_event(
             %error,
             "failed to write security event"
         );
+    }
+}
+
+fn request_evidence(query: &str, headers: &HeaderMap, body_size: usize) -> RequestEvidence {
+    let mut query_parameter_names = query
+        .split('&')
+        .filter_map(|pair| {
+            let name = pair.split_once('=').map(|(name, _)| name).unwrap_or(pair);
+            (!name.is_empty()).then(|| {
+                percent_encoding::percent_decode_str(name)
+                    .decode_utf8_lossy()
+                    .into_owned()
+            })
+        })
+        .collect::<Vec<_>>();
+    query_parameter_names.sort();
+    query_parameter_names.dedup();
+
+    let mut header_names = headers
+        .keys()
+        .map(|name| name.as_str().to_ascii_lowercase())
+        .collect::<Vec<_>>();
+    header_names.sort();
+    header_names.dedup();
+
+    RequestEvidence {
+        content_type: headers
+            .get(header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .unwrap_or_default()
+            .split(';')
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_ascii_lowercase(),
+        body_size,
+        query_parameter_names,
+        header_names,
     }
 }
 

@@ -114,6 +114,12 @@ enum RulesCommand {
         #[arg(short, long, default_value_os_t = default_config_path())]
         config: PathBuf,
     },
+    /// View metadata and design details for one active WAF rule.
+    View {
+        rule_id: String,
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+    },
     /// Validate and compile one inactive Saugra YAML rule pack.
     Validate {
         #[arg(short, long)]
@@ -378,6 +384,55 @@ async fn main() -> anyhow::Result<()> {
                 }
                 Ok(())
             }
+            RulesCommand::View { rule_id, config } => {
+                let config = load_valid_config(&config)?;
+                let rule_set = rules::load_rule_set(&config.rules)?;
+                let matching_rules = rule_set.rules_by_id(&rule_id);
+                let Some(rule) = matching_rules.first() else {
+                    anyhow::bail!("active rule {rule_id} was not found");
+                };
+                let mut targets = matching_rules
+                    .iter()
+                    .map(|rule| rule.target.to_string())
+                    .collect::<Vec<_>>();
+                targets.sort();
+                targets.dedup();
+                let transforms = if rule.transforms.is_empty() {
+                    "none".to_string()
+                } else {
+                    rule.transforms
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+
+                println!("Rule ID: {}", rule.id);
+                println!("Name: {}", rule.name);
+                println!("Status: active");
+                println!("Baseline severity: {}", rule.severity);
+                println!("Category: {}", rule.category);
+                println!(
+                    "OWASP category: {}",
+                    rule.owasp_category.as_deref().unwrap_or("not specified")
+                );
+                println!("Paranoia level: {}", rule.paranoia_level);
+                println!(
+                    "Performance cost tier: {}",
+                    rule.performance_cost
+                        .map(|cost| cost.to_string())
+                        .unwrap_or_else(|| "not specified".to_string())
+                );
+                println!("Targets: {}", targets.join(", "));
+                println!("Transforms: {transforms}");
+                println!("Pattern: {}", rule.pattern.as_str());
+                println!(
+                    "Design intent: {}",
+                    rule.design_intent.as_deref().unwrap_or("not specified")
+                );
+                println!("Match explanation: {}", rule.explanation);
+                Ok(())
+            }
             RulesCommand::Validate {
                 input,
                 paranoia_level,
@@ -412,7 +467,11 @@ async fn main() -> anyhow::Result<()> {
                 )?;
                 println!(
                     "{}",
-                    serde_json::to_string_pretty(&rules::replay_events(&rule_set, &events))?
+                    serde_json::to_string_pretty(&rules::replay_events_with_exclusions(
+                        &rule_set,
+                        &events,
+                        &config.rules.exclusions,
+                    ))?
                 );
                 Ok(())
             }

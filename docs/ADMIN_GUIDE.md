@@ -215,6 +215,21 @@ Model-generated rules are untrusted drafts. Keep them outside active rule
 directories, run `rules validate` and `rules replay`, require human approval,
 and deploy accepted rules in monitor mode first.
 
+To inspect one active signature's baseline severity, performance-cost tier,
+targets, transforms, pattern, and design intent, pass its rule identifier:
+
+```bash
+sudo saugra-waf rules view <saugra-rule-id>
+```
+
+The command reads the active rules from the configured Saugra YAML file. Pass
+`--config <path>` when the service does not use the default configuration path.
+For example:
+
+```bash
+sudo saugra-waf rules view SAUGRA-SQLI-001
+```
+
 ## Upgrade To The Newest Version
 
 The signed Saugra APT repository is the recommended upgrade path for Debian and
@@ -805,11 +820,34 @@ bot_protection:
    `/adminer.php`. The bundled catalog intentionally does not classify the
    generic `/admin` prefix as a scanner path.
 6. If a deterministic rule is noisy for a valid route or parameter, keep the
-   server in monitor mode or add a scoped `rules.exclusions` entry after review.
-7. Validate and restart only when changing YAML config:
+   server in monitor mode and add the narrowest practical `rules.exclusions`
+   entry after request-ID review. Prefer method, target, content type, route,
+   and parameter scopes over a global rule exclusion.
+7. For identity-aware tuning, configure the assertion header under
+   `forwarded_headers.identity_assertions`, allow only known
+   `trusted_proxies`, and make the front proxy remove client-supplied copies
+   before setting the authenticated value. Never trust a role header received
+   directly from a client.
+8. Validate the configuration and replay an inactive copy of the affected rule
+   pack against retained events:
 
 ```bash
 saugra-waf test-config
+saugra-waf rules replay \
+  --input /etc/saugra-waf/rules/reviewed-pack.yml \
+  --config /etc/saugra-waf/saugra-waf.yml
+```
+
+   Review `matches_before_exclusions`, `matches_after_exclusions`, and
+   `excluded_events`. Retained events contain names and sizes, not request
+   bodies or trusted header values, so the replay report calls out targets and
+   value conditions it cannot reproduce.
+9. Exercise labeled legitimate and attack-case requests in staging, then
+   activate the exclusion in monitor mode and verify new events before enabling
+   block mode.
+10. Restart only after validation when changing YAML config:
+
+```bash
 systemctl restart saugra-waf
 ```
 

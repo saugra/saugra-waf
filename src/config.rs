@@ -8,7 +8,7 @@ use std::{
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::rules::RuleSeverity;
+use crate::rules::{RuleSeverity, RuleTarget};
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -201,6 +201,12 @@ pub enum ConfigError {
     InvalidBlockingParanoiaLevel,
     #[error("rules.exclusions entries must include at least one rule_id or category")]
     InvalidRuleExclusion,
+    #[error("rules.exclusions methods must be valid HTTP methods")]
+    InvalidRuleExclusionMethod,
+    #[error("rules.exclusions trusted_headers must use valid non-sensitive header names and non-empty values")]
+    InvalidRuleExclusionTrustedHeader,
+    #[error("rules.exclusions identities must reference a header configured in forwarded_headers.identity_assertions")]
+    InvalidRuleExclusionIdentity,
     #[error("posture.expected_external_scheme must be http or https")]
     InvalidPostureScheme,
     #[error(
@@ -253,6 +259,8 @@ pub enum ConfigError {
     InvalidForwardedHeadersExpectedProto,
     #[error("forwarded_headers.insecure_proto_score must be greater than zero")]
     InvalidForwardedHeadersInsecureProtoScore,
+    #[error("forwarded_headers.identity_assertions entries must be valid non-sensitive HTTP header names")]
+    InvalidForwardedHeadersIdentityAssertion,
     #[error("websocket.allowed_origins entries must not be blank")]
     InvalidWebSocketAllowedOrigin,
     #[error("websocket.allowed_hosts entries must not be blank")]
@@ -373,6 +381,8 @@ pub struct ForwardedHeadersConfig {
     pub expected_proto: String,
     #[serde(default = "default_insecure_proto_score")]
     pub insecure_proto_score: u16,
+    #[serde(default)]
+    pub identity_assertions: Vec<String>,
 }
 
 impl Default for ForwardedHeadersConfig {
@@ -384,6 +394,7 @@ impl Default for ForwardedHeadersConfig {
             proto_header: default_proto_header(),
             expected_proto: default_expected_proto(),
             insecure_proto_score: default_insecure_proto_score(),
+            identity_assertions: Vec::new(),
         }
     }
 }
@@ -1108,6 +1119,23 @@ pub struct RuleExclusionConfig {
     pub query_params: Vec<String>,
     #[serde(default)]
     pub headers: Vec<String>,
+    #[serde(default)]
+    pub methods: Vec<String>,
+    #[serde(default)]
+    pub targets: Vec<RuleTarget>,
+    #[serde(default)]
+    pub content_types: Vec<String>,
+    #[serde(default)]
+    pub trusted_headers: Vec<RuleExclusionHeaderValueConfig>,
+    #[serde(default)]
+    pub identities: Vec<RuleExclusionHeaderValueConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RuleExclusionHeaderValueConfig {
+    pub name: String,
+    #[serde(default)]
+    pub values: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1441,10 +1469,42 @@ impl SaugraConfig {
                 .chain(exclusion.path_prefixes.iter())
                 .chain(exclusion.query_params.iter())
                 .chain(exclusion.headers.iter())
+                .chain(exclusion.methods.iter())
+                .chain(exclusion.content_types.iter())
                 .any(|value| value.trim().is_empty());
 
             if has_blank {
                 return Err(ConfigError::InvalidRuleExclusion);
+            }
+
+            if exclusion.methods.iter().any(|method| {
+                method
+                    .bytes()
+                    .any(|byte| !byte.is_ascii_uppercase() && byte != b'-')
+            }) {
+                return Err(ConfigError::InvalidRuleExclusionMethod);
+            }
+
+            if exclusion.trusted_headers.iter().any(|condition| {
+                !is_valid_trusted_assertion_header(&condition.name)
+                    || condition.values.is_empty()
+                    || condition.values.iter().any(|value| value.trim().is_empty())
+            }) {
+                return Err(ConfigError::InvalidRuleExclusionTrustedHeader);
+            }
+
+            if exclusion.identities.iter().any(|condition| {
+                !is_valid_trusted_assertion_header(&condition.name)
+                    || condition.values.is_empty()
+                    || condition.values.iter().any(|value| value.trim().is_empty())
+                    || !self
+                        .forwarded_headers
+                        .identity_assertions
+                        .iter()
+                        .any(|header| header.eq_ignore_ascii_case(&condition.name))
+            }) || (!exclusion.identities.is_empty() && !self.forwarded_headers.enabled)
+            {
+                return Err(ConfigError::InvalidRuleExclusionIdentity);
             }
         }
 
@@ -1541,6 +1601,14 @@ impl SaugraConfig {
 
         if self.forwarded_headers.insecure_proto_score == 0 {
             return Err(ConfigError::InvalidForwardedHeadersInsecureProtoScore);
+        }
+        if self
+            .forwarded_headers
+            .identity_assertions
+            .iter()
+            .any(|header| !is_valid_trusted_assertion_header(header))
+        {
+            return Err(ConfigError::InvalidForwardedHeadersIdentityAssertion);
         }
 
         Ok(())
@@ -2252,6 +2320,14 @@ fn is_valid_header_name(value: &str) -> bool {
                     | b'A'..=b'Z'
             )
         })
+}
+
+fn is_valid_trusted_assertion_header(value: &str) -> bool {
+    is_valid_header_name(value)
+        && !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "authorization" | "cookie" | "set-cookie" | "x-api-key" | "x-auth-token"
+        )
 }
 
 fn default_true() -> bool {
@@ -4484,6 +4560,82 @@ ai:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidAiLlamaCppUrl)
+        ));
+    }
+
+    #[test]
+    fn accepts_context_aware_exclusion_with_trusted_identity_assertion() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+forwarded_headers:
+  identity_assertions:
+    - X-Authenticated-Role
+rules:
+  exclusions:
+    - name: trusted editor preview
+      rule_ids: [SAUGRA-XSS-001]
+      methods: [POST]
+      targets: [query]
+      content_types: [application/json]
+      trusted_headers:
+        - name: X-Deployment
+          values: [internal]
+      identities:
+        - name: X-Authenticated-Role
+          values: [editor]
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_identity_exclusion_for_unconfigured_or_sensitive_header() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rules:
+  exclusions:
+    - rule_ids: [SAUGRA-XSS-001]
+      identities:
+        - name: X-Authenticated-Role
+          values: [editor]
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidRuleExclusionIdentity)
+        ));
+
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+forwarded_headers:
+  identity_assertions: [Authorization]
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidForwardedHeadersIdentityAssertion)
         ));
     }
 }

@@ -38,6 +38,9 @@ forwarded_headers:
   proto_header: X-Forwarded-Proto
   expected_proto: https
   insecure_proto_score: 10
+  # Headers listed here are trusted as identity assertions only when the
+  # direct peer matches trusted_proxies.
+  identity_assertions: []
 
 rate_limit:
   backend: memory

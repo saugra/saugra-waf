@@ -49,7 +49,7 @@ cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 Current test status:
 
 ```txt
-212 tests pass in a normal local/CI environment, including the two WebSocket
+276 tests pass in a normal local/CI environment, including the two WebSocket
 raw-socket tunnel tests.
 ```
 
@@ -188,6 +188,24 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
       blocking.
 - [x] Add local tuning controls: disable rules by ID, disable categories, and
       exclude specific rules by path, parameter, header, and rule ID.
+- [x] Add `saugra-waf rules view <saugra-rule-id>` for active signature severity,
+      performance-cost metadata, targets, transforms, pattern, and design intent.
+- [x] Add context-aware exclusion scopes for HTTP method, matched rule target,
+      content type, and trusted header values.
+- [x] Record privacy-safe matched-evidence metadata that helps operators locate
+      false positives without retaining sensitive full payloads by default.
+- [x] Add exclusion validation and operator warnings for global, contradictory,
+      spoofable, or otherwise overly broad exclusion policies.
+- [x] Extend inactive rule-pack replay to evaluate proposed exclusions against
+      retained traffic, report prior outcomes and unavailable evidence, and
+      require separate labeled legitimate and attack-case staging verification
+      before activation.
+- [x] Support authenticated identity or role exclusion scopes only through
+      explicitly configured and validated trusted proxy or upstream identity
+      assertions; never trust arbitrary client-supplied role headers.
+- [x] Document a monitor-first context-aware tuning workflow covering request ID
+      review, narrow exclusion selection, validation, replay, activation, and
+      post-deployment verification.
 - [x] Add rule-pack validation output so operators can see loaded files, rule
       counts, disabled rules, configured exclusions, and warnings before
       starting traffic.

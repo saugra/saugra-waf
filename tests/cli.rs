@@ -66,6 +66,10 @@ fn cli_read_only_inspection_commands_run() {
             "SAUGRA-SQLI-001",
         ),
         (
+            vec!["rules", "view", "SAUGRA-SQLI-001", "--config", &config],
+            "Performance cost tier: low",
+        ),
+        (
             vec!["owasp", "coverage", "--config", &config],
             "OWASP coverage standard:",
         ),

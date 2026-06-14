@@ -1026,6 +1026,7 @@ mod tests {
             method: "GET".to_string(),
             path: path.to_string(),
             query: String::new(),
+            evidence: None,
             owasp_categories: decision.owasp_categories.clone(),
             upstream: None,
             websocket: None,

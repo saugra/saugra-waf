@@ -498,6 +498,7 @@ rules:
     name: Basic SQL Injection Pattern
     category: sql_injection
     severity: high
+    performance_cost: low
     paranoia_level: 1
     targets:
       - query
@@ -505,9 +506,15 @@ rules:
       - url_decode
       - plus_to_space
     pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table)"
+    design_intent: Detect common SQL injection markers with bounded normalization.
     explanation: Query data matched a common SQL injection pattern.
     owasp_category: A05:2025-Injection
 ```
+
+`performance_cost` is optional and accepts `low`, `moderate`, or `high`.
+`design_intent` is optional operator-facing documentation. Active metadata can
+be inspected with `saugra-waf rules view <saugra-rule-id>`; omitted optional
+fields are reported as `not specified` rather than inferred by the runtime.
 
 Native rule packs are split into CRS-style files such as
 `REQUEST-941-APPLICATION-ATTACK-XSS.yml` and
@@ -553,8 +560,9 @@ For monitor-first CRS-style tuning, Saugra can load and log rules up to
 are not configured.
 
 Rule exclusions are applied before anomaly scoring. They are intended for
-false-positive tuning and can be scoped by rule ID, category, path prefix, query
-parameter, and header:
+false-positive tuning and can be scoped by rule ID, category, path prefix,
+query parameter, header name, HTTP method, matched target, content type, trusted
+header value, and authenticated identity assertion:
 
 ```yaml
 rules:
@@ -566,7 +574,29 @@ rules:
         - /api/articles
       query_params:
         - content
+      methods:
+        - POST
+      targets:
+        - query
+      content_types:
+        - application/json
+      identities:
+        - name: X-Authenticated-Role
+          values:
+            - editor
 ```
+
+Value and identity conditions are ignored unless the direct peer matches
+`forwarded_headers.trusted_proxies`. Identity headers must additionally appear
+in `forwarded_headers.identity_assertions`. A front proxy must remove
+client-supplied copies before writing an assertion. Sensitive credential
+headers cannot be configured as assertions.
+
+Security events retain privacy-safe request evidence: normalized content type,
+body size, query parameter names, and header names. Request bodies and trusted
+header values are not retained. This supports method, target, content-type,
+parameter-name, and header-name replay while making trusted-value replay an
+explicitly reported limitation.
 
 Rule-pack validation reports metadata such as pack name, version, standards,
 active rule counts, filtered rules, and unsupported CRS imports. Converted CRS

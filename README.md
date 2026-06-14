@@ -175,6 +175,7 @@ cd saugra-waf
 cargo build
 cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
+cargo run --bin saugra-waf -- rules view <saugra-rule-id> --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- run --config configs/saugra-waf.example.yml
 ```
 
@@ -373,10 +374,23 @@ rules:
         - /api/articles
       query_params:
         - content
+      methods:
+        - POST
+      targets:
+        - query
+      content_types:
+        - application/json
 ```
 
 Global exclusions reduce protection across the whole application. Use them only
 when the rule is intentionally disabled everywhere.
+
+Value-based `trusted_headers` and authenticated `identities` scopes match only
+when the direct peer is in `forwarded_headers.trusted_proxies`. Identity headers
+must also be listed in `forwarded_headers.identity_assertions`; the front proxy
+must remove client-supplied copies before setting its authenticated value.
+Saugra retains parameter names, header names, normalized content type, and body
+size for tuning without retaining request bodies or trusted header values.
 
 Bot and behavior threshold findings produced in monitor mode remain visible in
 events and explanations, but do not contribute to the blocking anomaly score.

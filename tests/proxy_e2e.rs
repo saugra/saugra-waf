@@ -524,6 +524,13 @@ async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
         rule_ids: vec!["SAUGRA-XSS-001".to_string()],
         path_prefixes: vec!["/api/articles".to_string()],
         query_params: vec!["content".to_string()],
+        methods: vec!["POST".to_string()],
+        targets: vec![saugra_waf::rules::RuleTarget::Query],
+        content_types: vec!["application/json".to_string()],
+        trusted_headers: vec![saugra_waf::config::RuleExclusionHeaderValueConfig {
+            name: "X-Deployment".to_string(),
+            values: vec!["internal".to_string()],
+        }],
         ..RuleExclusionConfig::default()
     }];
     let state = ProxyState::with_transport(
@@ -535,7 +542,10 @@ async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
     )
     .unwrap();
     let request = Request::builder()
+        .method(Method::POST)
         .uri("/api/articles/preview?content=%3Cscript%3Ealert(1)%3C/script%3E")
+        .header("content-type", "application/json; charset=utf-8")
+        .header("x-deployment", "internal")
         .body(Body::empty())
         .unwrap();
 
@@ -548,6 +558,14 @@ async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
     assert_eq!(events[0].decision.action, WafAction::Allow);
     assert!(events[0].decision.matched_rules.is_empty());
     assert_eq!(events[0].decision.anomaly_score, 0);
+    let evidence = events[0].evidence.as_ref().unwrap();
+    assert_eq!(evidence.content_type, "application/json");
+    assert_eq!(evidence.query_parameter_names, vec!["content"]);
+    assert!(evidence.header_names.contains(&"content-type".to_string()));
+    assert!(evidence.header_names.contains(&"x-deployment".to_string()));
+    let encoded = serde_json::to_string(&events[0]).unwrap();
+    assert!(!encoded.contains("internal"));
+    assert!(!encoded.contains("charset=utf-8"));
 }
 
 #[tokio::test]

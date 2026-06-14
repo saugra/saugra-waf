@@ -65,6 +65,11 @@ forwarded_headers:
   # Bot protection adds this score when a trusted proxy reports a protocol
   # other than expected_proto. Keep this low enough for monitor-first rollout.
   insecure_proto_score: 10
+  # Identity headers are accepted only from trusted_proxies. Configure these
+  # only when the front proxy removes client-supplied copies and sets its own.
+  identity_assertions: []
+  # identity_assertions:
+  #   - X-Authenticated-Role
 
 # Rate limiting protects login, payment, API, and other abuse-sensitive routes.
 # Redis is recommended in production so limits survive restarts and work across
@@ -270,6 +275,20 @@ rules:
   #       - /api/articles
   #     query_params:
   #       - content
+  #     methods:
+  #       - POST
+  #     targets:
+  #       - query
+  #     content_types:
+  #       - application/json
+  #     trusted_headers:
+  #       - name: X-Deployment
+  #         values:
+  #           - internal
+  #     identities:
+  #       - name: X-Authenticated-Role
+  #         values:
+  #           - editor
   exclusions: []
 
 # AI is explain-only. It should help administrators understand and tune events;
