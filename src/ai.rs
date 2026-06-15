@@ -1819,6 +1819,10 @@ mod tests {
         runtime_policy::RuntimeAllowlistMatch,
     };
     use std::fs;
+    use tokio::{
+        io::{AsyncReadExt, AsyncWriteExt},
+        net::TcpListener,
+    };
 
     #[test]
     fn explanation_includes_owasp_category_context() {
@@ -2079,6 +2083,139 @@ mod tests {
         assert!(!result.fallback_used);
         assert_eq!(result.provider, "command");
         assert!(result.input_digest.starts_with("sha256:"));
+    }
+
+    #[tokio::test]
+    async fn local_http_providers_send_requests_and_parse_responses() {
+        let input = provider_input();
+        let llama_url = mock_http_response(
+            200,
+            r#"{"choices":[{"message":{"content":"{\"explanation\":\"Monitor action matched rule SAUGRA-TEST-001.\",\"tuning_suggestions\":[]}"}}]}"#,
+        )
+        .await;
+        let llama = LlamaCppExplanationProvider {
+            base_url: llama_url,
+            model: "test-llama".to_string(),
+        };
+
+        assert_eq!(llama.name(), "llama_cpp");
+        assert_eq!(llama.model(), "test-llama");
+        assert!(llama
+            .explain(&input)
+            .await
+            .unwrap()
+            .explanation
+            .contains("SAUGRA-TEST-001"));
+
+        let ollama_url = mock_http_response(
+            200,
+            r#"{"response":"{\"explanation\":\"Monitor action matched rule SAUGRA-TEST-001.\",\"tuning_suggestions\":[]}"}"#,
+        )
+        .await;
+        let ollama = OllamaExplanationProvider {
+            base_url: ollama_url,
+            model: "test-ollama".to_string(),
+        };
+
+        assert_eq!(ollama.name(), "ollama");
+        assert_eq!(ollama.model(), "test-ollama");
+        assert!(ollama
+            .explain(&input)
+            .await
+            .unwrap()
+            .explanation
+            .contains("SAUGRA-TEST-001"));
+    }
+
+    #[tokio::test]
+    async fn remote_http_providers_send_credentials_and_parse_responses() {
+        const OPENAI_KEY: &str = "SAUGRA_TEST_OPENAI_KEY";
+        const GEMINI_KEY: &str = "SAUGRA_TEST_GEMINI_KEY";
+        std::env::set_var(OPENAI_KEY, "openai-secret");
+        std::env::set_var(GEMINI_KEY, "gemini-secret");
+        let input = provider_input();
+
+        let openai = OpenAiCompatibleExplanationProvider {
+            endpoint: mock_http_response(
+                200,
+                r#"{"choices":[{"message":{"content":"{\"explanation\":\"Monitor action matched rule SAUGRA-TEST-001.\",\"tuning_suggestions\":[]}"}}]}"#,
+            )
+            .await,
+            api_key_env: OPENAI_KEY.to_string(),
+            model: "test-openai".to_string(),
+        };
+        assert_eq!(openai.name(), "openai_compatible");
+        assert_eq!(openai.model(), "test-openai");
+        assert!(openai
+            .explain(&input)
+            .await
+            .unwrap()
+            .explanation
+            .contains("SAUGRA-TEST-001"));
+
+        let gemini_base = mock_http_response(
+            200,
+            r#"{"candidates":[{"content":{"parts":[{"text":"{\"explanation\":\"Monitor action matched rule SAUGRA-TEST-001.\",\"tuning_suggestions\":[]}" }]}}]}"#,
+        )
+        .await;
+        let gemini = GeminiExplanationProvider {
+            endpoint: format!("{gemini_base}/models/{{model}}"),
+            api_key_env: GEMINI_KEY.to_string(),
+            model: "test-gemini".to_string(),
+        };
+        assert_eq!(gemini.name(), "gemini");
+        assert_eq!(gemini.model(), "test-gemini");
+        assert!(gemini
+            .explain(&input)
+            .await
+            .unwrap()
+            .explanation
+            .contains("SAUGRA-TEST-001"));
+
+        std::env::remove_var(OPENAI_KEY);
+        std::env::remove_var(GEMINI_KEY);
+    }
+
+    #[tokio::test]
+    async fn http_provider_errors_are_reported_and_fall_back() {
+        let input = provider_input();
+        let llama = LlamaCppExplanationProvider {
+            base_url: mock_http_response(503, "llama unavailable").await,
+            model: "test-llama".to_string(),
+        };
+        assert!(llama
+            .explain(&input)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("HTTP 503"));
+
+        let ollama = OllamaExplanationProvider {
+            base_url: mock_http_response(500, "ollama unavailable").await,
+            model: "test-ollama".to_string(),
+        };
+        assert!(ollama
+            .explain(&input)
+            .await
+            .unwrap_err()
+            .to_string()
+            .contains("HTTP 500"));
+
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config = AiConfig {
+            provider: "command".to_string(),
+            command: Some("sh".to_string()),
+            command_args: vec![
+                "-c".to_string(),
+                "cat >/dev/null; printf '%s' '{\"explanation\":\"invented text\",\"tuning_suggestions\":[]}'"
+                    .to_string(),
+            ],
+            audit_log_path: temp_dir.path().join("ai-audit.jsonl"),
+            ..AiConfig::default()
+        };
+        let result = explain_event(&config, &provider_event()).await.unwrap();
+        assert!(result.fallback_used);
+        assert!(result.explanation.contains("SAUGRA-TEST-001"));
     }
 
     #[test]
@@ -2488,6 +2625,53 @@ mod tests {
         assert_eq!(report.reviewed_events, 0);
     }
 
+    #[tokio::test]
+    async fn anomaly_shadow_review_explains_retained_candidates() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let config = AiConfig {
+            enabled: false,
+            audit_log_path: temp_dir.path().join("ai-audit.jsonl"),
+            ..AiConfig::default()
+        };
+        let mut event = provider_event();
+        event.decision =
+            event
+                .decision
+                .with_unknown_threats(crate::unknown_threats::UnknownThreatOutcome {
+                    enabled: true,
+                    action: WafAction::Monitor,
+                    score: 20,
+                    threshold: 20,
+                    block_threshold: 40,
+                    route_shape: "/search".to_string(),
+                    baseline_observations: 100,
+                    baseline_ready: true,
+                    baseline_age_seconds: 86_400,
+                    minimum_block_observations: 1_000,
+                    minimum_baseline_age_seconds: 604_800,
+                    minimum_independent_signals: 2,
+                    high_risk_route: false,
+                    would_block: false,
+                    block_eligible: false,
+                    enforcement_gates: vec!["route_not_high_risk".to_string()],
+                    baseline_tracked: true,
+                    learning_enabled: true,
+                    learning_source_trusted: true,
+                    learning_source_allowed: true,
+                    route_excluded: false,
+                    capacity_reached: false,
+                    pruned_routes: 0,
+                    storage_backend: "local".to_string(),
+                    signals: Vec::new(),
+                });
+
+        let report = anomaly_shadow_review(&config, &[event]).await.unwrap();
+
+        assert_eq!(report.reviewed_events, 1);
+        assert_eq!(report.candidates[0].route_shape, "/search");
+        assert_eq!(report.candidates[0].provider, "local");
+    }
+
     #[test]
     fn bundled_ollama_evaluation_cases_are_valid_jsonl() {
         let cases = include_str!("../configs/ai/evaluation-cases.jsonl");
@@ -2604,6 +2788,42 @@ mod tests {
                 path: "/protected-area/sign-in/".to_string(),
             },
         ]
+    }
+
+    fn provider_event() -> SecurityEvent {
+        SecurityEvent::new(
+            "GET",
+            "/search",
+            "q=secret",
+            WafDecision::from_matches(
+                "request-provider-http".to_string(),
+                WafMode::Monitor,
+                vec![rule_match()],
+                5,
+            ),
+        )
+    }
+
+    fn provider_input() -> ExplanationInput {
+        sanitized_input(&AiConfig::default(), &provider_event())
+    }
+
+    async fn mock_http_response(status: u16, body: &str) -> String {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let body = body.to_string();
+        tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = vec![0; 64 * 1024];
+            let _ = socket.read(&mut request).await.unwrap();
+            let reason = if status == 200 { "OK" } else { "Error" };
+            let response = format!(
+                "HTTP/1.1 {status} {reason}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            socket.write_all(response.as_bytes()).await.unwrap();
+        });
+        format!("http://{address}")
     }
 
     fn runtime_allowlist_match(effect: RuntimeAllowlistEffect) -> RuntimeAllowlistMatch {

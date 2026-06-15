@@ -738,6 +738,73 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn local_store_persists_campaign_state_and_builders_select_backends() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let state_path = temp_dir.path().join("campaign-state.json");
+        let mut config = config(CampaignPolicyConfig {
+            kind: "single-client-scan".to_string(),
+            scope: "client".to_string(),
+            score: 40,
+            minimum_events: 1,
+            minimum_clients: 1,
+            minimum_sessions: 1,
+            minimum_routes: 1,
+            categories: vec!["scanner_behavior".to_string()],
+            path_prefixes: Vec::new(),
+            stages: Vec::new(),
+            minimum_stages: 0,
+        });
+        config.backend = CampaignBackend::Local;
+        config.state_path = state_path.clone();
+
+        let store = build_store(&config).await.unwrap();
+        let outcome = store
+            .evaluate(
+                &config,
+                CampaignRequest {
+                    request_id: "request-local",
+                    client_id: "client-local",
+                    session_id: "session-local",
+                    path: "/probe/123",
+                    categories: &["scanner_behavior".to_string()],
+                    server_mode: WafMode::Monitor,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(outcome.storage_backend, "local");
+        assert_eq!(outcome.action, WafAction::Monitor);
+        assert!(state_path.exists());
+
+        let reopened = build_store_without_redis(&config).unwrap();
+        let repeated = reopened
+            .evaluate(
+                &config,
+                CampaignRequest {
+                    request_id: "request-local-2",
+                    client_id: "client-local",
+                    session_id: "session-local",
+                    path: "/probe/456",
+                    categories: &["scanner_behavior".to_string()],
+                    server_mode: WafMode::Monitor,
+                },
+            )
+            .await
+            .unwrap();
+        assert_eq!(repeated.matches[0].event_count, 2);
+
+        config.backend = CampaignBackend::Redis;
+        let error = match build_store_without_redis(&config) {
+            Ok(_) => panic!("Redis should require asynchronous store construction"),
+            Err(error) => error,
+        };
+        assert!(error
+            .to_string()
+            .contains("asynchronous store construction"));
+    }
+
     #[test]
     fn fingerprints_session_material_without_retaining_it() {
         let first = session_fingerprint("127.0.0.1", "browser", Some(b"session=secret"));

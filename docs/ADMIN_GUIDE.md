@@ -243,7 +243,7 @@ Ollama is a separate supported provider that normally listens on port `11434`.
 
 Do not keep `llama-server` attached to an interactive terminal in production.
 Use the maintained
-[`configs/llama-cpp/saugra-waf-llama-cpp.service`](../configs/llama-cpp/saugra-waf-llama-cpp.service)
+[`configs/llama-cpp/saugra-waf-llama-cpp.service`](https://github.com/saugra/saugra-waf/blob/main/configs/llama-cpp/saugra-waf-llama-cpp.service)
 unit, which runs under the dedicated `saugra-waf` account, binds only to
 `127.0.0.1:8080`, restarts after failures, provides a persistent model cache,
 and applies process hardening and resource limits.
