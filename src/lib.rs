@@ -11,6 +11,7 @@ pub mod owasp;
 pub mod posture;
 pub mod proxy;
 pub mod rate_limit;
+mod redis_connection;
 pub mod reports;
 pub mod rule_drafts;
 pub mod rules;
