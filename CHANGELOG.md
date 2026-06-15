@@ -4,6 +4,67 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.0 - 2026-06-15
+
+### Added
+
+- Add monitor-first unknown-threat learning with bounded baselines, guarded
+  high-risk route enforcement, shadow review, cleanup, reporting, and durable
+  local state.
+- Add campaign correlation for multi-step and distributed activity, with
+  configurable policy catalogs and Redis-backed production state.
+- Add explain-only AI providers for local llama.cpp, Ollama, command, and
+  explicitly opted-in remote endpoints.
+- Add sanitized provider evaluation, anomaly review, rule drafting, replay,
+  approval, and publication workflows while keeping deterministic policy
+  authoritative.
+- Add context-aware rule exclusions scoped by route, method, target, content
+  type, query parameter, header, and trusted identity assertion.
+- Add Codecov-backed pull-request coverage and dependency audit checks.
+
+### Changed
+
+- Upgrade Redis support from `0.27` to `1.2`, Axum from `0.7` to `0.8`, and
+  thiserror from `1` to `2`.
+- Upgrade maintained GitHub Actions and documentation dependencies.
+- Consolidate public documentation into the README and canonical admin,
+  architecture, and release guides.
+- Expand packaged production assets with threat-intelligence catalogs, AI
+  evaluation fixtures, and local provider service templates.
+
+### Fixed
+
+- Preserve URL-derived Redis connection settings when applying a separately
+  configured password through the Redis 1.x public connection API.
+- Restore pull-request CI checks and add focused coverage for Redis connection
+  compatibility and callers.
+
+### Upgrade Notes
+
+- New unknown-threat and campaign-correlation controls remain monitor-first or
+  disabled unless explicitly configured for enforcement.
+- Review the updated production example before enabling AI providers,
+  unknown-threat blocking, or campaign correlation.
+- Production Redis deployments should verify credentials, selected database,
+  rate-limit behavior, and campaign-state persistence after upgrading.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo check --locked --all-targets --all-features`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- 256 library tests, 10 CLI tests, and 25 proxy integration tests pass locally.
+  Three HTTP-provider tests and two raw-socket WebSocket tests require loopback
+  bind permission and remain covered by GitHub CI.
+- `saugra-waf 1.1.0` builds as
+  `target/debian/saugra-waf_1.1.0-1_amd64.deb`; package metadata and contents
+  were inspected with `dpkg-deb`.
+- The unsigned APT repository dry run contains Release and package-index
+  metadata for `saugra-waf 1.1.0-1`.
+- The portable source example passes `saugra-waf test-config`; release CI
+  validates the production example after package installation seeds its
+  operator-managed catalogs.
+
 ## 1.0.7 - 2026-06-09
 
 ### Added
