@@ -164,7 +164,11 @@ impl RedisCampaignStore {
             .map(str::trim)
             .filter(|password| !password.is_empty())
         {
-            connection_info.redis.password = Some(password.to_string());
+            let redis_settings = connection_info
+                .redis_settings()
+                .clone()
+                .set_password(password);
+            connection_info = connection_info.set_redis_settings(redis_settings);
         }
         let client =
             redis::Client::open(connection_info).context("failed to create Redis client")?;

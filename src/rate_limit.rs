@@ -130,7 +130,11 @@ fn redis_connection_info(
         .map(str::trim)
         .filter(|password| !password.is_empty())
     {
-        connection_info.redis.password = Some(password.to_string());
+        let redis_settings = connection_info
+            .redis_settings()
+            .clone()
+            .set_password(password);
+        connection_info = connection_info.set_redis_settings(redis_settings);
     }
 
     Ok(connection_info)
@@ -246,10 +250,10 @@ mod tests {
             redis_connection_info("redis://127.0.0.1:6379/2", Some("redis-secret")).unwrap();
 
         assert_eq!(
-            connection_info.redis.password.as_deref(),
+            connection_info.redis_settings().password(),
             Some("redis-secret")
         );
-        assert_eq!(connection_info.redis.db, 2);
+        assert_eq!(connection_info.redis_settings().db(), 2);
     }
 
     #[test]
@@ -258,7 +262,7 @@ mod tests {
             redis_connection_info("redis://:url-secret@127.0.0.1:6379", None).unwrap();
 
         assert_eq!(
-            connection_info.redis.password.as_deref(),
+            connection_info.redis_settings().password(),
             Some("url-secret")
         );
     }
