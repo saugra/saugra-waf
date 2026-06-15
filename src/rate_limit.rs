@@ -229,6 +229,18 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    async fn redis_store_reports_invalid_url_with_rate_limit_context() {
+        let error = RedisRateLimitStore::connect("not a Redis URL", None)
+            .await
+            .err()
+            .unwrap();
+
+        assert!(error
+            .to_string()
+            .contains("rate_limit.redis_url is not a valid Redis URL"));
+    }
+
+    #[tokio::test]
     async fn memory_store_allows_requests_inside_limit() {
         let store = MemoryRateLimitStore::new();
         let policy = RateLimitPolicy {

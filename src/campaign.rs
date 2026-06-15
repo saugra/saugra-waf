@@ -615,6 +615,18 @@ mod tests {
     use super::*;
     use crate::config::{CampaignBackend, CampaignStageConfig};
 
+    #[tokio::test]
+    async fn redis_store_reports_invalid_url_with_campaign_context() {
+        let error = RedisCampaignStore::connect("not a Redis URL", None, "saugra-waf:campaign")
+            .await
+            .err()
+            .unwrap();
+
+        assert!(error
+            .to_string()
+            .contains("campaign_correlation.redis_url is not a valid Redis URL"));
+    }
+
     fn config(policy: CampaignPolicyConfig) -> CampaignCorrelationConfig {
         CampaignCorrelationConfig {
             enabled: true,
