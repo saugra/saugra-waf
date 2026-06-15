@@ -6,9 +6,11 @@ use std::{
 
 use anyhow::Context;
 use async_trait::async_trait;
-use redis::IntoConnectionInfo;
 
-use crate::config::{RateLimitBackend, RateLimitConfig};
+use crate::{
+    config::{RateLimitBackend, RateLimitConfig},
+    redis_connection,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RateLimitPolicy {
@@ -106,7 +108,11 @@ pub struct RedisRateLimitStore {
 
 impl RedisRateLimitStore {
     pub async fn connect(redis_url: &str, redis_password: Option<&str>) -> anyhow::Result<Self> {
-        let connection_info = redis_connection_info(redis_url, redis_password)?;
+        let connection_info = redis_connection::connection_info(
+            redis_url,
+            redis_password,
+            "rate_limit.redis_url is not a valid Redis URL",
+        )?;
         let client =
             redis::Client::open(connection_info).context("failed to create Redis client")?;
         let manager = client
@@ -116,24 +122,6 @@ impl RedisRateLimitStore {
 
         Ok(Self { manager })
     }
-}
-
-fn redis_connection_info(
-    redis_url: &str,
-    redis_password: Option<&str>,
-) -> anyhow::Result<redis::ConnectionInfo> {
-    let mut connection_info = redis_url
-        .into_connection_info()
-        .context("rate_limit.redis_url is not a valid Redis URL")?;
-
-    if let Some(password) = redis_password
-        .map(str::trim)
-        .filter(|password| !password.is_empty())
-    {
-        connection_info.redis.password = Some(password.to_string());
-    }
-
-    Ok(connection_info)
 }
 
 #[async_trait]
@@ -240,27 +228,16 @@ pub async fn build_store(config: &RateLimitConfig) -> anyhow::Result<Arc<dyn Rat
 mod tests {
     use super::*;
 
-    #[test]
-    fn redis_connection_info_uses_separate_password_config() {
-        let connection_info =
-            redis_connection_info("redis://127.0.0.1:6379/2", Some("redis-secret")).unwrap();
+    #[tokio::test]
+    async fn redis_store_reports_invalid_url_with_rate_limit_context() {
+        let error = RedisRateLimitStore::connect("not a Redis URL", None)
+            .await
+            .err()
+            .unwrap();
 
-        assert_eq!(
-            connection_info.redis.password.as_deref(),
-            Some("redis-secret")
-        );
-        assert_eq!(connection_info.redis.db, 2);
-    }
-
-    #[test]
-    fn redis_connection_info_keeps_url_password_when_separate_password_is_absent() {
-        let connection_info =
-            redis_connection_info("redis://:url-secret@127.0.0.1:6379", None).unwrap();
-
-        assert_eq!(
-            connection_info.redis.password.as_deref(),
-            Some("url-secret")
-        );
+        assert!(error
+            .to_string()
+            .contains("rate_limit.redis_url is not a valid Redis URL"));
     }
 
     #[tokio::test]

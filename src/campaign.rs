@@ -10,7 +10,6 @@ use std::{
 
 use anyhow::Context;
 use async_trait::async_trait;
-use redis::IntoConnectionInfo;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -19,6 +18,7 @@ use crate::{
         CampaignBackend, CampaignCorrelationConfig, CampaignMode, CampaignPolicyConfig, WafMode,
     },
     decision::WafAction,
+    redis_connection,
 };
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -157,15 +157,11 @@ impl RedisCampaignStore {
         redis_password: Option<&str>,
         key_prefix: &str,
     ) -> anyhow::Result<Self> {
-        let mut connection_info = redis_url
-            .into_connection_info()
-            .context("campaign_correlation.redis_url is not a valid Redis URL")?;
-        if let Some(password) = redis_password
-            .map(str::trim)
-            .filter(|password| !password.is_empty())
-        {
-            connection_info.redis.password = Some(password.to_string());
-        }
+        let connection_info = redis_connection::connection_info(
+            redis_url,
+            redis_password,
+            "campaign_correlation.redis_url is not a valid Redis URL",
+        )?;
         let client =
             redis::Client::open(connection_info).context("failed to create Redis client")?;
         let manager = client
@@ -618,6 +614,18 @@ fn unix_nanos_now() -> u128 {
 mod tests {
     use super::*;
     use crate::config::{CampaignBackend, CampaignStageConfig};
+
+    #[tokio::test]
+    async fn redis_store_reports_invalid_url_with_campaign_context() {
+        let error = RedisCampaignStore::connect("not a Redis URL", None, "saugra-waf:campaign")
+            .await
+            .err()
+            .unwrap();
+
+        assert!(error
+            .to_string()
+            .contains("campaign_correlation.redis_url is not a valid Redis URL"));
+    }
 
     fn config(policy: CampaignPolicyConfig) -> CampaignCorrelationConfig {
         CampaignCorrelationConfig {
