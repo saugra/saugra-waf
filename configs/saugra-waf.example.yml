@@ -38,6 +38,9 @@ forwarded_headers:
   proto_header: X-Forwarded-Proto
   expected_proto: https
   insecure_proto_score: 10
+  # Headers listed here are trusted as identity assertions only when the
+  # direct peer matches trusted_proxies.
+  identity_assertions: []
 
 rate_limit:
   backend: memory
@@ -72,6 +75,60 @@ behavior:
   probe_path_catalog: builtin
   probe_paths_extra: []
   probe_path_exclusions: []
+
+# Route-aware request-shape learning for unknown-threat monitoring. It learns
+# only from requests with no deterministic rule matches and never stores bodies.
+unknown_threats:
+  enabled: false
+  mode: monitor
+  shadow_review_completed: false
+  backend: local
+  state_path: logs/saugra-waf-unknown-threat-state.json
+  minimum_observations: 100
+  monitor_threshold: 20
+  block_threshold: 40
+  minimum_independent_signals: 2
+  minimum_baseline_age: 7d
+  minimum_block_observations: 1000
+  # "builtin" embeds configs/intelligence/unknown-threat-signals.yml.
+  signal_catalog: builtin
+  body_size_multiplier: 4
+  promotion_observations: 3
+  trusted_learning_only: false
+  trusted_learning_clients: []
+  max_methods_per_route: 16
+  max_content_types_per_route: 32
+  max_query_parameters_per_route: 256
+  retention: 30d
+  max_routes: 10000
+  excluded_paths:
+    - /_saugra-waf/health
+  routes:
+    - path: /uploads
+      learning_enabled: false
+    - path: /admin
+      high_risk: true
+      minimum_observations: 200
+      monitor_threshold: 15
+      block_threshold: 40
+
+# Correlates privacy-minimized security observations into monitor-only attack
+# campaigns. Use Redis for multi-instance production deployments.
+campaign_correlation:
+  enabled: false
+  mode: monitor
+  backend: local
+  state_path: logs/saugra-waf-campaign-state.json
+  # For production:
+  # backend: redis
+  # redis_url: redis://127.0.0.1:6379
+  # redis_password: ${SAUGRA_REDIS_PASSWORD}
+  redis_key_prefix: saugra-waf:campaign-correlation
+  window: 15m
+  retention: 24h
+  max_events: 50000
+  # "builtin" embeds configs/intelligence/campaign-policies.yml.
+  policy_catalog: builtin
 
 bot_protection:
   enabled: true
@@ -140,11 +197,37 @@ rules:
 ai:
   enabled: true
   mode: explain_only
+  provider: llama_cpp
+  llama_cpp_url: http://127.0.0.1:8080
+  model: saugra-qwen3-0.6b
+  prompt_version: saugra-explain-v1
+  timeout: 60s
+  audit_log_path: logs/saugra-waf-ai-audit.jsonl
+  audit_log_max_size: 100mb
+  audit_log_max_files: 10
+  max_tuning_suggestions: 3
+  allow_remote: false
+  local_only: true
+  endpoint_allowlist: []
+  # llama.cpp should run with Qwen3 0.6B Q8, a 2048-token context, and one
+  # inference thread on constrained shared hosts. Below 2 GB RAM, use
+  # enabled: false or provider: local.
+  # Deterministic fallback is automatic when llama.cpp is unavailable.
+  # Ollama remains available as an alternative:
+  # provider: ollama
+  # ollama_url: http://127.0.0.1:11434
+  # model: qwen3:4b
+  # Native remote providers require allow_remote: true, local_only: false,
+  # an HTTPS endpoint whose host is in endpoint_allowlist, and an environment
+  # variable secret reference in api_key_env. Also document data_region and
+  # retention_policy before enabling.
 
 logging:
   format: json
   level: info
   event_log_path: logs/saugra-waf-events.jsonl
+  # Request IDs remain explainable while their events are in the active log or
+  # these retained rotated files. Retention is volume-based, not day-based.
   event_log_max_size: 100mb
   event_log_max_files: 10
   timezone: UTC
@@ -169,6 +252,8 @@ storage_cleanup:
   enabled: true
   schedule: daily
   run_time: "02:30"
+  # This command also prunes the local unknown-threat state using
+  # unknown_threats.retention.
   # Start new deployments with dry_run true. Switch to false after reviewing
   # `saugra-waf cleanup run --dry-run --config configs/saugra-waf.example.yml`.
   dry_run: true

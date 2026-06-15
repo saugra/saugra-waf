@@ -382,6 +382,8 @@ mod tests {
             },
             rules: RuleSettings::default(),
             behavior: Default::default(),
+            unknown_threats: Default::default(),
+            campaign_correlation: Default::default(),
             bot_protection: Default::default(),
             runtime_policy: Default::default(),
             ai: AiConfig::default(),

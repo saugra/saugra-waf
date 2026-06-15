@@ -1,0 +1,23 @@
+[Unit]
+Description=Saugra lightweight llama.cpp explanation service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=saugra-waf
+Group=saugra-waf
+Environment=HF_HOME=/var/cache/saugra-waf-llama-cpp
+ExecStart=/usr/local/bin/llama-server -hf Qwen/Qwen3-0.6B-GGUF:Q8_0 --alias saugra-qwen3-0.6b --host 127.0.0.1 --port 8080 --ctx-size 2048 --threads 1 --parallel 1 --batch-size 128 --jinja --no-webui
+Restart=on-failure
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+CacheDirectory=saugra-waf-llama-cpp
+MemoryMax=1536M
+CPUQuota=150%
+
+[Install]
+WantedBy=multi-user.target

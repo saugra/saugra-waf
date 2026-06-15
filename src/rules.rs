@@ -1,11 +1,16 @@
-use std::{fs, path::Path};
+use std::{collections::BTreeMap, fs, path::Path};
 
+use anyhow::Context;
 use percent_encoding::percent_decode_str;
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::config::{RuleExclusionConfig, RuleSettings};
+use crate::{
+    config::{RuleExclusionConfig, RuleSettings},
+    decision::WafAction,
+    event_store::SecurityEvent,
+};
 
 #[derive(Debug, Error)]
 pub enum RuleError {
@@ -32,6 +37,8 @@ pub enum RuleError {
     MissingTargets { rule_id: String },
     #[error("rule file {path} metadata.{field} must not be blank when metadata is provided")]
     InvalidMetadata { path: String, field: String },
+    #[error("rule {rule_id} field {field} must not be blank when provided")]
+    InvalidRuleMetadata { rule_id: String, field: String },
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -70,6 +77,25 @@ impl std::fmt::Display for RuleSeverity {
             Self::Medium => "medium",
             Self::High => "high",
             Self::Critical => "critical",
+        };
+        formatter.write_str(value)
+    }
+}
+
+#[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum PerformanceCostTier {
+    Low,
+    Moderate,
+    High,
+}
+
+impl std::fmt::Display for PerformanceCostTier {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            Self::Low => "low",
+            Self::Moderate => "moderate",
+            Self::High => "high",
         };
         formatter.write_str(value)
     }
@@ -117,11 +143,13 @@ pub struct BuiltinRule {
     pub name: String,
     pub category: String,
     pub severity: RuleSeverity,
+    pub performance_cost: Option<PerformanceCostTier>,
     pub target: RuleTarget,
     pub pattern: Regex,
     pub transforms: Vec<RuleTransform>,
     pub paranoia_level: u8,
     pub explanation: String,
+    pub design_intent: Option<String>,
     pub owasp_category: Option<String>,
 }
 
@@ -171,9 +199,59 @@ pub struct RuleExclusionReport {
     pub disabled_categories: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct RuleReplayReport {
+    pub total_events: usize,
+    pub matched_events: usize,
+    pub unmatched_events: usize,
+    pub excluded_events: usize,
+    pub matches_before_exclusions: usize,
+    pub matches_after_exclusions: usize,
+    pub previously_allowed_review_candidates: usize,
+    pub previously_monitored_matches: usize,
+    pub previously_blocked_matches: usize,
+    pub prior_rule_detection_events: usize,
+    pub prior_rule_detection_overlap: usize,
+    pub rule_match_counts: BTreeMap<String, usize>,
+    pub replayed_targets: Vec<String>,
+    pub unavailable_targets: Vec<String>,
+    pub limitations: Vec<String>,
+    pub labeled_total_cases: usize,
+    pub labeled_legitimate_cases: usize,
+    pub labeled_attack_cases: usize,
+    pub labeled_legitimate_matches: usize,
+    pub labeled_attack_matches: usize,
+}
+
+#[derive(Debug, Deserialize)]
+struct LabeledReplayCase {
+    id: String,
+    label: String,
+    #[serde(default = "default_replay_method")]
+    method: String,
+    path: String,
+    #[serde(default)]
+    query: String,
+    #[serde(default)]
+    headers: String,
+    #[serde(default)]
+    body: String,
+    #[serde(default)]
+    user_agent: String,
+    #[serde(default)]
+    content_type: String,
+}
+
 impl RuleSet {
     pub fn rules(&self) -> &[BuiltinRule] {
         &self.rules
+    }
+
+    pub fn rules_by_id(&self, rule_id: &str) -> Vec<&BuiltinRule> {
+        self.rules
+            .iter()
+            .filter(|rule| rule.id == rule_id)
+            .collect()
     }
 
     pub fn inspect(&self, parts: &RequestParts<'_>) -> Vec<RuleMatch> {
@@ -218,6 +296,200 @@ impl RuleSet {
     }
 }
 
+pub fn validate_rule_file(
+    path: &Path,
+    paranoia_level: u8,
+) -> Result<(RuleSet, RuleFileLoadReport), RuleError> {
+    let (rules, report) = load_rule_file(path, paranoia_level)?;
+    Ok((RuleSet { rules }, report))
+}
+
+pub fn replay_events(rule_set: &RuleSet, events: &[SecurityEvent]) -> RuleReplayReport {
+    replay_events_with_exclusions(rule_set, events, &[])
+}
+
+pub fn replay_events_with_exclusions(
+    rule_set: &RuleSet,
+    events: &[SecurityEvent],
+    exclusions: &[RuleExclusionConfig],
+) -> RuleReplayReport {
+    let mut matched_events = 0;
+    let mut excluded_events = 0;
+    let mut matches_before_exclusions = 0;
+    let mut matches_after_exclusions = 0;
+    let mut previously_allowed_review_candidates = 0;
+    let mut previously_monitored_matches = 0;
+    let mut previously_blocked_matches = 0;
+    let mut prior_rule_detection_events = 0;
+    let mut prior_rule_detection_overlap = 0;
+    let mut rule_match_counts = BTreeMap::new();
+
+    for event in events {
+        let prior_rule_detection = !event.decision.matched_rules.is_empty();
+        if prior_rule_detection {
+            prior_rule_detection_events += 1;
+        }
+
+        let headers = event
+            .evidence
+            .as_ref()
+            .map(|evidence| {
+                evidence
+                    .header_names
+                    .iter()
+                    .map(|name| format!("{name}: [retained-value-unavailable]"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
+            })
+            .unwrap_or_default();
+        let content_type = event
+            .evidence
+            .as_ref()
+            .map(|evidence| evidence.content_type.as_str())
+            .unwrap_or_default();
+        let parts = RequestParts {
+            method: &event.method,
+            path: &event.path,
+            query: &event.query,
+            headers: &headers,
+            content_type,
+            ..RequestParts::default()
+        };
+        let all_matches = rule_set.inspect(&parts);
+        matches_before_exclusions += all_matches.len();
+        let matches = rule_set.inspect_with_exclusions(&parts, exclusions);
+        matches_after_exclusions += matches.len();
+        if !all_matches.is_empty() && matches.is_empty() {
+            excluded_events += 1;
+        }
+        if matches.is_empty() {
+            continue;
+        }
+
+        matched_events += 1;
+        if prior_rule_detection {
+            prior_rule_detection_overlap += 1;
+        }
+        match event.decision.action {
+            WafAction::Allow => previously_allowed_review_candidates += 1,
+            WafAction::Monitor => previously_monitored_matches += 1,
+            WafAction::Block => previously_blocked_matches += 1,
+        }
+        for rule_match in matches {
+            *rule_match_counts.entry(rule_match.rule_id).or_insert(0) += 1;
+        }
+    }
+
+    let mut replayed_targets = Vec::new();
+    let mut unavailable_targets = Vec::new();
+    for rule in rule_set.rules() {
+        let target = rule.target.to_string();
+        let destination = match rule.target {
+            RuleTarget::Path | RuleTarget::Query => &mut replayed_targets,
+            RuleTarget::Headers | RuleTarget::Body | RuleTarget::UserAgent => {
+                &mut unavailable_targets
+            }
+        };
+        destination.push(target);
+    }
+    replayed_targets.sort();
+    replayed_targets.dedup();
+    unavailable_targets.sort();
+    unavailable_targets.dedup();
+
+    let mut limitations = vec![
+        "Previously allowed matches are review candidates, not confirmed false positives."
+            .to_string(),
+        "Prior rule-detection overlap is not a labeled attack-case coverage metric.".to_string(),
+    ];
+    if !unavailable_targets.is_empty() {
+        limitations.push(format!(
+            "Retained security events cannot replay these request targets: {}.",
+            unavailable_targets.join(", ")
+        ));
+    }
+    if exclusions
+        .iter()
+        .any(|exclusion| !exclusion.trusted_headers.is_empty() || !exclusion.identities.is_empty())
+    {
+        limitations.push(
+            "Retained events do not preserve trusted header values, so value and identity exclusion conditions are not replayed."
+                .to_string(),
+        );
+    }
+
+    RuleReplayReport {
+        total_events: events.len(),
+        matched_events,
+        unmatched_events: events.len().saturating_sub(matched_events),
+        excluded_events,
+        matches_before_exclusions,
+        matches_after_exclusions,
+        previously_allowed_review_candidates,
+        previously_monitored_matches,
+        previously_blocked_matches,
+        prior_rule_detection_events,
+        prior_rule_detection_overlap,
+        rule_match_counts,
+        replayed_targets,
+        unavailable_targets,
+        limitations,
+        labeled_total_cases: 0,
+        labeled_legitimate_cases: 0,
+        labeled_attack_cases: 0,
+        labeled_legitimate_matches: 0,
+        labeled_attack_matches: 0,
+    }
+}
+
+pub fn attach_labeled_replay(
+    report: &mut RuleReplayReport,
+    rule_set: &RuleSet,
+    exclusions: &[RuleExclusionConfig],
+    fixture_path: &Path,
+) -> anyhow::Result<()> {
+    let contents = fs::read_to_string(fixture_path)?;
+    for line in contents.lines().filter(|line| !line.trim().is_empty()) {
+        let case: LabeledReplayCase =
+            serde_json::from_str(line).context("labeled replay fixture must be valid JSONL")?;
+        anyhow::ensure!(
+            matches!(case.label.as_str(), "legitimate" | "attack"),
+            "labeled replay case {} must use label legitimate or attack",
+            case.id
+        );
+        let matches = rule_set.inspect_with_exclusions(
+            &RequestParts {
+                method: &case.method,
+                path: &case.path,
+                query: &case.query,
+                headers: &case.headers,
+                body: &case.body,
+                user_agent: &case.user_agent,
+                content_type: &case.content_type,
+                trusted_proxy: false,
+            },
+            exclusions,
+        );
+        report.labeled_total_cases += 1;
+        if case.label == "legitimate" {
+            report.labeled_legitimate_cases += 1;
+            if !matches.is_empty() {
+                report.labeled_legitimate_matches += 1;
+            }
+        } else {
+            report.labeled_attack_cases += 1;
+            if !matches.is_empty() {
+                report.labeled_attack_matches += 1;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn default_replay_method() -> String {
+    "GET".to_string()
+}
+
 impl RuleExclusionReport {
     fn from_exclusions(exclusions: &[RuleExclusionConfig]) -> Self {
         let mut disabled_rule_ids = Vec::new();
@@ -232,6 +504,11 @@ impl RuleExclusionReport {
             if exclusion.path_prefixes.is_empty()
                 && exclusion.query_params.is_empty()
                 && exclusion.headers.is_empty()
+                && exclusion.methods.is_empty()
+                && exclusion.targets.is_empty()
+                && exclusion.content_types.is_empty()
+                && exclusion.trusted_headers.is_empty()
+                && exclusion.identities.is_empty()
             {
                 global += 1;
             } else {
@@ -275,11 +552,14 @@ impl std::fmt::Display for RuleTransform {
 
 #[derive(Debug, Default)]
 pub struct RequestParts<'a> {
+    pub method: &'a str,
     pub path: &'a str,
     pub query: &'a str,
     pub headers: &'a str,
     pub body: &'a str,
     pub user_agent: &'a str,
+    pub content_type: &'a str,
+    pub trusted_proxy: bool,
 }
 
 const DEFAULT_RULE_PACKS: &[&str] = &[
@@ -331,6 +611,9 @@ pub fn load_rule_set_with_report(
         exclusions: RuleExclusionReport::from_exclusions(&settings.exclusions),
         warnings: Vec::new(),
     };
+    report
+        .warnings
+        .extend(exclusion_warnings(&settings.exclusions));
 
     for path in &settings.files {
         let (mut file_rules, file_report) =
@@ -352,12 +635,87 @@ pub fn load_rule_set_with_report(
 
     report.standards.sort();
     report.standards.dedup();
+    report
+        .warnings
+        .extend(contextual_exclusion_warnings(&settings.exclusions, &rules));
 
     if rules.is_empty() {
         return Err(RuleError::EmptyRuleSet);
     }
 
     Ok((RuleSet { rules }, report))
+}
+
+fn contextual_exclusion_warnings(
+    exclusions: &[RuleExclusionConfig],
+    rules: &[BuiltinRule],
+) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    for (index, exclusion) in exclusions.iter().enumerate() {
+        let label = exclusion
+            .name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| format!("#{}", index + 1));
+
+        for rule_id in &exclusion.rule_ids {
+            let matching_rules = rules
+                .iter()
+                .filter(|rule| &rule.id == rule_id)
+                .collect::<Vec<_>>();
+            if matching_rules.is_empty() {
+                warnings.push(format!(
+                    "rule exclusion {label} references unknown or inactive rule ID {rule_id}"
+                ));
+            } else if !exclusion.targets.is_empty()
+                && !matching_rules
+                    .iter()
+                    .any(|rule| exclusion.targets.contains(&rule.target))
+            {
+                warnings.push(format!(
+                    "rule exclusion {label} cannot match rule {rule_id} because their targets do not overlap"
+                ));
+            }
+        }
+    }
+
+    warnings
+}
+
+fn exclusion_warnings(exclusions: &[RuleExclusionConfig]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    for (index, exclusion) in exclusions.iter().enumerate() {
+        let label = exclusion
+            .name
+            .as_deref()
+            .filter(|name| !name.trim().is_empty())
+            .map(ToString::to_string)
+            .unwrap_or_else(|| format!("#{}", index + 1));
+        let has_context_scope = !exclusion.path_prefixes.is_empty()
+            || !exclusion.query_params.is_empty()
+            || !exclusion.headers.is_empty()
+            || !exclusion.methods.is_empty()
+            || !exclusion.targets.is_empty()
+            || !exclusion.content_types.is_empty()
+            || !exclusion.trusted_headers.is_empty()
+            || !exclusion.identities.is_empty();
+
+        if !has_context_scope {
+            warnings.push(format!(
+                "rule exclusion {label} is global and disables matching protection across all requests"
+            ));
+        }
+        if !exclusion.trusted_headers.is_empty() || !exclusion.identities.is_empty() {
+            warnings.push(format!(
+                "rule exclusion {label} depends on trusted proxy assertions and will not match direct or untrusted peers"
+            ));
+        }
+    }
+
+    warnings
 }
 
 pub fn inspect(parts: &RequestParts<'_>) -> Result<Vec<RuleMatch>, RuleError> {
@@ -434,6 +792,16 @@ fn compile_rule_pack(
         report.enabled_entries += 1;
         if entry.enabled && entry.targets.is_empty() {
             return Err(RuleError::MissingTargets { rule_id: entry.id });
+        }
+        if entry
+            .design_intent
+            .as_deref()
+            .is_some_and(|value| value.trim().is_empty())
+        {
+            return Err(RuleError::InvalidRuleMetadata {
+                rule_id: entry.id,
+                field: "design_intent".to_string(),
+            });
         }
 
         for definition in Vec::<RuleDefinition>::from(entry) {
@@ -533,9 +901,14 @@ fn is_excluded(
 ) -> bool {
     exclusions.iter().any(|exclusion| {
         exclusion_matches_rule(exclusion, rule_match)
+            && exclusion_matches_method(exclusion, parts.method)
+            && exclusion_matches_target(exclusion, rule_match.matched_target)
             && exclusion_matches_path(exclusion, parts.path)
             && exclusion_matches_query_params(exclusion, parts.query)
             && exclusion_matches_headers(exclusion, parts.headers)
+            && exclusion_matches_content_type(exclusion, parts.content_type)
+            && exclusion_matches_trusted_headers(exclusion, parts)
+            && exclusion_matches_identities(exclusion, parts)
     })
 }
 
@@ -558,6 +931,14 @@ fn exclusion_matches_path(exclusion: &RuleExclusionConfig, path: &str) -> bool {
             .any(|prefix| path.starts_with(prefix))
 }
 
+fn exclusion_matches_method(exclusion: &RuleExclusionConfig, method: &str) -> bool {
+    exclusion.methods.is_empty() || exclusion.methods.iter().any(|value| value == method)
+}
+
+fn exclusion_matches_target(exclusion: &RuleExclusionConfig, target: RuleTarget) -> bool {
+    exclusion.targets.is_empty() || exclusion.targets.contains(&target)
+}
+
 fn exclusion_matches_query_params(exclusion: &RuleExclusionConfig, query: &str) -> bool {
     exclusion.query_params.is_empty()
         || query_param_names(query).any(|name| {
@@ -576,6 +957,54 @@ fn exclusion_matches_headers(exclusion: &RuleExclusionConfig, headers: &str) -> 
                 .iter()
                 .any(|excluded_name| excluded_name.eq_ignore_ascii_case(&name))
         })
+}
+
+fn exclusion_matches_content_type(exclusion: &RuleExclusionConfig, content_type: &str) -> bool {
+    exclusion.content_types.is_empty()
+        || exclusion.content_types.iter().any(|configured| {
+            content_type
+                .split(';')
+                .next()
+                .unwrap_or_default()
+                .trim()
+                .eq_ignore_ascii_case(configured.trim())
+        })
+}
+
+fn exclusion_matches_trusted_headers(
+    exclusion: &RuleExclusionConfig,
+    parts: &RequestParts<'_>,
+) -> bool {
+    header_value_conditions_match(&exclusion.trusted_headers, parts)
+}
+
+fn exclusion_matches_identities(exclusion: &RuleExclusionConfig, parts: &RequestParts<'_>) -> bool {
+    header_value_conditions_match(&exclusion.identities, parts)
+}
+
+fn header_value_conditions_match(
+    conditions: &[crate::config::RuleExclusionHeaderValueConfig],
+    parts: &RequestParts<'_>,
+) -> bool {
+    conditions.is_empty()
+        || (parts.trusted_proxy
+            && conditions.iter().all(|condition| {
+                header_value(parts.headers, &condition.name).is_some_and(|actual| {
+                    condition
+                        .values
+                        .iter()
+                        .any(|expected| actual.eq_ignore_ascii_case(expected))
+                })
+            }))
+}
+
+fn header_value<'a>(headers: &'a str, expected_name: &str) -> Option<&'a str> {
+    headers.lines().find_map(|line| {
+        let (name, value) = line.split_once(':')?;
+        name.trim()
+            .eq_ignore_ascii_case(expected_name)
+            .then_some(value.trim())
+    })
 }
 
 fn query_param_names(query: &str) -> impl Iterator<Item = String> + '_ {
@@ -602,11 +1031,13 @@ struct RuleDefinition {
     name: String,
     category: String,
     severity: RuleSeverity,
+    performance_cost: Option<PerformanceCostTier>,
     target: RuleTarget,
     pattern: String,
     transforms: Vec<RuleTransform>,
     paranoia_level: u8,
     explanation: String,
+    design_intent: Option<String>,
     owasp_category: Option<String>,
 }
 
@@ -640,6 +1071,8 @@ struct RuleFileEntry {
     name: String,
     category: String,
     severity: RuleSeverity,
+    #[serde(default)]
+    performance_cost: Option<PerformanceCostTier>,
     targets: Vec<RuleTarget>,
     pattern: String,
     #[serde(default)]
@@ -647,6 +1080,8 @@ struct RuleFileEntry {
     #[serde(default = "default_rule_paranoia_level")]
     paranoia_level: u8,
     explanation: String,
+    #[serde(default)]
+    design_intent: Option<String>,
     #[serde(default)]
     owasp_category: Option<String>,
     #[serde(default = "default_true")]
@@ -675,11 +1110,13 @@ impl From<RuleFileEntry> for Vec<RuleDefinition> {
                 name: entry.name.clone(),
                 category: entry.category.clone(),
                 severity: entry.severity,
+                performance_cost: entry.performance_cost,
                 target,
                 pattern: entry.pattern.clone(),
                 transforms: entry.transforms.clone(),
                 paranoia_level: entry.paranoia_level,
                 explanation: entry.explanation.clone(),
+                design_intent: entry.design_intent.clone(),
                 owasp_category: entry.owasp_category.clone(),
             })
             .collect()
@@ -701,11 +1138,13 @@ impl TryFrom<RuleDefinition> for BuiltinRule {
             name: definition.name,
             category: definition.category,
             severity: definition.severity,
+            performance_cost: definition.performance_cost,
             target: definition.target,
             pattern,
             transforms: definition.transforms,
             paranoia_level: definition.paranoia_level,
             explanation: definition.explanation,
+            design_intent: definition.design_intent,
             owasp_category: definition.owasp_category,
         })
     }
@@ -714,7 +1153,11 @@ impl TryFrom<RuleDefinition> for BuiltinRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{RuleExclusionConfig, RuleSettings};
+    use crate::{
+        config::{RuleExclusionConfig, RuleSettings, WafMode},
+        decision::WafDecision,
+        event_store::SecurityEvent,
+    };
     use std::collections::BTreeSet;
 
     #[test]
@@ -1097,6 +1540,110 @@ rules:
     }
 
     #[test]
+    fn context_aware_exclusion_requires_every_configured_scope() {
+        let rule_set = RuleSet {
+            rules: builtin_rules().unwrap(),
+        };
+        let exclusion = RuleExclusionConfig {
+            rule_ids: vec!["SAUGRA-XSS-001".to_string()],
+            methods: vec!["POST".to_string()],
+            targets: vec![RuleTarget::Query],
+            content_types: vec!["application/json".to_string()],
+            trusted_headers: vec![crate::config::RuleExclusionHeaderValueConfig {
+                name: "X-Deployment".to_string(),
+                values: vec!["internal".to_string()],
+            }],
+            identities: vec![crate::config::RuleExclusionHeaderValueConfig {
+                name: "X-Authenticated-Role".to_string(),
+                values: vec!["editor".to_string()],
+            }],
+            ..RuleExclusionConfig::default()
+        };
+        let request = RequestParts {
+            method: "POST",
+            path: "/preview",
+            query: "content=%3Cscript%3Ealert(1)%3C/script%3E",
+            headers: "content-type: application/json\nx-deployment: internal\nx-authenticated-role: editor",
+            content_type: "application/json; charset=utf-8",
+            trusted_proxy: true,
+            ..RequestParts::default()
+        };
+
+        assert!(rule_set
+            .inspect_with_exclusions(&request, std::slice::from_ref(&exclusion))
+            .is_empty());
+
+        let untrusted_request = RequestParts {
+            trusted_proxy: false,
+            ..request
+        };
+        assert_eq!(
+            rule_set
+                .inspect_with_exclusions(&untrusted_request, &[exclusion])
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn replay_reports_exclusion_impact_from_retained_context() {
+        let rule_set = RuleSet {
+            rules: builtin_rules().unwrap(),
+        };
+        let event = SecurityEvent::new(
+            "POST",
+            "/preview",
+            "content=%3Cscript%3Ealert(1)%3C/script%3E",
+            WafDecision::from_matches("replay-exclusion".to_string(), WafMode::Monitor, vec![], 5),
+        )
+        .with_evidence(crate::event_store::RequestEvidence {
+            content_type: "application/json".to_string(),
+            body_size: 0,
+            query_parameter_names: vec!["content".to_string()],
+            header_names: vec!["content-type".to_string()],
+        });
+        let exclusions = vec![RuleExclusionConfig {
+            rule_ids: vec!["SAUGRA-XSS-001".to_string()],
+            methods: vec!["POST".to_string()],
+            targets: vec![RuleTarget::Query],
+            content_types: vec!["application/json".to_string()],
+            query_params: vec!["content".to_string()],
+            ..RuleExclusionConfig::default()
+        }];
+
+        let report = replay_events_with_exclusions(&rule_set, &[event], &exclusions);
+
+        assert_eq!(report.matches_before_exclusions, 1);
+        assert_eq!(report.matches_after_exclusions, 0);
+        assert_eq!(report.excluded_events, 1);
+    }
+
+    #[test]
+    fn labeled_replay_separates_legitimate_impact_and_attack_coverage() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let fixture = temp_dir.path().join("cases.jsonl");
+        std::fs::write(
+            &fixture,
+            r#"{"id":"legitimate","label":"legitimate","path":"/search","query":"q=summer"}
+{"id":"attack","label":"attack","path":"/search","query":"q=%27%20OR%201%3D1--"}
+"#,
+        )
+        .unwrap();
+        let rule_set = RuleSet {
+            rules: builtin_rules().unwrap(),
+        };
+        let mut report = replay_events(&rule_set, &[]);
+
+        attach_labeled_replay(&mut report, &rule_set, &[], &fixture).unwrap();
+
+        assert_eq!(report.labeled_total_cases, 2);
+        assert_eq!(report.labeled_legitimate_cases, 1);
+        assert_eq!(report.labeled_legitimate_matches, 0);
+        assert_eq!(report.labeled_attack_cases, 1);
+        assert_eq!(report.labeled_attack_matches, 1);
+    }
+
+    #[test]
     fn rejects_invalid_regex_in_configured_rule_file() {
         let temp_dir = tempfile::tempdir().unwrap();
         let rule_path = temp_dir.path().join("bad-rules.yml");
@@ -1349,6 +1896,39 @@ rules:
         assert_eq!(report.exclusions.scoped, 1);
         assert_eq!(report.exclusions.disabled_rule_ids, vec!["LOCAL-001"]);
         assert_eq!(report.exclusions.disabled_categories, vec!["local_policy"]);
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("is global")));
+    }
+
+    #[test]
+    fn warns_for_unknown_rules_and_non_overlapping_exclusion_targets() {
+        let (_rule_set, report) = load_rule_set_with_report(&RuleSettings {
+            exclusions: vec![
+                RuleExclusionConfig {
+                    rule_ids: vec!["DOES-NOT-EXIST".to_string()],
+                    path_prefixes: vec!["/review".to_string()],
+                    ..RuleExclusionConfig::default()
+                },
+                RuleExclusionConfig {
+                    rule_ids: vec!["SAUGRA-XSS-001".to_string()],
+                    targets: vec![RuleTarget::Body],
+                    ..RuleExclusionConfig::default()
+                },
+            ],
+            ..RuleSettings::default()
+        })
+        .unwrap();
+
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("unknown or inactive rule ID")));
+        assert!(report
+            .warnings
+            .iter()
+            .any(|warning| warning.contains("targets do not overlap")));
     }
 
     #[test]
@@ -1420,5 +2000,76 @@ rules:
         .unwrap_err();
 
         assert!(matches!(error, RuleError::InvalidMetadata { .. }));
+    }
+
+    #[test]
+    fn validates_and_replays_a_draft_rule_pack_without_activating_it() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let rule_path = temp_dir.path().join("draft-rules.yml");
+        std::fs::write(
+            &rule_path,
+            r#"
+metadata:
+  name: reviewed-draft
+  version: draft-1
+rules:
+  - id: DRAFT-LOCAL-001
+    name: Repeated Probe
+    category: local_policy
+    severity: medium
+    targets:
+      - query
+      - body
+    pattern: "(?i)needle"
+    explanation: A reviewed repeated probe matched.
+"#,
+        )
+        .unwrap();
+
+        let (rule_set, report) = validate_rule_file(&rule_path, u8::MAX).unwrap();
+        assert_eq!(report.entries, 1);
+        assert_eq!(report.compiled_rules, 2);
+
+        let prior_match = rule_set.inspect(&RequestParts {
+            query: "probe=needle",
+            ..RequestParts::default()
+        });
+        let events = vec![
+            SecurityEvent::new(
+                "GET",
+                "/search",
+                "probe=needle",
+                WafDecision::from_matches("allowed".to_string(), WafMode::Monitor, Vec::new(), 5),
+            ),
+            SecurityEvent::new(
+                "GET",
+                "/search",
+                "safe=1",
+                WafDecision::from_matches(
+                    "monitored".to_string(),
+                    WafMode::Monitor,
+                    prior_match.clone(),
+                    5,
+                ),
+            ),
+            SecurityEvent::new(
+                "GET",
+                "/search",
+                "probe=needle",
+                WafDecision::from_matches("blocked".to_string(), WafMode::Block, prior_match, 3),
+            ),
+        ];
+
+        let replay = replay_events(&rule_set, &events);
+
+        assert_eq!(replay.total_events, 3);
+        assert_eq!(replay.matched_events, 2);
+        assert_eq!(replay.previously_allowed_review_candidates, 1);
+        assert_eq!(replay.previously_blocked_matches, 1);
+        assert_eq!(replay.prior_rule_detection_events, 2);
+        assert_eq!(replay.prior_rule_detection_overlap, 1);
+        assert_eq!(replay.rule_match_counts["DRAFT-LOCAL-001"], 2);
+        assert_eq!(replay.replayed_targets, vec!["query"]);
+        assert_eq!(replay.unavailable_targets, vec!["body"]);
     }
 }

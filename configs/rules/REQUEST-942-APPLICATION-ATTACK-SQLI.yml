@@ -9,6 +9,7 @@ rules:
     name: Basic SQL Injection Pattern
     category: sql_injection
     severity: high
+    performance_cost: low
     paranoia_level: 1
     targets:
       - query
@@ -16,5 +17,6 @@ rules:
       - url_decode
       - plus_to_space
     pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table|--|/\\*)"
+    design_intent: Detect common SQL injection markers in URL query data with a bounded regular expression and lightweight normalization.
     explanation: Query data matched a common SQL injection pattern.
     owasp_category: A05:2025-Injection

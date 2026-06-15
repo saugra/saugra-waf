@@ -65,6 +65,11 @@ forwarded_headers:
   # Bot protection adds this score when a trusted proxy reports a protocol
   # other than expected_proto. Keep this low enough for monitor-first rollout.
   insecure_proto_score: 10
+  # Identity headers are accepted only from trusted_proxies. Configure these
+  # only when the front proxy removes client-supplied copies and sets its own.
+  identity_assertions: []
+  # identity_assertions:
+  #   - X-Authenticated-Role
 
 # Rate limiting protects login, payment, API, and other abuse-sensitive routes.
 # Redis is recommended in production so limits survive restarts and work across
@@ -118,6 +123,66 @@ behavior:
   probe_paths_extra: []
   # Exclude legitimate application routes from scanner-path behavior scoring.
   probe_path_exclusions: []
+
+# Unknown-threat analysis is monitor-only in this release. Keep the state on
+# persistent storage. Multi-instance deployments should leave this disabled
+# until a shared baseline backend is configured in a future release.
+unknown_threats:
+  enabled: false
+  # Roll out as monitor, then shadow. Run `saugra-waf unknown-threats report`
+  # before setting mode to block and shadow_review_completed to true.
+  mode: monitor
+  shadow_review_completed: false
+  backend: local
+  state_path: /var/lib/saugra-waf/saugra-waf-unknown-threat-state.json
+  minimum_observations: 100
+  monitor_threshold: 20
+  block_threshold: 40
+  minimum_independent_signals: 2
+  minimum_baseline_age: 7d
+  minimum_block_observations: 1000
+  # The Debian package seeds this operator-managed catalog from the bundled
+  # default. Validate changes with `saugra-waf test-config` before restart.
+  signal_catalog: /etc/saugra-waf/intelligence/unknown-threat-signals.yml
+  body_size_multiplier: 4
+  # Novel values are quarantined until repeated and route feature sets are
+  # bounded to reduce baseline poisoning and state growth.
+  promotion_observations: 3
+  trusted_learning_only: false
+  # Set trusted_learning_only to true when a trusted replay, staging proxy, or
+  # known client range supplies baseline traffic.
+  trusted_learning_clients: []
+  max_methods_per_route: 16
+  max_content_types_per_route: 32
+  max_query_parameters_per_route: 256
+  retention: 30d
+  max_routes: 10000
+  excluded_paths:
+    - /_saugra-waf/health
+  routes:
+    # Disable learning where request shapes are intentionally unbounded.
+    - path: /uploads
+      learning_enabled: false
+    # Sensitive routes can require more trusted observations before monitoring.
+    - path: /admin
+      high_risk: true
+      minimum_observations: 200
+      monitor_threshold: 15
+      block_threshold: 40
+
+# Shared, monitor-only campaign correlation for multi-instance deployments.
+# It stores route shapes and hashed session fingerprints, never raw cookies.
+campaign_correlation:
+  enabled: false
+  mode: monitor
+  backend: redis
+  redis_url: redis://127.0.0.1:6379
+  # redis_password: replace-with-secret
+  redis_key_prefix: saugra-waf:production:campaign-correlation
+  window: 15m
+  retention: 24h
+  max_events: 50000
+  policy_catalog: /etc/saugra-waf/intelligence/campaign-policies.yml
 
 # Bot protection scores scanner-like behavior, blocklists, and suspicious
 # automation signals. Enable in monitor mode first, then tune thresholds.
@@ -210,6 +275,20 @@ rules:
   #       - /api/articles
   #     query_params:
   #       - content
+  #     methods:
+  #       - POST
+  #     targets:
+  #       - query
+  #     content_types:
+  #       - application/json
+  #     trusted_headers:
+  #       - name: X-Deployment
+  #         values:
+  #           - internal
+  #     identities:
+  #       - name: X-Authenticated-Role
+  #         values:
+  #           - editor
   exclusions: []
 
 # AI is explain-only. It should help administrators understand and tune events;
@@ -217,6 +296,25 @@ rules:
 ai:
   enabled: true
   mode: explain_only
+  # llama.cpp is local-only. External adapters still receive sanitized input.
+  provider: llama_cpp
+  llama_cpp_url: http://127.0.0.1:8080
+  model: saugra-qwen3-0.6b
+  prompt_version: saugra-explain-v1
+  timeout: 60s
+  audit_log_path: /var/log/saugra-waf/saugra-waf-ai-audit.jsonl
+  audit_log_max_size: 100mb
+  audit_log_max_files: 30
+  max_tuning_suggestions: 3
+  allow_remote: false
+  local_only: true
+  endpoint_allowlist: []
+  # Use Qwen3 0.6B Q8 with a 2048-token context and one inference thread on a
+  # constrained shared host. Below 2 GB RAM, use enabled: false or local.
+  # Ollama remains available with provider: ollama and ollama_url.
+  # Native OpenAI-compatible and Gemini providers require explicit remote
+  # enablement, HTTPS endpoint allowlisting, an environment secret reference,
+  # and documented data-region and retention policy.
 
 # Structured event logs are the administrator-facing source of truth for block
 # reasons, explanations, and request references shown to users.
@@ -224,6 +322,8 @@ logging:
   format: json
   level: info
   event_log_path: /var/log/saugra-waf/saugra-waf-events.jsonl
+  # Request IDs remain explainable while their events are in the active log or
+  # these retained rotated files. Retention is volume-based, not day-based.
   event_log_max_size: 100mb
   event_log_max_files: 10
   timezone: Africa/Nairobi
@@ -279,7 +379,8 @@ security_summary:
     #     - security@example.com
     #   sendmail_path: /usr/sbin/sendmail
 
-# Storage cleanup removes stale generated files so local disks do not fill up.
+# Storage cleanup removes stale generated files and prunes expired routes from
+# the local unknown-threat baseline so local disks do not fill up.
 # Event logs already rotate through logging.event_log_max_size and
 # logging.event_log_max_files. Use storage_cleanup for generated summaries,
 # summary admin-event files, and any explicit local report/output directories

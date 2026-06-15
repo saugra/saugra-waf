@@ -14,9 +14,10 @@ use axum::{
 use saugra_waf::{
     config::{
         AiConfig, BehaviorBackend, BehaviorConfig, BehaviorMode, BotProtectionConfig,
-        BotProtectionLists, LoggingConfig, ProxyRouteConfig, RateLimitBackend, RateLimitConfig,
-        RuleExclusionConfig, RuleSettings, RuntimeAllowlistEffect, RuntimePolicyConfig,
-        SaugraConfig, SecurityConfig, ServerConfig, UpstreamConfig, WafMode,
+        BotProtectionLists, CampaignBackend, CampaignPolicyConfig, LoggingConfig, ProxyRouteConfig,
+        RateLimitBackend, RateLimitConfig, RuleExclusionConfig, RuleSettings,
+        RuntimeAllowlistEffect, RuntimePolicyConfig, SaugraConfig, SecurityConfig, ServerConfig,
+        UnknownThreatMode, UnknownThreatRouteConfig, UpstreamConfig, WafMode,
     },
     decision::WafAction,
     event_store::{self, EventLogRetention},
@@ -319,6 +320,55 @@ async fn block_mode_monitors_findings_below_anomaly_threshold() {
 }
 
 #[tokio::test]
+async fn campaign_correlation_records_monitor_only_campaign_ids() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.campaign_correlation.enabled = true;
+    config.campaign_correlation.backend = CampaignBackend::Memory;
+    config.campaign_correlation.policies = vec![CampaignPolicyConfig {
+        kind: "endpoint_discovery".to_string(),
+        scope: "client".to_string(),
+        score: 50,
+        minimum_events: 2,
+        minimum_clients: 1,
+        minimum_sessions: 1,
+        minimum_routes: 2,
+        categories: vec!["scanner_behavior".to_string()],
+        path_prefixes: Vec::new(),
+        stages: Vec::new(),
+        minimum_stages: 0,
+    }];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for path in ["/.env", "/wp-admin"] {
+        let request = Request::builder()
+            .uri(path)
+            .header(header::USER_AGENT, "sqlmap")
+            .header(header::COOKIE, "session=campaign-test")
+            .body(Body::empty())
+            .unwrap();
+        let response = proxy_request(State(state.clone()), request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let campaign = events.last().unwrap().decision.campaign.as_ref().unwrap();
+    assert_eq!(campaign.action, WafAction::Monitor);
+    assert_eq!(campaign.matches[0].kind, "endpoint_discovery");
+    assert!(campaign.campaign_ids[0].starts_with("cmp-"));
+    assert_eq!(fake_upstream.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
 async fn block_mode_blocks_combined_findings_at_anomaly_threshold() {
     let fake_upstream = Arc::new(FakeUpstreamTransport::new());
     let event_log_path = test_event_log_path();
@@ -348,6 +398,84 @@ async fn block_mode_blocks_combined_findings_at_anomaly_threshold() {
     assert_eq!(events[0].decision.action, WafAction::Block);
     assert_eq!(events[0].decision.anomaly_score, 6);
     assert_eq!(events[0].decision.matched_rules.len(), 2);
+}
+
+#[tokio::test]
+async fn guarded_unknown_threat_policy_blocks_mature_high_risk_route() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.unknown_threats.enabled = true;
+    config.unknown_threats.mode = UnknownThreatMode::Block;
+    config.unknown_threats.backend = BehaviorBackend::Memory;
+    config.unknown_threats.shadow_review_completed = true;
+    config.unknown_threats.minimum_observations = 2;
+    config.unknown_threats.minimum_block_observations = 2;
+    config.unknown_threats.minimum_baseline_age = "1s".to_string();
+    config.unknown_threats.monitor_threshold = 10;
+    config.unknown_threats.block_threshold = 20;
+    config.unknown_threats.promotion_observations = 1;
+    config.unknown_threats.routes = vec![UnknownThreatRouteConfig {
+        path: "/admin".to_string(),
+        high_risk: true,
+        ..UnknownThreatRouteConfig::default()
+    }];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for id in [42, 43] {
+        let request = Request::builder()
+            .uri(format!("/admin/{id}?page=1"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        assert_eq!(
+            proxy_request(State(state.clone()), request)
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let request = Request::builder()
+        .method(Method::DELETE)
+        .uri("/admin/44?page=1")
+        .header(header::CONTENT_TYPE, "text/plain")
+        .body(Body::from("ok"))
+        .unwrap();
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let outcome = events
+        .last()
+        .unwrap()
+        .decision
+        .unknown_threats
+        .as_ref()
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(events.last().unwrap().decision.action, WafAction::Block);
+    assert!(outcome.would_block);
+    assert!(outcome.block_eligible);
+    assert_eq!(outcome.signals.len(), 2);
+    assert!(events
+        .last()
+        .unwrap()
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-UNKNOWN-THREAT-001"));
+    assert_eq!(events.last().unwrap().decision.risk_score, 80);
+    assert!(fake_upstream.requests.lock().unwrap().len() == 2);
 }
 
 #[tokio::test]
@@ -396,6 +524,13 @@ async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
         rule_ids: vec!["SAUGRA-XSS-001".to_string()],
         path_prefixes: vec!["/api/articles".to_string()],
         query_params: vec!["content".to_string()],
+        methods: vec!["POST".to_string()],
+        targets: vec![saugra_waf::rules::RuleTarget::Query],
+        content_types: vec!["application/json".to_string()],
+        trusted_headers: vec![saugra_waf::config::RuleExclusionHeaderValueConfig {
+            name: "X-Deployment".to_string(),
+            values: vec!["internal".to_string()],
+        }],
         ..RuleExclusionConfig::default()
     }];
     let state = ProxyState::with_transport(
@@ -407,7 +542,10 @@ async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
     )
     .unwrap();
     let request = Request::builder()
+        .method(Method::POST)
         .uri("/api/articles/preview?content=%3Cscript%3Ealert(1)%3C/script%3E")
+        .header("content-type", "application/json; charset=utf-8")
+        .header("x-deployment", "internal")
         .body(Body::empty())
         .unwrap();
 
@@ -420,6 +558,14 @@ async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
     assert_eq!(events[0].decision.action, WafAction::Allow);
     assert!(events[0].decision.matched_rules.is_empty());
     assert_eq!(events[0].decision.anomaly_score, 0);
+    let evidence = events[0].evidence.as_ref().unwrap();
+    assert_eq!(evidence.content_type, "application/json");
+    assert_eq!(evidence.query_parameter_names, vec!["content"]);
+    assert!(evidence.header_names.contains(&"content-type".to_string()));
+    assert!(evidence.header_names.contains(&"x-deployment".to_string()));
+    let encoded = serde_json::to_string(&events[0]).unwrap();
+    assert!(!encoded.contains("internal"));
+    assert!(!encoded.contains("charset=utf-8"));
 }
 
 #[tokio::test]
@@ -1213,6 +1359,8 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
             backend: BehaviorBackend::Memory,
             ..BehaviorConfig::default()
         },
+        unknown_threats: Default::default(),
+        campaign_correlation: Default::default(),
         bot_protection: BotProtectionConfig {
             backend: BehaviorBackend::Memory,
             ..BotProtectionConfig::default()

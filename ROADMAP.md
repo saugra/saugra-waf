@@ -49,7 +49,7 @@ cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 Current test status:
 
 ```txt
-212 tests pass in a normal local/CI environment, including the two WebSocket
+288 tests pass in a normal local/CI environment, including the two WebSocket
 raw-socket tunnel tests.
 ```
 
@@ -188,6 +188,24 @@ remaining native to Saugra instead of copying ModSecurity syntax directly:
       blocking.
 - [x] Add local tuning controls: disable rules by ID, disable categories, and
       exclude specific rules by path, parameter, header, and rule ID.
+- [x] Add `saugra-waf rules view <saugra-rule-id>` for active signature severity,
+      performance-cost metadata, targets, transforms, pattern, and design intent.
+- [x] Add context-aware exclusion scopes for HTTP method, matched rule target,
+      content type, and trusted header values.
+- [x] Record privacy-safe matched-evidence metadata that helps operators locate
+      false positives without retaining sensitive full payloads by default.
+- [x] Add exclusion validation and operator warnings for global, contradictory,
+      spoofable, or otherwise overly broad exclusion policies.
+- [x] Extend inactive rule-pack replay to evaluate proposed exclusions against
+      retained traffic, report prior outcomes and unavailable evidence, and
+      require separate labeled legitimate and attack-case staging verification
+      before activation.
+- [x] Support authenticated identity or role exclusion scopes only through
+      explicitly configured and validated trusted proxy or upstream identity
+      assertions; never trust arbitrary client-supplied role headers.
+- [x] Document a monitor-first context-aware tuning workflow covering request ID
+      review, narrow exclusion selection, validation, replay, activation, and
+      post-deployment verification.
 - [x] Add rule-pack validation output so operators can see loaded files, rule
       counts, disabled rules, configured exclusions, and warnings before
       starting traffic.
@@ -446,7 +464,8 @@ Initial scope:
       file after Saugra starts.
 - [x] Add optional reset commands for local behavior and bot state by client ID.
 
-See `docs/RUNTIME_ALLOWLIST.md` for the design.
+The implemented design is documented in `docs/ADMIN_GUIDE.md` and
+`docs/ARCHITECTURE.md`.
 
 ### Admin Guide and Operator Runbooks
 
@@ -503,9 +522,145 @@ security_summary:
     - type: file
     # Future:
     # - type: email
-    #   to:
-    #     - security@example.com
+      #   to:
+      #     - security@example.com
 ```
+
+## Phase 9 — Unknown-Threat Detection and AI Assistance
+
+Saugra should describe this capability as unknown-threat detection, not as a
+guarantee that every zero-day exploit will be stopped. Known attack patterns
+remain the responsibility of deterministic rules. Statistical and AI-assisted
+features add evidence, explanations, correlation, and tuning support.
+
+The request path remains:
+
+```txt
+request
+  -> deterministic rules
+  -> rate limiting and behavior controls
+  -> route-aware unknown-threat signals
+  -> deterministic risk policy
+  -> allow / monitor / block
+  -> asynchronous explanation and tuning workflows
+```
+
+An external LLM must never sit in the synchronous forwarding path or become the
+only reason Saugra blocks a request.
+
+### Route-Aware Request Baselines
+
+- [x] Add an `unknown_threats` configuration boundary.
+- [x] Add a stable baseline-store interface with memory and durable local
+      implementations.
+- [x] Normalize dynamic path segments into route shapes.
+- [x] Learn methods, content types, query parameter names, and body-size ranges
+      from requests that have no deterministic rule matches.
+- [x] Require a minimum number of observations before emitting anomaly signals.
+- [x] Attach explainable anomaly signals to decisions and security events.
+- [x] Keep the first implementation monitor-only.
+- [x] Add focused tests for learning, persistence, route normalization, and
+      anomaly detection.
+- [ ] Add a Redis or equivalent shared baseline backend before supporting
+      multi-instance enforcement.
+- [x] Add bounded baseline retention and route cardinality limits.
+- [x] Add scheduled cleanup for inactive local baseline stores through the
+      existing cleanup command and documented systemd timer.
+- [x] Add explicit route exclusions and route-specific learning policies.
+
+### Deterministic Unknown-Threat Policy
+
+- [x] Add independently configurable signal weights through a validated data
+      file rather than hard-coded production policy.
+- [x] Require at least two independent anomaly signals for automatic blocking.
+- [x] Add observation-age and traffic-volume requirements before a baseline can
+      become blocking-eligible.
+- [x] Prevent automatic blocking on newly observed routes.
+- [x] Add route-specific thresholds and high-risk route policies.
+- [x] Add shadow evaluation and false-positive reports before enabling block
+      mode.
+- [x] Add baseline poisoning defenses, including trusted-learning traffic,
+      bounded updates, and quarantine of anomalous observations.
+
+### Campaign Correlation
+
+- [x] Correlate low-severity events across clients, sessions, routes, and time
+      windows.
+- [x] Detect distributed scanning, endpoint discovery, credential attacks, and
+      multi-step attack progression.
+- [x] Store correlation state in a durable distributed backend.
+- [x] Produce campaign IDs and include them in events and explanations.
+- [x] Add deterministic campaign thresholds with monitor-first rollout.
+
+### AI Explanations and Tuning
+
+- [x] Define a provider-neutral asynchronous explanation interface.
+- [x] Redact secrets and minimize payload data before any external model call.
+- [x] Explain route-baseline deviations, rule matches, behavior history, and
+      campaign context.
+- [x] Generate narrow tuning suggestions such as route exclusions or threshold
+      changes.
+- [x] Record model, prompt version, input digest, output, latency, and failure
+      state for auditability.
+- [x] Keep deterministic local explanations available when AI is disabled or
+      unavailable.
+- [x] Add native OpenAI-compatible remote provider configuration with secret
+      references, endpoint allowlisting, TLS enforcement, and rate-limit tests.
+- [x] Add native Gemini provider configuration with the same sanitization,
+      audit, timeout, and deterministic-fallback guarantees.
+- [ ] Benchmark `llama.cpp` with a small quantized model such as Qwen3 0.6B
+      against Ollama using the same sanitized explanation and rule-drafting
+      evaluation cases. Complete production sizing guidance only after schema
+      validity, grounding, latency, peak memory, and deployment measurements
+      confirm the expected advantage.
+      - 2026-06-14 local llama.cpp baseline: Qwen3 0.6B Q8, 2048-token context,
+        one inference thread, 1.17 GiB peak RSS, and 7.8-11.2 second case
+        latency. The strict provider-neutral suite passed 0/6 cases because the
+        model restated scores and omitted required deterministic identifiers.
+        Keep deterministic fallback enabled; Ollama comparison and model
+        qualification remain open.
+- [x] Add a loopback-only `llama.cpp` provider with schema-constrained bounded
+      output, audit records, timeouts, and deterministic fallback.
+- [x] Add versioned model evaluation and replay tooling for sanitized security
+      cases, including schema, privacy, grounding, suggestion-scope, quality,
+      and latency regression checks.
+- [x] Add remote-provider privacy and residency controls, including explicit
+      provider enablement, data-region policy, retention disclosure, auditable
+      secret references, and a local-only deployment mode.
+- [x] Research model-assisted anomaly analysis in shadow mode with offline
+      evaluation and operator review; deterministic policy must remain the
+      authority for monitor and block decisions.
+
+### Rule Drafting and Replay
+
+- [x] Convert repeated, reviewed anomalies into draft Saugra YAML rules.
+- [x] Require human approval before publishing generated rules.
+- [x] Validate and compile an inactive rule pack with
+      `saugra-waf rules validate --input <draft.yml>`.
+- [x] Replay path and query targets from retained security events with
+      `saugra-waf rules replay --input <draft.yml>`. Report unavailable retained
+      targets instead of implying complete replay coverage.
+- [x] Report false-positive impact and attack-case coverage.
+- [x] Deploy accepted rules in monitor mode before block mode.
+- [x] Add a versioned draft manifest containing source anomaly IDs, generator
+      provider and model, prompt version, input digest, reviewer, approval
+      timestamp, replay report digest, and publication state.
+- [x] Keep generated drafts outside configured active rule directories and
+      require an explicit publish command after validation, replay, and human
+      approval.
+- [x] Add labeled sanitized replay fixtures so legitimate-traffic impact and
+      attack-case coverage are measured separately from unlabeled historical
+      event overlap.
+
+### Security and Privacy Guardrails
+
+- Do not train on requests already matched by deterministic attack rules.
+- Do not store full request bodies in baseline state.
+- Store request shapes and bounded metadata, not credentials or tokens.
+- Treat local state as single-node production support, not distributed support.
+- Fail open for unknown-threat analysis errors while logging the failure.
+- Never silently block; every enforced decision must produce a security event.
+- Keep monitor-first defaults and make enforcement an explicit operator choice.
 
 ## Production Readiness Gate
 

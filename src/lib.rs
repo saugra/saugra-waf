@@ -1,6 +1,7 @@
 pub mod ai;
 pub mod behavior;
 pub mod bot;
+pub mod campaign;
 pub mod config;
 pub mod crs_convert;
 pub mod decision;
@@ -11,8 +12,10 @@ pub mod posture;
 pub mod proxy;
 pub mod rate_limit;
 pub mod reports;
+pub mod rule_drafts;
 pub mod rules;
 pub mod runtime_policy;
 pub mod security_summary;
 pub mod standards;
 pub mod storage_cleanup;
+pub mod unknown_threats;

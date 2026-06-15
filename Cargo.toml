@@ -30,6 +30,9 @@ assets = [
   ["configs/rules/*.yml", "usr/share/saugra-waf/rules/", "644"],
   ["configs/standards/*.yml", "usr/share/saugra-waf/standards/", "644"],
   ["configs/intelligence/*.yml", "usr/share/saugra-waf/intelligence/", "644"],
+  ["configs/llama-cpp/saugra-waf-llama-cpp.service", "usr/share/saugra-waf/llama-cpp/saugra-waf-llama-cpp.service", "644"],
+  ["configs/ai/*.jsonl", "usr/share/saugra-waf/ai/", "644"],
+  ["configs/ollama/Modelfile", "usr/share/saugra-waf/ollama/Modelfile", "644"],
   ["configs/saugra-waf.production.example.yml", "usr/share/doc/saugra-waf/saugra-waf.production.example.yml", "644"],
   ["configs/nginx.production.example.conf", "usr/share/doc/saugra-waf/nginx.production.example.conf", "644"],
   ["configs/apache.production.example.conf", "usr/share/doc/saugra-waf/apache.production.example.conf", "644"],
@@ -38,8 +41,9 @@ assets = [
   ["NOTICE", "usr/share/doc/saugra-waf/NOTICE", "644"],
   ["TRADEMARKS.md", "usr/share/doc/saugra-waf/TRADEMARKS.md", "644"],
   ["docs/LICENSING.md", "usr/share/doc/saugra-waf/LICENSING.md", "644"],
-  ["docs/PRODUCTION_DEPLOYMENT.md", "usr/share/doc/saugra-waf/PRODUCTION_DEPLOYMENT.md", "644"],
-  ["docs/DEBIAN_PACKAGING.md", "usr/share/doc/saugra-waf/DEBIAN_PACKAGING.md", "644"],
+  ["docs/ADMIN_GUIDE.md", "usr/share/doc/saugra-waf/ADMIN_GUIDE.md", "644"],
+  ["docs/ARCHITECTURE.md", "usr/share/doc/saugra-waf/ARCHITECTURE.md", "644"],
+  ["docs/RELEASE_PROCESS.md", "usr/share/doc/saugra-waf/RELEASE_PROCESS.md", "644"],
 ]
 maintainer-scripts = "packaging/debian"
 
@@ -53,11 +57,12 @@ hyper-util = { version = "0.1", features = ["client-legacy", "http1", "tokio"] }
 percent-encoding = "2.3"
 redis = { version = "0.27", features = ["tokio-comp", "connection-manager"] }
 regex = "1.10"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 thiserror = "1.0"
-tokio = { version = "1.39", features = ["io-util", "macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1.39", features = ["io-util", "macros", "process", "rt-multi-thread", "signal"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }

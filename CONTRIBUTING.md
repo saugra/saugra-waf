@@ -170,7 +170,8 @@ action: block
 # Mapped to a specific regex or condition list
 ```
 
-Please refer to `docs/OWASP_TOP_10_STRATEGY.md` for our layered coverage matrix.
+See [Architecture](docs/ARCHITECTURE.md#security-model) for the layered OWASP
+coverage model.
 
 ---
 
@@ -196,7 +197,7 @@ Please refer to `docs/OWASP_TOP_10_STRATEGY.md` for our layered coverage matrix.
 
 If you have questions about the codebase or design decisions, feel free to refer to:
 * [ARCHITECTURE.md](docs/ARCHITECTURE.md) for technical design details.
-* [PRODUCT_SPEC.md](docs/PRODUCT_SPEC.md) for product specification.
-* [PRODUCTION_DEPLOYMENT.md](docs/PRODUCTION_DEPLOYMENT.md) for deployment insights.
+* [ADMIN_GUIDE.md](docs/ADMIN_GUIDE.md) for deployment and operations.
+* [ROADMAP.md](ROADMAP.md) for product direction and implementation status.
 
 Alternatively, open a GitHub Discussion or issue for non-sensitive questions.

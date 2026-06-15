@@ -1,9 +1,14 @@
-use std::{fs, net::SocketAddr, path::Path, path::PathBuf};
+use std::{
+    fs,
+    net::{IpAddr, Ipv4Addr, SocketAddr},
+    path::Path,
+    path::PathBuf,
+};
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-use crate::rules::RuleSeverity;
+use crate::rules::{RuleSeverity, RuleTarget};
 
 #[derive(Debug, Error)]
 pub enum ConfigError {
@@ -64,6 +69,80 @@ pub enum ConfigError {
     InvalidBehaviorProbePathCatalog,
     #[error("behavior.probe_paths entries must not be blank")]
     InvalidBehaviorProbePath,
+    #[error("unknown_threats.state_path must not be blank when unknown_threats.backend is local")]
+    InvalidUnknownThreatStatePath,
+    #[error("unknown_threats.minimum_observations must be greater than zero")]
+    InvalidUnknownThreatMinimumObservations,
+    #[error("unknown_threats.monitor_threshold must be greater than zero")]
+    InvalidUnknownThreatMonitorThreshold,
+    #[error("unknown_threats.body_size_multiplier must be at least 2")]
+    InvalidUnknownThreatBodySizeMultiplier,
+    #[error("unknown_threats.retention must be a positive duration, for example 30d")]
+    InvalidUnknownThreatRetention,
+    #[error("unknown_threats.max_routes must be greater than zero")]
+    InvalidUnknownThreatMaxRoutes,
+    #[error("unknown_threats.excluded_paths entries must not be blank")]
+    InvalidUnknownThreatExcludedPath,
+    #[error("unknown_threats.routes entries must include a non-empty path")]
+    InvalidUnknownThreatRoute,
+    #[error("unknown_threats.signal_catalog must not be blank")]
+    InvalidUnknownThreatSignalCatalogPath,
+    #[error("failed to parse unknown-threat signal catalog {path}: {source}")]
+    InvalidUnknownThreatSignalCatalog {
+        path: String,
+        source: serde_yaml::Error,
+    },
+    #[error("unknown-threat signal catalog version must be 1")]
+    InvalidUnknownThreatSignalCatalogVersion,
+    #[error("unknown-threat signal catalog scores must be greater than zero")]
+    InvalidUnknownThreatSignalScore,
+    #[error(
+        "inline unknown-threat signal scores are no longer supported; configure unknown_threats.signal_catalog"
+    )]
+    LegacyUnknownThreatSignalScores,
+    #[error("unknown_threats.block_threshold must be greater than or equal to monitor_threshold")]
+    InvalidUnknownThreatBlockThreshold,
+    #[error("unknown_threats.minimum_independent_signals must be at least 2")]
+    InvalidUnknownThreatMinimumSignals,
+    #[error("unknown_threats.minimum_baseline_age must be a positive duration")]
+    InvalidUnknownThreatMinimumBaselineAge,
+    #[error("unknown_threats.minimum_block_observations must be at least minimum_observations")]
+    InvalidUnknownThreatBlockObservations,
+    #[error("unknown_threats.max_methods_per_route must be greater than zero")]
+    InvalidUnknownThreatMaxMethods,
+    #[error("unknown_threats.max_content_types_per_route must be greater than zero")]
+    InvalidUnknownThreatMaxContentTypes,
+    #[error("unknown_threats.max_query_parameters_per_route must be greater than zero")]
+    InvalidUnknownThreatMaxQueryParameters,
+    #[error("unknown_threats.trusted_learning_clients entries must be valid IPs or CIDRs")]
+    InvalidUnknownThreatTrustedLearningClient,
+    #[error("unknown_threats.shadow_review_completed must be true before mode can be block")]
+    UnknownThreatShadowReviewRequired,
+    #[error("campaign_correlation.state_path must not be blank when backend is local")]
+    InvalidCampaignStatePath,
+    #[error("campaign_correlation.redis_url is required when backend is redis")]
+    MissingCampaignRedisUrl,
+    #[error("campaign_correlation.redis_password must not be blank when provided")]
+    InvalidCampaignRedisPassword,
+    #[error("campaign_correlation.redis_key_prefix must not be blank")]
+    InvalidCampaignRedisKeyPrefix,
+    #[error("campaign_correlation.window and retention must be positive durations")]
+    InvalidCampaignDuration,
+    #[error("campaign_correlation.retention must be greater than or equal to window")]
+    InvalidCampaignRetention,
+    #[error("campaign_correlation.max_events must be greater than zero")]
+    InvalidCampaignMaxEvents,
+    #[error("campaign_correlation.policy_catalog must not be blank")]
+    InvalidCampaignPolicyCatalogPath,
+    #[error("failed to parse campaign policy catalog {path}: {source}")]
+    InvalidCampaignPolicyCatalog {
+        path: String,
+        source: serde_yaml::Error,
+    },
+    #[error("campaign policy catalog version must be 1")]
+    InvalidCampaignPolicyCatalogVersion,
+    #[error("campaign policies must have unique non-empty kinds and positive thresholds")]
+    InvalidCampaignPolicy,
     #[error("bot_protection.score_window must be a positive duration, for example 10m")]
     InvalidBotProtectionScoreWindow,
     #[error(
@@ -96,6 +175,34 @@ pub enum ConfigError {
     InvalidRuntimePolicyDefaultDuration,
     #[error("ai.mode must be explain_only when AI is enabled")]
     InvalidAiMode,
+    #[error("ai.provider must be llama_cpp, ollama, openai_compatible, gemini, local, or command")]
+    InvalidAiProvider,
+    #[error("ai.ollama_url must be a local HTTP URL")]
+    InvalidAiOllamaUrl,
+    #[error("ai.llama_cpp_url must be a local HTTP URL")]
+    InvalidAiLlamaCppUrl,
+    #[error("remote AI providers require ai.allow_remote: true and ai.local_only: false")]
+    RemoteAiNotEnabled,
+    #[error("ai.endpoint must be an allowlisted HTTPS URL for remote providers")]
+    InvalidAiRemoteEndpoint,
+    #[error("ai.api_key_env must name a non-empty environment variable for remote providers")]
+    InvalidAiApiKeyEnv,
+    #[error(
+        "ai.data_region and ai.retention_policy must be explicitly documented for remote providers"
+    )]
+    InvalidAiPrivacyPolicy,
+    #[error("ai.command must not be blank when ai.provider is command")]
+    MissingAiCommand,
+    #[error("ai.prompt_version, ai.model, and ai.audit_log_path must not be blank")]
+    InvalidAiMetadata,
+    #[error("ai.audit_log_max_size must be a positive byte size")]
+    InvalidAiAuditLogMaxSize,
+    #[error("ai.audit_log_max_files must be greater than zero")]
+    InvalidAiAuditLogMaxFiles,
+    #[error("ai.timeout must be a positive duration")]
+    InvalidAiTimeout,
+    #[error("ai.max_tuning_suggestions must be greater than zero")]
+    InvalidAiSuggestionLimit,
     #[error("rules.inbound_anomaly_threshold must be greater than zero")]
     InvalidAnomalyThreshold,
     #[error("rules paranoia levels must be greater than zero")]
@@ -104,6 +211,12 @@ pub enum ConfigError {
     InvalidBlockingParanoiaLevel,
     #[error("rules.exclusions entries must include at least one rule_id or category")]
     InvalidRuleExclusion,
+    #[error("rules.exclusions methods must be valid HTTP methods")]
+    InvalidRuleExclusionMethod,
+    #[error("rules.exclusions trusted_headers must use valid non-sensitive header names and non-empty values")]
+    InvalidRuleExclusionTrustedHeader,
+    #[error("rules.exclusions identities must reference a header configured in forwarded_headers.identity_assertions")]
+    InvalidRuleExclusionIdentity,
     #[error("posture.expected_external_scheme must be http or https")]
     InvalidPostureScheme,
     #[error(
@@ -156,6 +269,8 @@ pub enum ConfigError {
     InvalidForwardedHeadersExpectedProto,
     #[error("forwarded_headers.insecure_proto_score must be greater than zero")]
     InvalidForwardedHeadersInsecureProtoScore,
+    #[error("forwarded_headers.identity_assertions entries must be valid non-sensitive HTTP header names")]
+    InvalidForwardedHeadersIdentityAssertion,
     #[error("websocket.allowed_origins entries must not be blank")]
     InvalidWebSocketAllowedOrigin,
     #[error("websocket.allowed_hosts entries must not be blank")]
@@ -181,6 +296,10 @@ pub struct SaugraConfig {
     pub rate_limit: RateLimitConfig,
     #[serde(default)]
     pub behavior: BehaviorConfig,
+    #[serde(default)]
+    pub unknown_threats: UnknownThreatConfig,
+    #[serde(default)]
+    pub campaign_correlation: CampaignCorrelationConfig,
     #[serde(default)]
     pub bot_protection: BotProtectionConfig,
     #[serde(default)]
@@ -272,6 +391,8 @@ pub struct ForwardedHeadersConfig {
     pub expected_proto: String,
     #[serde(default = "default_insecure_proto_score")]
     pub insecure_proto_score: u16,
+    #[serde(default)]
+    pub identity_assertions: Vec<String>,
 }
 
 impl Default for ForwardedHeadersConfig {
@@ -283,6 +404,7 @@ impl Default for ForwardedHeadersConfig {
             proto_header: default_proto_header(),
             expected_proto: default_expected_proto(),
             insecure_proto_score: default_insecure_proto_score(),
+            identity_assertions: Vec::new(),
         }
     }
 }
@@ -401,6 +523,268 @@ pub enum BehaviorBackend {
     Memory,
     #[default]
     Local,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UnknownThreatConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: UnknownThreatMode,
+    #[serde(default)]
+    pub shadow_review_completed: bool,
+    #[serde(default)]
+    pub backend: BehaviorBackend,
+    #[serde(default = "default_unknown_threat_state_path")]
+    pub state_path: PathBuf,
+    #[serde(default = "default_unknown_threat_minimum_observations")]
+    pub minimum_observations: u64,
+    #[serde(default = "default_unknown_threat_monitor_threshold")]
+    pub monitor_threshold: u16,
+    #[serde(default = "default_unknown_threat_block_threshold")]
+    pub block_threshold: u16,
+    #[serde(default = "default_unknown_threat_minimum_independent_signals")]
+    pub minimum_independent_signals: usize,
+    #[serde(default = "default_unknown_threat_minimum_baseline_age")]
+    pub minimum_baseline_age: String,
+    #[serde(default = "default_unknown_threat_minimum_block_observations")]
+    pub minimum_block_observations: u64,
+    #[serde(default = "default_unknown_threat_signal_catalog")]
+    pub signal_catalog: String,
+    #[serde(skip, default = "default_unknown_threat_signals")]
+    pub signals: UnknownThreatSignals,
+    #[serde(default)]
+    pub(crate) unseen_method_score: Option<u16>,
+    #[serde(default)]
+    pub(crate) unseen_content_type_score: Option<u16>,
+    #[serde(default)]
+    pub(crate) unseen_query_parameter_score: Option<u16>,
+    #[serde(default)]
+    pub(crate) body_size_score: Option<u16>,
+    #[serde(default = "default_unknown_threat_body_size_multiplier")]
+    pub body_size_multiplier: u16,
+    #[serde(default = "default_unknown_threat_promotion_observations")]
+    pub promotion_observations: u64,
+    #[serde(default)]
+    pub trusted_learning_only: bool,
+    #[serde(default)]
+    pub trusted_learning_clients: Vec<String>,
+    #[serde(default = "default_unknown_threat_max_methods")]
+    pub max_methods_per_route: usize,
+    #[serde(default = "default_unknown_threat_max_content_types")]
+    pub max_content_types_per_route: usize,
+    #[serde(default = "default_unknown_threat_max_query_parameters")]
+    pub max_query_parameters_per_route: usize,
+    #[serde(default = "default_unknown_threat_retention")]
+    pub retention: String,
+    #[serde(default = "default_unknown_threat_max_routes")]
+    pub max_routes: usize,
+    #[serde(default)]
+    pub excluded_paths: Vec<String>,
+    #[serde(default)]
+    pub routes: Vec<UnknownThreatRouteConfig>,
+}
+
+impl Default for UnknownThreatConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: UnknownThreatMode::Monitor,
+            shadow_review_completed: false,
+            backend: BehaviorBackend::Local,
+            state_path: default_unknown_threat_state_path(),
+            minimum_observations: default_unknown_threat_minimum_observations(),
+            monitor_threshold: default_unknown_threat_monitor_threshold(),
+            block_threshold: default_unknown_threat_block_threshold(),
+            minimum_independent_signals: default_unknown_threat_minimum_independent_signals(),
+            minimum_baseline_age: default_unknown_threat_minimum_baseline_age(),
+            minimum_block_observations: default_unknown_threat_minimum_block_observations(),
+            signal_catalog: default_unknown_threat_signal_catalog(),
+            signals: default_unknown_threat_signals(),
+            unseen_method_score: None,
+            unseen_content_type_score: None,
+            unseen_query_parameter_score: None,
+            body_size_score: None,
+            body_size_multiplier: default_unknown_threat_body_size_multiplier(),
+            promotion_observations: default_unknown_threat_promotion_observations(),
+            trusted_learning_only: false,
+            trusted_learning_clients: Vec::new(),
+            max_methods_per_route: default_unknown_threat_max_methods(),
+            max_content_types_per_route: default_unknown_threat_max_content_types(),
+            max_query_parameters_per_route: default_unknown_threat_max_query_parameters(),
+            retention: default_unknown_threat_retention(),
+            max_routes: default_unknown_threat_max_routes(),
+            excluded_paths: Vec::new(),
+            routes: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UnknownThreatMode {
+    Off,
+    #[default]
+    Monitor,
+    Shadow,
+    Block,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CampaignCorrelationConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub mode: CampaignMode,
+    #[serde(default)]
+    pub backend: CampaignBackend,
+    #[serde(default = "default_campaign_state_path")]
+    pub state_path: PathBuf,
+    #[serde(default)]
+    pub redis_url: Option<String>,
+    #[serde(default)]
+    pub redis_password: Option<String>,
+    #[serde(default = "default_campaign_redis_key_prefix")]
+    pub redis_key_prefix: String,
+    #[serde(default = "default_campaign_window")]
+    pub window: String,
+    #[serde(default = "default_campaign_retention")]
+    pub retention: String,
+    #[serde(default = "default_campaign_max_events")]
+    pub max_events: usize,
+    #[serde(default = "default_campaign_policy_catalog")]
+    pub policy_catalog: String,
+    #[serde(skip, default = "default_campaign_policies")]
+    pub policies: Vec<CampaignPolicyConfig>,
+}
+
+impl Default for CampaignCorrelationConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            mode: CampaignMode::Monitor,
+            backend: CampaignBackend::Local,
+            state_path: default_campaign_state_path(),
+            redis_url: None,
+            redis_password: None,
+            redis_key_prefix: default_campaign_redis_key_prefix(),
+            window: default_campaign_window(),
+            retention: default_campaign_retention(),
+            max_events: default_campaign_max_events(),
+            policy_catalog: default_campaign_policy_catalog(),
+            policies: default_campaign_policies(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CampaignMode {
+    Off,
+    #[default]
+    Monitor,
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum CampaignBackend {
+    Memory,
+    #[default]
+    Local,
+    Redis,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CampaignPolicyCatalog {
+    pub version: u16,
+    pub campaigns: Vec<CampaignPolicyConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CampaignPolicyConfig {
+    pub kind: String,
+    #[serde(default = "default_campaign_scope")]
+    pub scope: String,
+    pub score: u16,
+    #[serde(default = "default_campaign_minimum")]
+    pub minimum_events: usize,
+    #[serde(default = "default_campaign_minimum")]
+    pub minimum_clients: usize,
+    #[serde(default = "default_campaign_minimum")]
+    pub minimum_sessions: usize,
+    #[serde(default = "default_campaign_minimum")]
+    pub minimum_routes: usize,
+    #[serde(default)]
+    pub categories: Vec<String>,
+    #[serde(default)]
+    pub path_prefixes: Vec<String>,
+    #[serde(default)]
+    pub stages: Vec<CampaignStageConfig>,
+    #[serde(default)]
+    pub minimum_stages: usize,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CampaignStageConfig {
+    pub name: String,
+    #[serde(default)]
+    pub categories: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UnknownThreatSignalCatalog {
+    pub version: u16,
+    pub signals: UnknownThreatSignals,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UnknownThreatSignals {
+    pub unseen_method: UnknownThreatSignalPolicy,
+    pub unseen_content_type: UnknownThreatSignalPolicy,
+    pub unseen_query_parameter: UnknownThreatSignalPolicy,
+    pub body_size_deviation: UnknownThreatSignalPolicy,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UnknownThreatSignalPolicy {
+    pub score: u16,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct UnknownThreatRouteConfig {
+    pub path: String,
+    #[serde(default = "default_true")]
+    pub learning_enabled: bool,
+    #[serde(default)]
+    pub minimum_observations: Option<u64>,
+    #[serde(default)]
+    pub monitor_threshold: Option<u16>,
+    #[serde(default)]
+    pub high_risk: bool,
+    #[serde(default)]
+    pub block_threshold: Option<u16>,
+    #[serde(default)]
+    pub minimum_independent_signals: Option<usize>,
+    #[serde(default)]
+    pub minimum_baseline_age: Option<String>,
+    #[serde(default)]
+    pub minimum_block_observations: Option<u64>,
+}
+
+impl Default for UnknownThreatRouteConfig {
+    fn default() -> Self {
+        Self {
+            path: String::new(),
+            learning_enabled: true,
+            minimum_observations: None,
+            monitor_threshold: None,
+            high_risk: false,
+            block_threshold: None,
+            minimum_independent_signals: None,
+            minimum_baseline_age: None,
+            minimum_block_observations: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -745,6 +1129,23 @@ pub struct RuleExclusionConfig {
     pub query_params: Vec<String>,
     #[serde(default)]
     pub headers: Vec<String>,
+    #[serde(default)]
+    pub methods: Vec<String>,
+    #[serde(default)]
+    pub targets: Vec<RuleTarget>,
+    #[serde(default)]
+    pub content_types: Vec<String>,
+    #[serde(default)]
+    pub trusted_headers: Vec<RuleExclusionHeaderValueConfig>,
+    #[serde(default)]
+    pub identities: Vec<RuleExclusionHeaderValueConfig>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct RuleExclusionHeaderValueConfig {
+    pub name: String,
+    #[serde(default)]
+    pub values: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -753,6 +1154,44 @@ pub struct AiConfig {
     pub enabled: bool,
     #[serde(default = "default_ai_mode")]
     pub mode: String,
+    #[serde(default = "default_ai_provider")]
+    pub provider: String,
+    #[serde(default = "default_ai_ollama_url")]
+    pub ollama_url: String,
+    #[serde(default = "default_ai_llama_cpp_url")]
+    pub llama_cpp_url: String,
+    #[serde(default)]
+    pub allow_remote: bool,
+    #[serde(default = "default_true")]
+    pub local_only: bool,
+    #[serde(default)]
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub endpoint_allowlist: Vec<String>,
+    #[serde(default)]
+    pub api_key_env: Option<String>,
+    #[serde(default)]
+    pub data_region: Option<String>,
+    #[serde(default)]
+    pub retention_policy: Option<String>,
+    #[serde(default)]
+    pub command: Option<String>,
+    #[serde(default)]
+    pub command_args: Vec<String>,
+    #[serde(default = "default_ai_model")]
+    pub model: String,
+    #[serde(default = "default_ai_prompt_version")]
+    pub prompt_version: String,
+    #[serde(default = "default_ai_timeout")]
+    pub timeout: String,
+    #[serde(default = "default_ai_audit_log_path")]
+    pub audit_log_path: PathBuf,
+    #[serde(default = "default_ai_audit_log_max_size")]
+    pub audit_log_max_size: String,
+    #[serde(default = "default_ai_audit_log_max_files")]
+    pub audit_log_max_files: usize,
+    #[serde(default = "default_ai_max_tuning_suggestions")]
+    pub max_tuning_suggestions: usize,
 }
 
 impl Default for AiConfig {
@@ -760,6 +1199,25 @@ impl Default for AiConfig {
         Self {
             enabled: true,
             mode: default_ai_mode(),
+            provider: default_ai_provider(),
+            ollama_url: default_ai_ollama_url(),
+            llama_cpp_url: default_ai_llama_cpp_url(),
+            allow_remote: false,
+            local_only: true,
+            endpoint: None,
+            endpoint_allowlist: Vec::new(),
+            api_key_env: None,
+            data_region: None,
+            retention_policy: None,
+            command: None,
+            command_args: Vec::new(),
+            model: default_ai_model(),
+            prompt_version: default_ai_prompt_version(),
+            timeout: default_ai_timeout(),
+            audit_log_path: default_ai_audit_log_path(),
+            audit_log_max_size: default_ai_audit_log_max_size(),
+            audit_log_max_files: default_ai_audit_log_max_files(),
+            max_tuning_suggestions: default_ai_max_tuning_suggestions(),
         }
     }
 }
@@ -867,6 +1325,8 @@ impl SaugraConfig {
         let contents = fs::read_to_string(path)?;
         let mut config: Self = serde_yaml::from_str(&contents)?;
         config.resolve_threat_path_catalogs()?;
+        config.resolve_unknown_threat_signal_catalog()?;
+        config.resolve_campaign_policy_catalog()?;
         Ok(config)
     }
 
@@ -938,6 +1398,9 @@ impl SaugraConfig {
             }
         }
 
+        self.validate_unknown_threats()?;
+        self.validate_campaign_correlation()?;
+
         if self.rate_limit.backend == RateLimitBackend::Redis
             && self
                 .rate_limit
@@ -967,6 +1430,78 @@ impl SaugraConfig {
         if self.ai.enabled && self.ai.mode != "explain_only" {
             return Err(ConfigError::InvalidAiMode);
         }
+        if !matches!(
+            self.ai.provider.as_str(),
+            "llama_cpp" | "ollama" | "openai_compatible" | "gemini" | "local" | "command"
+        ) {
+            return Err(ConfigError::InvalidAiProvider);
+        }
+        if self.ai.provider == "ollama" && !is_local_http_url(&self.ai.ollama_url) {
+            return Err(ConfigError::InvalidAiOllamaUrl);
+        }
+        if self.ai.provider == "llama_cpp" && !is_local_http_url(&self.ai.llama_cpp_url) {
+            return Err(ConfigError::InvalidAiLlamaCppUrl);
+        }
+        if matches!(self.ai.provider.as_str(), "openai_compatible" | "gemini") {
+            if !self.ai.allow_remote || self.ai.local_only {
+                return Err(ConfigError::RemoteAiNotEnabled);
+            }
+            let endpoint = self.ai.endpoint.as_deref().unwrap_or_default();
+            if !is_allowlisted_https_url(endpoint, &self.ai.endpoint_allowlist) {
+                return Err(ConfigError::InvalidAiRemoteEndpoint);
+            }
+            if self
+                .ai
+                .api_key_env
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(ConfigError::InvalidAiApiKeyEnv);
+            }
+            if self
+                .ai
+                .data_region
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+                || self
+                    .ai
+                    .retention_policy
+                    .as_deref()
+                    .is_none_or(|value| value.trim().is_empty())
+            {
+                return Err(ConfigError::InvalidAiPrivacyPolicy);
+            }
+        }
+        if self.ai.enabled
+            && self.ai.provider == "command"
+            && self
+                .ai
+                .command
+                .as_deref()
+                .unwrap_or_default()
+                .trim()
+                .is_empty()
+        {
+            return Err(ConfigError::MissingAiCommand);
+        }
+        if self.ai.prompt_version.trim().is_empty()
+            || self.ai.model.trim().is_empty()
+            || self.ai.audit_log_path.as_os_str().is_empty()
+        {
+            return Err(ConfigError::InvalidAiMetadata);
+        }
+        if parse_byte_size(&self.ai.audit_log_max_size).is_none() {
+            return Err(ConfigError::InvalidAiAuditLogMaxSize);
+        }
+        if self.ai.audit_log_max_files == 0 {
+            return Err(ConfigError::InvalidAiAuditLogMaxFiles);
+        }
+        if parse_duration_seconds(&self.ai.timeout).is_none() {
+            return Err(ConfigError::InvalidAiTimeout);
+        }
+        if self.ai.max_tuning_suggestions == 0 {
+            return Err(ConfigError::InvalidAiSuggestionLimit);
+        }
 
         if self.rules.inbound_anomaly_threshold == 0 {
             return Err(ConfigError::InvalidAnomalyThreshold);
@@ -995,10 +1530,42 @@ impl SaugraConfig {
                 .chain(exclusion.path_prefixes.iter())
                 .chain(exclusion.query_params.iter())
                 .chain(exclusion.headers.iter())
+                .chain(exclusion.methods.iter())
+                .chain(exclusion.content_types.iter())
                 .any(|value| value.trim().is_empty());
 
             if has_blank {
                 return Err(ConfigError::InvalidRuleExclusion);
+            }
+
+            if exclusion.methods.iter().any(|method| {
+                method
+                    .bytes()
+                    .any(|byte| !byte.is_ascii_uppercase() && byte != b'-')
+            }) {
+                return Err(ConfigError::InvalidRuleExclusionMethod);
+            }
+
+            if exclusion.trusted_headers.iter().any(|condition| {
+                !is_valid_trusted_assertion_header(&condition.name)
+                    || condition.values.is_empty()
+                    || condition.values.iter().any(|value| value.trim().is_empty())
+            }) {
+                return Err(ConfigError::InvalidRuleExclusionTrustedHeader);
+            }
+
+            if exclusion.identities.iter().any(|condition| {
+                !is_valid_trusted_assertion_header(&condition.name)
+                    || condition.values.is_empty()
+                    || condition.values.iter().any(|value| value.trim().is_empty())
+                    || !self
+                        .forwarded_headers
+                        .identity_assertions
+                        .iter()
+                        .any(|header| header.eq_ignore_ascii_case(&condition.name))
+            }) || (!exclusion.identities.is_empty() && !self.forwarded_headers.enabled)
+            {
+                return Err(ConfigError::InvalidRuleExclusionIdentity);
             }
         }
 
@@ -1095,6 +1662,14 @@ impl SaugraConfig {
 
         if self.forwarded_headers.insecure_proto_score == 0 {
             return Err(ConfigError::InvalidForwardedHeadersInsecureProtoScore);
+        }
+        if self
+            .forwarded_headers
+            .identity_assertions
+            .iter()
+            .any(|header| !is_valid_trusted_assertion_header(header))
+        {
+            return Err(ConfigError::InvalidForwardedHeadersIdentityAssertion);
         }
 
         Ok(())
@@ -1228,6 +1803,24 @@ impl SaugraConfig {
         Ok(())
     }
 
+    fn resolve_unknown_threat_signal_catalog(&mut self) -> Result<(), ConfigError> {
+        let path = self.unknown_threats.signal_catalog.trim();
+        if path.is_empty() {
+            return Err(ConfigError::InvalidUnknownThreatSignalCatalogPath);
+        }
+        self.unknown_threats.signals = load_unknown_threat_signal_catalog(path)?.signals;
+        Ok(())
+    }
+
+    fn resolve_campaign_policy_catalog(&mut self) -> Result<(), ConfigError> {
+        let path = self.campaign_correlation.policy_catalog.trim();
+        if path.is_empty() {
+            return Err(ConfigError::InvalidCampaignPolicyCatalogPath);
+        }
+        self.campaign_correlation.policies = load_campaign_policy_catalog(path)?.campaigns;
+        Ok(())
+    }
+
     fn validate_behavior(&self) -> Result<(), ConfigError> {
         if parse_duration_seconds(&self.behavior.score_window).is_none() {
             return Err(ConfigError::InvalidBehaviorScoreWindow);
@@ -1302,6 +1895,180 @@ impl SaugraConfig {
             return Err(ConfigError::InvalidBehaviorProbePath);
         }
 
+        Ok(())
+    }
+
+    fn validate_unknown_threats(&self) -> Result<(), ConfigError> {
+        if self.unknown_threats.backend == BehaviorBackend::Local
+            && self.unknown_threats.state_path.as_os_str().is_empty()
+        {
+            return Err(ConfigError::InvalidUnknownThreatStatePath);
+        }
+        if self.unknown_threats.minimum_observations == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMinimumObservations);
+        }
+        if self.unknown_threats.mode == UnknownThreatMode::Block
+            && !self.unknown_threats.shadow_review_completed
+        {
+            return Err(ConfigError::UnknownThreatShadowReviewRequired);
+        }
+        if self.unknown_threats.monitor_threshold == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMonitorThreshold);
+        }
+        if self.unknown_threats.block_threshold < self.unknown_threats.monitor_threshold {
+            return Err(ConfigError::InvalidUnknownThreatBlockThreshold);
+        }
+        if self.unknown_threats.minimum_independent_signals < 2 {
+            return Err(ConfigError::InvalidUnknownThreatMinimumSignals);
+        }
+        if parse_duration_seconds(&self.unknown_threats.minimum_baseline_age).is_none() {
+            return Err(ConfigError::InvalidUnknownThreatMinimumBaselineAge);
+        }
+        if self.unknown_threats.minimum_block_observations
+            < self.unknown_threats.minimum_observations
+        {
+            return Err(ConfigError::InvalidUnknownThreatBlockObservations);
+        }
+        if self.unknown_threats.body_size_multiplier < 2 {
+            return Err(ConfigError::InvalidUnknownThreatBodySizeMultiplier);
+        }
+        if self.unknown_threats.promotion_observations == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMinimumObservations);
+        }
+        if self.unknown_threats.promotion_observations > self.unknown_threats.minimum_observations {
+            return Err(ConfigError::InvalidUnknownThreatMinimumObservations);
+        }
+        if self.unknown_threats.max_methods_per_route == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMaxMethods);
+        }
+        if self.unknown_threats.max_content_types_per_route == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMaxContentTypes);
+        }
+        if self.unknown_threats.max_query_parameters_per_route == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMaxQueryParameters);
+        }
+        if self
+            .unknown_threats
+            .trusted_learning_clients
+            .iter()
+            .any(|value| !is_valid_ip_or_cidr(value))
+        {
+            return Err(ConfigError::InvalidUnknownThreatTrustedLearningClient);
+        }
+        if self.unknown_threats.signal_catalog.trim().is_empty() {
+            return Err(ConfigError::InvalidUnknownThreatSignalCatalogPath);
+        }
+        if self.unknown_threats.unseen_method_score.is_some()
+            || self.unknown_threats.unseen_content_type_score.is_some()
+            || self.unknown_threats.unseen_query_parameter_score.is_some()
+            || self.unknown_threats.body_size_score.is_some()
+        {
+            return Err(ConfigError::LegacyUnknownThreatSignalScores);
+        }
+        if [
+            self.unknown_threats.signals.unseen_method.score,
+            self.unknown_threats.signals.unseen_content_type.score,
+            self.unknown_threats.signals.unseen_query_parameter.score,
+            self.unknown_threats.signals.body_size_deviation.score,
+        ]
+        .contains(&0)
+        {
+            return Err(ConfigError::InvalidUnknownThreatSignalScore);
+        }
+        if parse_duration_seconds(&self.unknown_threats.retention).is_none() {
+            return Err(ConfigError::InvalidUnknownThreatRetention);
+        }
+        if self.unknown_threats.max_routes == 0 {
+            return Err(ConfigError::InvalidUnknownThreatMaxRoutes);
+        }
+        if self
+            .unknown_threats
+            .excluded_paths
+            .iter()
+            .any(|path| path.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidUnknownThreatExcludedPath);
+        }
+        for route in &self.unknown_threats.routes {
+            if route.path.trim().is_empty() {
+                return Err(ConfigError::InvalidUnknownThreatRoute);
+            }
+            if route.minimum_observations == Some(0) {
+                return Err(ConfigError::InvalidUnknownThreatMinimumObservations);
+            }
+            if route.monitor_threshold == Some(0) {
+                return Err(ConfigError::InvalidUnknownThreatMonitorThreshold);
+            }
+            let monitor_threshold = route
+                .monitor_threshold
+                .unwrap_or(self.unknown_threats.monitor_threshold);
+            if route
+                .block_threshold
+                .is_some_and(|threshold| threshold < monitor_threshold)
+            {
+                return Err(ConfigError::InvalidUnknownThreatBlockThreshold);
+            }
+            if route
+                .minimum_independent_signals
+                .is_some_and(|signals| signals < 2)
+            {
+                return Err(ConfigError::InvalidUnknownThreatMinimumSignals);
+            }
+            if route
+                .minimum_baseline_age
+                .as_deref()
+                .is_some_and(|duration| parse_duration_seconds(duration).is_none())
+            {
+                return Err(ConfigError::InvalidUnknownThreatMinimumBaselineAge);
+            }
+            let minimum_observations = route
+                .minimum_observations
+                .unwrap_or(self.unknown_threats.minimum_observations);
+            if route
+                .minimum_block_observations
+                .is_some_and(|observations| observations < minimum_observations)
+            {
+                return Err(ConfigError::InvalidUnknownThreatBlockObservations);
+            }
+        }
+
+        Ok(())
+    }
+
+    fn validate_campaign_correlation(&self) -> Result<(), ConfigError> {
+        let config = &self.campaign_correlation;
+        if config.backend == CampaignBackend::Local && config.state_path.as_os_str().is_empty() {
+            return Err(ConfigError::InvalidCampaignStatePath);
+        }
+        if config.backend == CampaignBackend::Redis
+            && config.redis_url.as_deref().unwrap_or("").trim().is_empty()
+        {
+            return Err(ConfigError::MissingCampaignRedisUrl);
+        }
+        if config
+            .redis_password
+            .as_deref()
+            .is_some_and(|password| password.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidCampaignRedisPassword);
+        }
+        if config.redis_key_prefix.trim().is_empty() {
+            return Err(ConfigError::InvalidCampaignRedisKeyPrefix);
+        }
+        let window =
+            parse_duration_seconds(&config.window).ok_or(ConfigError::InvalidCampaignDuration)?;
+        let retention = parse_duration_seconds(&config.retention)
+            .ok_or(ConfigError::InvalidCampaignDuration)?;
+        if retention < window {
+            return Err(ConfigError::InvalidCampaignRetention);
+        }
+        if config.max_events == 0 {
+            return Err(ConfigError::InvalidCampaignMaxEvents);
+        }
+        if config.policy_catalog.trim().is_empty() {
+            return Err(ConfigError::InvalidCampaignPolicyCatalogPath);
+        }
+        validate_campaign_policies(&config.policies)?;
         Ok(())
     }
 
@@ -1425,7 +2192,7 @@ impl SaugraConfig {
             .join(",");
 
         format!(
-            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, behavior_enabled={}, behavior_mode={:?}, behavior_backend={:?}, behavior_state_path={}, behavior_score_window={}, behavior_decay_window={}, behavior_monitor_threshold={}, behavior_block_threshold={}, behavior_route_overrides={}, behavior_category_overrides={}, bot_protection_enabled={}, bot_protection_mode={:?}, bot_protection_backend={:?}, bot_protection_state_path={}, bot_protection_monitor_threshold={}, bot_protection_block_threshold={}, bot_protection_routes={}, runtime_policy_enabled={}, runtime_policy_path={}, runtime_policy_reload_interval={}, runtime_policy_allowlist_effect={:?}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
+            "listen={}, mode={:?}, upstreams=[{}], routes={}, max_body_size={}, rate_limiting={}, rate_limit_backend={:?}, requests_per_minute={}, burst={}, route_limits={}, behavior_enabled={}, behavior_mode={:?}, behavior_backend={:?}, behavior_state_path={}, behavior_score_window={}, behavior_decay_window={}, behavior_monitor_threshold={}, behavior_block_threshold={}, behavior_route_overrides={}, behavior_category_overrides={}, unknown_threats_enabled={}, unknown_threats_mode={:?}, unknown_threats_backend={:?}, unknown_threats_state_path={}, unknown_threats_signal_catalog={}, unknown_threats_minimum_observations={}, unknown_threats_monitor_threshold={}, unknown_threats_block_threshold={}, unknown_threats_minimum_independent_signals={}, unknown_threats_minimum_baseline_age={}, unknown_threats_minimum_block_observations={}, unknown_threats_retention={}, unknown_threats_max_routes={}, unknown_threats_excluded_paths={}, unknown_threats_route_overrides={}, bot_protection_enabled={}, bot_protection_mode={:?}, bot_protection_backend={:?}, bot_protection_state_path={}, bot_protection_monitor_threshold={}, bot_protection_block_threshold={}, bot_protection_routes={}, runtime_policy_enabled={}, runtime_policy_path={}, runtime_policy_reload_interval={}, runtime_policy_allowlist_effect={:?}, inspect_json_body={}, websocket_enabled={}, websocket_allowed_origins={}, websocket_allowed_hosts={}, owasp_crs={}, paranoia_level={}, detection_paranoia_level={}, blocking_paranoia_level={}",
             self.server.listen,
             self.server.mode,
             upstreams,
@@ -1446,6 +2213,21 @@ impl SaugraConfig {
             self.behavior.block_threshold,
             self.behavior.route_overrides.len(),
             self.behavior.category_overrides.len(),
+            self.unknown_threats.enabled,
+            self.unknown_threats.mode,
+            self.unknown_threats.backend,
+            self.unknown_threats.state_path.display(),
+            self.unknown_threats.signal_catalog,
+            self.unknown_threats.minimum_observations,
+            self.unknown_threats.monitor_threshold,
+            self.unknown_threats.block_threshold,
+            self.unknown_threats.minimum_independent_signals,
+            self.unknown_threats.minimum_baseline_age,
+            self.unknown_threats.minimum_block_observations,
+            self.unknown_threats.retention,
+            self.unknown_threats.max_routes,
+            self.unknown_threats.excluded_paths.len(),
+            self.unknown_threats.routes.len(),
             self.bot_protection.enabled,
             self.bot_protection.mode,
             self.bot_protection.backend,
@@ -1601,8 +2383,31 @@ fn is_valid_header_name(value: &str) -> bool {
         })
 }
 
+fn is_valid_trusted_assertion_header(value: &str) -> bool {
+    is_valid_header_name(value)
+        && !matches!(
+            value.trim().to_ascii_lowercase().as_str(),
+            "authorization" | "cookie" | "set-cookie" | "x-api-key" | "x-auth-token"
+        )
+}
+
 fn default_true() -> bool {
     true
+}
+
+fn is_valid_ip_or_cidr(value: &str) -> bool {
+    let value = value.trim();
+    if value.parse::<IpAddr>().is_ok() {
+        return true;
+    }
+
+    let Some((network, prefix)) = value.split_once('/') else {
+        return false;
+    };
+    network.parse::<Ipv4Addr>().is_ok()
+        && prefix
+            .parse::<u8>()
+            .is_ok_and(|prefix_length| prefix_length <= 32)
 }
 
 fn default_max_body_size() -> String {
@@ -1669,6 +2474,106 @@ fn default_behavior_score_window() -> String {
 
 fn default_behavior_state_path() -> PathBuf {
     PathBuf::from("logs/saugra-waf-behavior-state.json")
+}
+
+fn default_unknown_threat_state_path() -> PathBuf {
+    PathBuf::from("logs/saugra-waf-unknown-threat-state.json")
+}
+
+fn default_unknown_threat_minimum_observations() -> u64 {
+    100
+}
+
+fn default_unknown_threat_monitor_threshold() -> u16 {
+    20
+}
+
+fn default_unknown_threat_block_threshold() -> u16 {
+    40
+}
+
+fn default_unknown_threat_minimum_independent_signals() -> usize {
+    2
+}
+
+fn default_unknown_threat_minimum_baseline_age() -> String {
+    "7d".to_string()
+}
+
+fn default_unknown_threat_minimum_block_observations() -> u64 {
+    1_000
+}
+
+fn default_unknown_threat_signal_catalog() -> String {
+    "builtin".to_string()
+}
+
+fn default_unknown_threat_body_size_multiplier() -> u16 {
+    4
+}
+
+fn default_unknown_threat_promotion_observations() -> u64 {
+    3
+}
+
+fn default_unknown_threat_max_methods() -> usize {
+    16
+}
+
+fn default_unknown_threat_max_content_types() -> usize {
+    32
+}
+
+fn default_unknown_threat_max_query_parameters() -> usize {
+    256
+}
+
+fn default_unknown_threat_signals() -> UnknownThreatSignals {
+    load_builtin_unknown_threat_signal_catalog().signals
+}
+
+fn default_unknown_threat_retention() -> String {
+    "30d".to_string()
+}
+
+fn default_unknown_threat_max_routes() -> usize {
+    10_000
+}
+
+fn default_campaign_state_path() -> PathBuf {
+    PathBuf::from("logs/saugra-waf-campaign-state.json")
+}
+
+fn default_campaign_window() -> String {
+    "15m".to_string()
+}
+
+fn default_campaign_redis_key_prefix() -> String {
+    "saugra-waf:campaign-correlation".to_string()
+}
+
+fn default_campaign_retention() -> String {
+    "24h".to_string()
+}
+
+fn default_campaign_max_events() -> usize {
+    50_000
+}
+
+fn default_campaign_policy_catalog() -> String {
+    "builtin".to_string()
+}
+
+fn default_campaign_policies() -> Vec<CampaignPolicyConfig> {
+    load_builtin_campaign_policy_catalog().campaigns
+}
+
+fn default_campaign_minimum() -> usize {
+    1
+}
+
+fn default_campaign_scope() -> String {
+    "global".to_string()
 }
 
 fn default_bot_protection_state_path() -> PathBuf {
@@ -1790,10 +2695,111 @@ fn default_bot_protection_owasp_category() -> Option<String> {
 }
 
 const BUILTIN_THREAT_PATH_CATALOG: &str = include_str!("../configs/intelligence/scanner-paths.yml");
+const BUILTIN_UNKNOWN_THREAT_SIGNAL_CATALOG: &str =
+    include_str!("../configs/intelligence/unknown-threat-signals.yml");
+const BUILTIN_CAMPAIGN_POLICY_CATALOG: &str =
+    include_str!("../configs/intelligence/campaign-policies.yml");
 
 fn load_builtin_threat_path_catalog() -> ThreatPathCatalog {
     serde_yaml::from_str(BUILTIN_THREAT_PATH_CATALOG)
         .expect("bundled threat path catalog must be valid YAML")
+}
+
+fn load_builtin_unknown_threat_signal_catalog() -> UnknownThreatSignalCatalog {
+    serde_yaml::from_str(BUILTIN_UNKNOWN_THREAT_SIGNAL_CATALOG)
+        .expect("bundled unknown-threat signal catalog must be valid YAML")
+}
+
+fn load_builtin_campaign_policy_catalog() -> CampaignPolicyCatalog {
+    serde_yaml::from_str(BUILTIN_CAMPAIGN_POLICY_CATALOG)
+        .expect("bundled campaign policy catalog must be valid YAML")
+}
+
+fn load_campaign_policy_catalog(path: &str) -> Result<CampaignPolicyCatalog, ConfigError> {
+    let catalog = if path == "builtin" {
+        load_builtin_campaign_policy_catalog()
+    } else {
+        let contents = fs::read_to_string(path)?;
+        serde_yaml::from_str(&contents).map_err(|source| {
+            ConfigError::InvalidCampaignPolicyCatalog {
+                path: path.to_string(),
+                source,
+            }
+        })?
+    };
+    if catalog.version != 1 {
+        return Err(ConfigError::InvalidCampaignPolicyCatalogVersion);
+    }
+    validate_campaign_policies(&catalog.campaigns)?;
+    Ok(catalog)
+}
+
+fn validate_campaign_policies(policies: &[CampaignPolicyConfig]) -> Result<(), ConfigError> {
+    let mut kinds = std::collections::BTreeSet::new();
+    for policy in policies {
+        if policy.kind.trim().is_empty()
+            || !matches!(
+                policy.scope.as_str(),
+                "global" | "client" | "session" | "route"
+            )
+            || policy.score == 0
+            || policy.minimum_events == 0
+            || policy.minimum_clients == 0
+            || policy.minimum_sessions == 0
+            || policy.minimum_routes == 0
+            || !kinds.insert(policy.kind.trim())
+            || policy
+                .categories
+                .iter()
+                .any(|value| value.trim().is_empty())
+            || policy
+                .path_prefixes
+                .iter()
+                .any(|value| value.trim().is_empty())
+            || policy.stages.iter().any(|stage| {
+                stage.name.trim().is_empty()
+                    || stage.categories.is_empty()
+                    || stage.categories.iter().any(|value| value.trim().is_empty())
+            })
+            || (!policy.stages.is_empty()
+                && (policy.minimum_stages == 0 || policy.minimum_stages > policy.stages.len()))
+        {
+            return Err(ConfigError::InvalidCampaignPolicy);
+        }
+    }
+    Ok(())
+}
+
+fn load_unknown_threat_signal_catalog(
+    path: &str,
+) -> Result<UnknownThreatSignalCatalog, ConfigError> {
+    let catalog = if path == "builtin" {
+        load_builtin_unknown_threat_signal_catalog()
+    } else {
+        let contents = fs::read_to_string(path)?;
+        serde_yaml::from_str(&contents).map_err(|source| {
+            ConfigError::InvalidUnknownThreatSignalCatalog {
+                path: path.to_string(),
+                source,
+            }
+        })?
+    };
+
+    if catalog.version != 1 {
+        return Err(ConfigError::InvalidUnknownThreatSignalCatalogVersion);
+    }
+    if [
+        catalog.signals.unseen_method.score,
+        catalog.signals.unseen_content_type.score,
+        catalog.signals.unseen_query_parameter.score,
+        catalog.signals.body_size_deviation.score,
+    ]
+    .contains(&0)
+    {
+        return Err(ConfigError::InvalidUnknownThreatSignalScore);
+    }
+
+    Ok(catalog)
 }
 
 fn load_threat_path_catalog(path: &str) -> Result<ThreatPathCatalog, ConfigError> {
@@ -1826,6 +2832,78 @@ fn default_scanner_paths() -> Vec<String> {
 
 fn default_ai_mode() -> String {
     "explain_only".to_string()
+}
+
+fn default_ai_provider() -> String {
+    "llama_cpp".to_string()
+}
+
+fn default_ai_model() -> String {
+    "saugra-qwen3-0.6b".to_string()
+}
+
+fn default_ai_ollama_url() -> String {
+    "http://127.0.0.1:11434".to_string()
+}
+
+fn default_ai_llama_cpp_url() -> String {
+    "http://127.0.0.1:8080".to_string()
+}
+
+fn default_ai_prompt_version() -> String {
+    "saugra-explain-v1".to_string()
+}
+
+fn default_ai_timeout() -> String {
+    "60s".to_string()
+}
+
+fn default_ai_audit_log_path() -> PathBuf {
+    PathBuf::from("logs/saugra-waf-ai-audit.jsonl")
+}
+
+fn default_ai_audit_log_max_size() -> String {
+    "100mb".to_string()
+}
+
+fn default_ai_audit_log_max_files() -> usize {
+    10
+}
+
+fn default_ai_max_tuning_suggestions() -> usize {
+    3
+}
+
+fn is_local_http_url(value: &str) -> bool {
+    let value = value.trim().trim_end_matches('/');
+    let Some(authority) = value.strip_prefix("http://") else {
+        return false;
+    };
+    let authority = authority.split('/').next().unwrap_or_default();
+    if matches!(authority, "localhost" | "127.0.0.1" | "[::1]") {
+        return true;
+    }
+    ["localhost:", "127.0.0.1:", "[::1]:"]
+        .iter()
+        .find_map(|prefix| authority.strip_prefix(prefix))
+        .is_some_and(|port| port.parse::<u16>().is_ok())
+}
+
+fn is_allowlisted_https_url(value: &str, allowlist: &[String]) -> bool {
+    let Some(authority) = value.trim().strip_prefix("https://") else {
+        return false;
+    };
+    let host = authority
+        .split('/')
+        .next()
+        .unwrap_or_default()
+        .split(':')
+        .next()
+        .unwrap_or_default();
+    !host.is_empty()
+        && allowlist
+            .iter()
+            .any(|allowed| allowed.trim().eq_ignore_ascii_case(host))
 }
 
 fn default_log_format() -> String {
@@ -2499,6 +3577,306 @@ upstreams:
     }
 
     #[test]
+    fn unknown_threat_config_defaults_to_disabled_monitoring() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert!(!config.unknown_threats.enabled);
+        assert_eq!(config.unknown_threats.minimum_observations, 100);
+        assert_eq!(config.unknown_threats.monitor_threshold, 20);
+        assert_eq!(config.unknown_threats.mode, UnknownThreatMode::Monitor);
+        assert_eq!(config.unknown_threats.block_threshold, 40);
+        assert_eq!(config.unknown_threats.minimum_independent_signals, 2);
+        assert_eq!(config.unknown_threats.minimum_baseline_age, "7d");
+        assert_eq!(config.unknown_threats.minimum_block_observations, 1_000);
+        assert_eq!(config.unknown_threats.signal_catalog, "builtin");
+        assert_eq!(config.unknown_threats.signals.unseen_method.score, 20);
+    }
+
+    #[test]
+    fn from_file_loads_external_unknown_threat_signal_catalog() {
+        let dir = tempfile::tempdir().unwrap();
+        let catalog_path = dir.path().join("signals.yml");
+        let config_path = dir.path().join("saugra.yml");
+        fs::write(
+            &catalog_path,
+            r#"
+version: 1
+signals:
+  unseen_method:
+    score: 31
+  unseen_content_type:
+    score: 17
+  unseen_query_parameter:
+    score: 11
+  body_size_deviation:
+    score: 19
+"#,
+        )
+        .unwrap();
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  signal_catalog: {}
+"#,
+                catalog_path.display()
+            ),
+        )
+        .unwrap();
+
+        let config = SaugraConfig::from_file(&config_path).unwrap();
+        config.validate().unwrap();
+        assert_eq!(config.unknown_threats.signals.unseen_method.score, 31);
+        assert_eq!(config.unknown_threats.signals.body_size_deviation.score, 19);
+    }
+
+    #[test]
+    fn rejects_invalid_unknown_threat_signal_catalogs() {
+        let dir = tempfile::tempdir().unwrap();
+        let catalog_path = dir.path().join("signals.yml");
+        let config_path = dir.path().join("saugra.yml");
+        fs::write(
+            &config_path,
+            format!(
+                r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  signal_catalog: {}
+"#,
+                catalog_path.display()
+            ),
+        )
+        .unwrap();
+
+        fs::write(
+            &catalog_path,
+            r#"
+version: 2
+signals:
+  unseen_method: { score: 20 }
+  unseen_content_type: { score: 15 }
+  unseen_query_parameter: { score: 10 }
+  body_size_deviation: { score: 15 }
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            SaugraConfig::from_file(&config_path),
+            Err(ConfigError::InvalidUnknownThreatSignalCatalogVersion)
+        ));
+
+        fs::write(
+            &catalog_path,
+            r#"
+version: 1
+signals:
+  unseen_method: { score: 0 }
+  unseen_content_type: { score: 15 }
+  unseen_query_parameter: { score: 10 }
+  body_size_deviation: { score: 15 }
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            SaugraConfig::from_file(&config_path),
+            Err(ConfigError::InvalidUnknownThreatSignalScore)
+        ));
+    }
+
+    #[test]
+    fn rejects_legacy_inline_unknown_threat_signal_scores() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  unseen_method_score: 30
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::LegacyUnknownThreatSignalScores)
+        ));
+    }
+
+    #[test]
+    fn rejects_unsafe_unknown_threat_learning_values() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  minimum_observations: 0
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidUnknownThreatMinimumObservations)
+        ));
+    }
+
+    #[test]
+    fn unknown_threat_block_mode_requires_completed_shadow_review() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  mode: block
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::UnknownThreatShadowReviewRequired)
+        ));
+    }
+
+    #[test]
+    fn accepts_guarded_unknown_threat_block_policy() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+  mode: block
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  enabled: true
+  mode: block
+  shadow_review_completed: true
+  minimum_observations: 100
+  minimum_block_observations: 1000
+  minimum_baseline_age: 7d
+  minimum_independent_signals: 2
+  routes:
+    - path: /admin
+      high_risk: true
+      block_threshold: 50
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert!(config.unknown_threats.routes[0].high_risk);
+    }
+
+    #[test]
+    fn accepts_bounded_unknown_threat_route_policies() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  enabled: true
+  retention: 14d
+  max_routes: 5000
+  excluded_paths:
+    - /health
+  routes:
+    - path: /uploads
+      learning_enabled: false
+    - path: /admin
+      minimum_observations: 200
+      monitor_threshold: 15
+"#,
+        )
+        .unwrap();
+
+        config.validate().unwrap();
+        assert_eq!(config.unknown_threats.retention, "14d");
+        assert_eq!(config.unknown_threats.max_routes, 5_000);
+        assert_eq!(config.unknown_threats.routes.len(), 2);
+        assert!(!config.unknown_threats.routes[0].learning_enabled);
+    }
+
+    #[test]
+    fn rejects_invalid_unknown_threat_retention_and_routes() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  retention: forever
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidUnknownThreatRetention)
+        ));
+
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+unknown_threats:
+  routes:
+    - path: " "
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidUnknownThreatRoute)
+        ));
+    }
+
+    #[test]
     fn accepts_behavior_route_and_category_overrides() {
         let config: SaugraConfig = serde_yaml::from_str(
             r#"
@@ -3149,6 +4527,240 @@ posture:
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidPostureAllowedMethods)
+        ));
+    }
+
+    #[test]
+    fn campaign_redis_backend_requires_a_url() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+campaign_correlation:
+  enabled: true
+  backend: redis
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::MissingCampaignRedisUrl)
+        ));
+    }
+
+    #[test]
+    fn command_ai_provider_requires_a_command() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  enabled: true
+  mode: explain_only
+  provider: command
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::MissingAiCommand)
+        ));
+    }
+
+    #[test]
+    fn ai_defaults_to_local_llama_cpp_with_small_qwen3() {
+        let config = AiConfig::default();
+
+        assert_eq!(config.provider, "llama_cpp");
+        assert_eq!(config.llama_cpp_url, "http://127.0.0.1:8080");
+        assert_eq!(config.ollama_url, "http://127.0.0.1:11434");
+        assert_eq!(config.model, "saugra-qwen3-0.6b");
+        assert_eq!(config.timeout, "60s");
+    }
+
+    #[test]
+    fn rejects_non_local_ollama_url() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  provider: ollama
+  ollama_url: https://models.example.com
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidAiOllamaUrl)
+        ));
+    }
+
+    #[test]
+    fn accepts_custom_loopback_ollama_port() {
+        assert!(is_local_http_url("http://localhost:11435"));
+        assert!(is_local_http_url("http://127.0.0.1:11435/api"));
+        assert!(is_local_http_url("http://[::1]:11435"));
+    }
+
+    #[test]
+    fn rejects_non_local_llama_cpp_url() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  provider: llama_cpp
+  llama_cpp_url: http://models.example.com:8080
+"#,
+        )
+        .unwrap();
+
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidAiLlamaCppUrl)
+        ));
+    }
+
+    #[test]
+    fn accepts_context_aware_exclusion_with_trusted_identity_assertion() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+forwarded_headers:
+  identity_assertions:
+    - X-Authenticated-Role
+rules:
+  exclusions:
+    - name: trusted editor preview
+      rule_ids: [SAUGRA-XSS-001]
+      methods: [POST]
+      targets: [query]
+      content_types: [application/json]
+      trusted_headers:
+        - name: X-Deployment
+          values: [internal]
+      identities:
+        - name: X-Authenticated-Role
+          values: [editor]
+"#,
+        )
+        .unwrap();
+
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_identity_exclusion_for_unconfigured_or_sensitive_header() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+rules:
+  exclusions:
+    - rule_ids: [SAUGRA-XSS-001]
+      identities:
+        - name: X-Authenticated-Role
+          values: [editor]
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidRuleExclusionIdentity)
+        ));
+
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+forwarded_headers:
+  identity_assertions: [Authorization]
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidForwardedHeadersIdentityAssertion)
+        ));
+    }
+
+    #[test]
+    fn accepts_hardened_remote_ai_provider_configuration() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  provider: openai_compatible
+  allow_remote: true
+  local_only: false
+  endpoint: https://api.example.com/v1/chat/completions
+  endpoint_allowlist: [api.example.com]
+  api_key_env: SAUGRA_AI_API_KEY
+  data_region: operator-documented
+  retention_policy: no-training-contract
+"#,
+        )
+        .unwrap();
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn rejects_remote_ai_without_opt_in_or_https_allowlist() {
+        let config: SaugraConfig = serde_yaml::from_str(
+            r#"
+server:
+  listen: 127.0.0.1:8787
+upstreams:
+  - name: app
+    host: example.com
+    target: http://127.0.0.1:8000
+ai:
+  provider: gemini
+  endpoint: http://api.example.com/generate
+"#,
+        )
+        .unwrap();
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::RemoteAiNotEnabled)
         ));
     }
 }

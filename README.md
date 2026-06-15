@@ -97,23 +97,18 @@ This repository now has a production-oriented foundation:
 
 See `ROADMAP.md` for the public development roadmap.
 
-Public docs:
+Documentation is organized by audience:
 
-- `docs/ARCHITECTURE.md` — technical architecture
-- `docs/PRODUCT_SPEC.md` — product specification
-- `docs/LICENSING.md` — licensing, commercial use, liability, and trademark
-  guidance
-- `docs/PRODUCTION_DEPLOYMENT.md` — Nginx/Apache production deployment guide
-- `docs/ADMIN_GUIDE.md` — operator commands, troubleshooting, allowlisting,
-  blocking, logs, and explanations
-- `docs/OWASP_TOP_10_STRATEGY.md` — layered OWASP Top 10 coverage strategy
-- `docs/CRS_IMPORT.md` — OWASP CRS conversion support and limitations
-- `docs/DEBIAN_PACKAGING.md` — `.deb` build and GitHub Release publishing guide
-- `docs/APT_REPOSITORY.md` — signed Ubuntu/Debian APT repository guide
-- `docs/OFFICIAL_DEBIAN_RELEASE.md` — official Debian archive release plan
-- `docs/RELEASE_PROCESS.md` — maintainer release checklist
-- `docs/RUNTIME_ALLOWLIST.md` — no-restart local runtime allowlisting design
-- `TRADEMARKS.md` — Saugra name, logo, and branding policy
+- [Administration guide](docs/ADMIN_GUIDE.md): installation, configuration,
+  Nginx/Apache deployment, AI providers, operations, and troubleshooting.
+- [Architecture](docs/ARCHITECTURE.md): request processing, security model,
+  rules, CRS conversion, storage, and developer design.
+- [Release process](docs/RELEASE_PROCESS.md): package, APT, signing, and release
+  procedures for maintainers.
+- [Roadmap](ROADMAP.md): completed and planned product work.
+- [Contributing](CONTRIBUTING.md): development and verification workflow.
+- [Licensing](docs/LICENSING.md) and [trademarks](TRADEMARKS.md): legal and
+  branding guidance.
 
 Install status:
 
@@ -180,6 +175,7 @@ cd saugra-waf
 cargo build
 cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
+cargo run --bin saugra-waf -- rules view <saugra-rule-id> --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- run --config configs/saugra-waf.example.yml
 ```
 
@@ -225,10 +221,16 @@ Generate a daily security summary from local event logs:
 cargo run --bin saugra-waf -- summary daily --config configs/saugra-waf.example.yml
 ```
 
-Preview stale generated file cleanup:
+Preview stale generated file and unknown-threat baseline cleanup:
 
 ```bash
 cargo run --bin saugra-waf -- cleanup run --dry-run --config configs/saugra-waf.example.yml
+```
+
+Review unknown-threat shadow candidates:
+
+```bash
+cargo run --bin saugra-waf -- unknown-threats report --config configs/saugra-waf.example.yml
 ```
 
 Explain a recorded request decision:
@@ -236,6 +238,21 @@ Explain a recorded request decision:
 ```bash
 cargo run --bin saugra-waf -- explain <request-id> --config configs/saugra-waf.example.yml
 ```
+
+AI explanations use local llama.cpp with Qwen3 0.6B Q8 by default and fall back
+to Saugra's deterministic local explanation when inference is unavailable:
+
+```bash
+llama-server \
+  -hf Qwen/Qwen3-0.6B-GGUF:Q8_0 \
+  --alias saugra-qwen3-0.6b \
+  --host 127.0.0.1 --port 8080 \
+  --ctx-size 2048 --threads 1 --parallel 1 --jinja --no-webui
+```
+
+See the [administration guide](docs/ADMIN_GUIDE.md#ai-explanations) for local
+llama.cpp installation, resource limits, model-free operation, Ollama
+compatibility, remote adapters, and rollback.
 
 Run local deployment posture checks:
 
@@ -249,8 +266,8 @@ Convert supported OWASP CRS regex rules into Saugra YAML:
 cargo run --bin saugra-waf -- rules convert-crs --input /path/to/coreruleset/rules --output configs/rules/converted-crs.yml
 ```
 
-See `docs/CRS_IMPORT.md` for supported CRS operators, transform mappings,
-data-file import behavior, and unsupported feature reporting.
+See [Rule Packs And CRS Import](docs/ARCHITECTURE.md#rule-packs-and-crs-import)
+for supported operators, transforms, and limitations.
 
 ## Production Deployment
 
@@ -274,9 +291,9 @@ For production:
 - Configure exact WebSocket `allowed_origins` and `allowed_hosts` before routing
   browser WebSocket traffic through Saugra.
 
-Full production guides and examples:
+Production references:
 
-- `docs/PRODUCTION_DEPLOYMENT.md`
+- `docs/ADMIN_GUIDE.md`
 - `configs/saugra-waf.production.example.yml`
 - `configs/nginx.production.example.conf`
 - `configs/apache.production.example.conf`
@@ -303,9 +320,8 @@ Check the service:
 curl -i http://127.0.0.1:8787/_saugra-waf/health
 ```
 
-See `docs/PRODUCTION_DEPLOYMENT.md` for the complete Nginx, Apache, Redis, and
-monitor-first rollout procedure. Source installation remains available for
-development and testing.
+See the [administration guide](docs/ADMIN_GUIDE.md) for the complete Nginx,
+Apache, Redis, AI, and monitor-first rollout procedure.
 
 ## Build A Debian Package
 
@@ -317,120 +333,8 @@ cargo test --locked --all-targets --all-features
 cargo deb --locked
 ```
 
-The package artifact is written under `target/debian/`. See
-`docs/DEBIAN_PACKAGING.md` for the local install test and GitHub Release
-publishing flow.
-
-## APT Release Setup
-
-Maintainers must complete this one-time setup before a version tag can publish
-the `.deb` package and signed APT repository through
-`.github/workflows/release.yml`.
-
-### 1. Enable GitHub Pages
-
-For an organization repository, first open the organization **Settings**, go to
-**Member privileges**, and allow members to create public GitHub Pages sites
-under **Pages creation**.
-
-Then open the repository Pages settings:
-
-```txt
-https://github.com/saugra/saugra-waf/settings/pages
-```
-
-Under **Build and deployment**, set **Source** to **GitHub Actions**. Do not
-configure a branch-based Pages workflow; the release workflow uploads and
-deploys the generated APT repository.
-
-### 2. Allow Release Tags To Deploy
-
-Open:
-
-```txt
-https://github.com/saugra/saugra-waf/settings/environments
-```
-
-Select the `github-pages` environment. Under **Deployment branches and tags**,
-choose **Selected branches and tags**, then add this as a **tag** rule:
-
-```txt
-v*.*.*
-```
-
-Make sure GitHub reports tags, rather than branches, as allowed by the rule.
-
-### 3. Create A Dedicated Signing Key
-
-Create the APT signing key on a trusted maintainer machine. Use a strong,
-dedicated passphrase and keep an encrypted offline backup of this GPG home:
-
-```bash
-export GNUPGHOME="$HOME/.saugra-waf-apt-gnupg"
-install -d -m 700 "$GNUPGHOME"
-
-gpg --quick-generate-key \
-  "Saugra WAF APT Repository <releases@saugra-waf.dev>" \
-  rsa4096 sign 2y
-
-gpg --list-secret-keys --with-subkey-fingerprint
-```
-
-Use the full hexadecimal primary-key fingerprint printed below the `sec` line
-as the signing key ID. Do not include the `rsa4096/` prefix.
-
-Export the private key temporarily:
-
-```bash
-gpg --armor --export-secret-keys <FULL-FINGERPRINT> \
-  > /tmp/saugra-waf-apt-private.asc
-```
-
-Never commit this file or disclose its contents or passphrase.
-
-### 4. Add GitHub Actions Secrets
-
-Open:
-
-```txt
-https://github.com/saugra/saugra-waf/settings/secrets/actions
-```
-
-Add these repository secrets:
-
-- `SAUGRA_APT_GPG_KEY_ID`: full primary-key fingerprint.
-- `SAUGRA_APT_GPG_PRIVATE_KEY`: complete contents of
-  `/tmp/saugra-waf-apt-private.asc`, including the BEGIN and END lines.
-- `SAUGRA_APT_GPG_PASSPHRASE`: exact signing-key passphrase.
-
-After adding the secrets, securely remove the temporary export:
-
-```bash
-shred -u /tmp/saugra-waf-apt-private.asc
-```
-
-### 5. Publish A Release
-
-Update `Cargo.toml`, `Cargo.lock`, and `CHANGELOG.md`, commit and push the
-release preparation, then create an annotated version tag:
-
-```bash
-git tag -a v<version> -m "Saugra WAF v<version>"
-git push origin main
-git push origin v<version>
-```
-
-The tag triggers tests, builds and install-tests the `.deb`, creates the GitHub
-Release, signs the APT metadata, and deploys the repository to:
-
-```txt
-https://saugra.github.io/saugra-waf/apt
-```
-
-Verify the release by following the
-[Ubuntu or Debian installation](#install-on-ubuntu-or-debian) steps on a clean
-host. See `docs/APT_REPOSITORY.md` and `docs/RELEASE_PROCESS.md` for the full
-maintainer checklist, signing policy, and troubleshooting details.
+The package artifact is written under `target/debian/`. See the
+[release process](docs/RELEASE_PROCESS.md) for install tests and publishing.
 
 ## Verify A Deployment
 
@@ -470,10 +374,23 @@ rules:
         - /api/articles
       query_params:
         - content
+      methods:
+        - POST
+      targets:
+        - query
+      content_types:
+        - application/json
 ```
 
 Global exclusions reduce protection across the whole application. Use them only
 when the rule is intentionally disabled everywhere.
+
+Value-based `trusted_headers` and authenticated `identities` scopes match only
+when the direct peer is in `forwarded_headers.trusted_proxies`. Identity headers
+must also be listed in `forwarded_headers.identity_assertions`; the front proxy
+must remove client-supplied copies before setting its authenticated value.
+Saugra retains parameter names, header names, normalized content type, and body
+size for tuning without retaining request bodies or trusted header values.
 
 Bot and behavior threshold findings produced in monitor mode remain visible in
 events and explanations, but do not contribute to the blocking anomaly score.
@@ -487,7 +404,7 @@ unrelated deterministic attack rules or raising the global anomaly threshold.
 Saugra WAF Community Edition is licensed under the [GNU Affero General Public
 License v3.0 only (AGPL-3.0-only)](LICENSE).
 
-See `docs/LICENSING.md` for guidance on commercial use, modified network
+See [licensing](docs/LICENSING.md) for guidance on commercial use, modified network
 deployments, warranty and liability limits, and trademark policy.
 
 For commercial licensing or support questions, contact the maintainers through

@@ -7,8 +7,8 @@ use anyhow::Context;
 use clap::{Parser, Subcommand};
 use saugra_waf::{
     ai, behavior, bot, config::SaugraConfig, crs_convert, event_store,
-    event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rules, runtime_policy,
-    security_summary, standards, storage_cleanup,
+    event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rule_drafts, rules,
+    runtime_policy, security_summary, standards, storage_cleanup, unknown_threats,
 };
 
 const INSTALLED_CONFIG_PATH: &str = "/etc/saugra-waf/saugra-waf.yml";
@@ -87,10 +87,20 @@ enum Commands {
         #[command(subcommand)]
         command: SummaryCommand,
     },
-    /// Remove stale generated files according to configured retention policy.
+    /// Remove stale generated files and local baseline entries.
     Cleanup {
         #[command(subcommand)]
         command: CleanupCommand,
+    },
+    /// Review unknown-threat shadow and enforcement candidates.
+    UnknownThreats {
+        #[command(subcommand)]
+        command: UnknownThreatCommand,
+    },
+    /// Evaluate configured explanation providers against sanitized fixtures.
+    Ai {
+        #[command(subcommand)]
+        command: AiCommand,
     },
 }
 
@@ -109,12 +119,87 @@ enum RulesCommand {
         #[arg(short, long, default_value_os_t = default_config_path())]
         config: PathBuf,
     },
+    /// View metadata and design details for one active WAF rule.
+    View {
+        rule_id: String,
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+    },
+    /// Validate and compile one inactive Saugra YAML rule pack.
+    Validate {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(long, default_value_t = u8::MAX)]
+        paranoia_level: u8,
+    },
+    /// Replay one inactive rule pack against retained security events.
+    Replay {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(short, long, default_value_t = 1000)]
+        limit: usize,
+        #[arg(long)]
+        output: Option<PathBuf>,
+        #[arg(long)]
+        fixtures: Option<PathBuf>,
+    },
+    /// Create a deterministic draft rule from repeated reviewed anomalies.
+    Draft {
+        #[arg(long = "request-id", required = true, action = clap::ArgAction::Append)]
+        request_ids: Vec<String>,
+        #[arg(short, long)]
+        output: PathBuf,
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+    },
+    /// Record human approval and bind a replay report to a draft manifest.
+    Approve {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(long)]
+        reviewer: String,
+        #[arg(long)]
+        replay_report: PathBuf,
+    },
+    /// Publish an approved draft while the configured server remains in monitor mode.
+    Publish {
+        #[arg(short, long)]
+        input: PathBuf,
+        #[arg(short, long)]
+        destination: PathBuf,
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+    },
     /// Convert supported OWASP CRS regex rules into Saugra YAML.
     ConvertCrs {
         #[arg(short, long)]
         input: PathBuf,
         #[arg(short, long)]
         output: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum AiCommand {
+    /// Run versioned sanitized explanation evaluation cases.
+    Evaluate {
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(long, default_value = "configs/ai/evaluation-cases.jsonl")]
+        cases: PathBuf,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+    /// Produce an offline advisory review of retained unknown-threat events.
+    AnomalyShadow {
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(short, long, default_value_t = 100)]
+        limit: usize,
+        #[arg(short, long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -285,6 +370,17 @@ enum CleanupCommand {
     },
 }
 
+#[derive(Debug, Subcommand)]
+enum UnknownThreatCommand {
+    /// Summarize retained unknown-threat candidates for false-positive review.
+    Report {
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(short, long, default_value_t = 1000)]
+        limit: usize,
+    },
+}
+
 fn default_config_path() -> PathBuf {
     if let Some(path) = env::var_os(CONFIG_ENV_VAR).filter(|value| !value.is_empty()) {
         return PathBuf::from(path);
@@ -346,6 +442,155 @@ async fn main() -> anyhow::Result<()> {
                 }
                 Ok(())
             }
+            RulesCommand::View { rule_id, config } => {
+                let config = load_valid_config(&config)?;
+                let rule_set = rules::load_rule_set(&config.rules)?;
+                let matching_rules = rule_set.rules_by_id(&rule_id);
+                let Some(rule) = matching_rules.first() else {
+                    anyhow::bail!("active rule {rule_id} was not found");
+                };
+                let mut targets = matching_rules
+                    .iter()
+                    .map(|rule| rule.target.to_string())
+                    .collect::<Vec<_>>();
+                targets.sort();
+                targets.dedup();
+                let transforms = if rule.transforms.is_empty() {
+                    "none".to_string()
+                } else {
+                    rule.transforms
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                };
+
+                println!("Rule ID: {}", rule.id);
+                println!("Name: {}", rule.name);
+                println!("Status: active");
+                println!("Baseline severity: {}", rule.severity);
+                println!("Category: {}", rule.category);
+                println!(
+                    "OWASP category: {}",
+                    rule.owasp_category.as_deref().unwrap_or("not specified")
+                );
+                println!("Paranoia level: {}", rule.paranoia_level);
+                println!(
+                    "Performance cost tier: {}",
+                    rule.performance_cost
+                        .map(|cost| cost.to_string())
+                        .unwrap_or_else(|| "not specified".to_string())
+                );
+                println!("Targets: {}", targets.join(", "));
+                println!("Transforms: {transforms}");
+                println!("Pattern: {}", rule.pattern.as_str());
+                println!(
+                    "Design intent: {}",
+                    rule.design_intent.as_deref().unwrap_or("not specified")
+                );
+                println!("Match explanation: {}", rule.explanation);
+                Ok(())
+            }
+            RulesCommand::Validate {
+                input,
+                paranoia_level,
+            } => {
+                let (_rule_set, report) = rules::validate_rule_file(&input, paranoia_level)?;
+                println!("rule pack OK: {}", input.display());
+                println!(
+                    "entries={} enabled={} disabled={} compiled={} active={} filtered={}",
+                    report.entries,
+                    report.enabled_entries,
+                    report.disabled_entries,
+                    report.compiled_rules,
+                    report.active_rules,
+                    report.filtered_by_paranoia
+                );
+                for warning in report.warnings {
+                    println!("warning: {warning}");
+                }
+                Ok(())
+            }
+            RulesCommand::Replay {
+                input,
+                config,
+                limit,
+                output,
+                fixtures,
+            } => {
+                let config = load_valid_config(&config)?;
+                let (rule_set, _report) = rules::validate_rule_file(&input, u8::MAX)?;
+                let events = event_store::tail(
+                    Path::new(&config.logging.event_log_path),
+                    event_log_retention(&config)?,
+                    limit,
+                )?;
+                let mut report = rules::replay_events_with_exclusions(
+                    &rule_set,
+                    &events,
+                    &config.rules.exclusions,
+                );
+                if let Some(fixtures) = fixtures {
+                    rules::attach_labeled_replay(
+                        &mut report,
+                        &rule_set,
+                        &config.rules.exclusions,
+                        &fixtures,
+                    )?;
+                }
+                let encoded = serde_json::to_string_pretty(&report)?;
+                if let Some(output) = output {
+                    std::fs::write(&output, format!("{encoded}\n"))?;
+                    println!("replay report written: {}", output.display());
+                } else {
+                    println!("{encoded}");
+                }
+                Ok(())
+            }
+            RulesCommand::Draft {
+                request_ids,
+                output,
+                config,
+            } => {
+                let config = load_valid_config(&config)?;
+                let events = event_store::read_all(
+                    Path::new(&config.logging.event_log_path),
+                    event_log_retention(&config)?,
+                )?;
+                let manifest = rule_drafts::create_draft(
+                    &events,
+                    &request_ids,
+                    &output,
+                    &config.ai.provider,
+                    &config.ai.model,
+                    &config.ai.prompt_version,
+                )?;
+                println!("draft rule written: {}", output.display());
+                println!("draft manifest written: {}", manifest.display());
+                Ok(())
+            }
+            RulesCommand::Approve {
+                input,
+                reviewer,
+                replay_report,
+            } => {
+                rule_drafts::approve_draft(&input, &reviewer, &replay_report)?;
+                println!("draft approved: {}", input.display());
+                Ok(())
+            }
+            RulesCommand::Publish {
+                input,
+                destination,
+                config,
+            } => {
+                let config = load_valid_config(&config)?;
+                rule_drafts::publish_draft(&input, &destination, &config)?;
+                println!(
+                    "draft published for monitor rollout: {}",
+                    destination.display()
+                );
+                Ok(())
+            }
             RulesCommand::ConvertCrs { input, output } => {
                 let summary = crs_convert::convert_crs_path(&input, &output)?;
                 println!(
@@ -403,8 +648,32 @@ async fn main() -> anyhow::Result<()> {
                     upstream.name, upstream.host, upstream.target
                 );
             }
+            let explanation = ai::explain_event(&config.ai, &event).await?;
             println!();
-            println!("{}", ai::explain(&event.decision));
+            println!("{}", explanation.explanation);
+            if !explanation.tuning_suggestions.is_empty() {
+                println!();
+                println!("Tuning suggestions (review before applying):");
+                for suggestion in &explanation.tuning_suggestions {
+                    println!(
+                        "- {} at {}: {} Proposed value: {}",
+                        suggestion.kind,
+                        suggestion.config_path,
+                        suggestion.rationale,
+                        suggestion.proposed_value.replace('\n', "; ")
+                    );
+                }
+            }
+            println!();
+            println!(
+                "Explanation provider: {} model={} prompt={} digest={} latency_ms={} fallback={}",
+                explanation.provider,
+                explanation.model,
+                explanation.prompt_version,
+                explanation.input_digest,
+                explanation.latency_ms,
+                explanation.fallback_used
+            );
             println!("{}", serde_json::to_string_pretty(&event.decision)?);
             Ok(())
         }
@@ -443,6 +712,69 @@ async fn main() -> anyhow::Result<()> {
         Commands::State { command } => handle_state(command),
         Commands::Summary { command } => handle_summary(command),
         Commands::Cleanup { command } => handle_cleanup(command),
+        Commands::UnknownThreats { command } => handle_unknown_threats(command),
+        Commands::Ai { command } => match command {
+            AiCommand::Evaluate {
+                config,
+                cases,
+                output,
+            } => {
+                let config = load_valid_config(&config)?;
+                let report = ai::evaluate_provider(&config.ai, &cases).await?;
+                let encoded = serde_json::to_string_pretty(&report)?;
+                if let Some(output) = output {
+                    std::fs::write(&output, format!("{encoded}\n"))?;
+                    println!("AI evaluation report written: {}", output.display());
+                } else {
+                    println!("{encoded}");
+                }
+                anyhow::ensure!(
+                    report.failed_cases == 0,
+                    "{} AI evaluation cases failed",
+                    report.failed_cases
+                );
+                Ok(())
+            }
+            AiCommand::AnomalyShadow {
+                config,
+                limit,
+                output,
+            } => {
+                let config = load_valid_config(&config)?;
+                let events = event_store::tail(
+                    Path::new(&config.logging.event_log_path),
+                    event_log_retention(&config)?,
+                    limit,
+                )?;
+                let report = ai::anomaly_shadow_review(&config.ai, &events).await?;
+                let encoded = serde_json::to_string_pretty(&report)?;
+                if let Some(output) = output {
+                    std::fs::write(&output, format!("{encoded}\n"))?;
+                    println!("AI anomaly shadow report written: {}", output.display());
+                } else {
+                    println!("{encoded}");
+                }
+                Ok(())
+            }
+        },
+    }
+}
+
+fn handle_unknown_threats(command: UnknownThreatCommand) -> anyhow::Result<()> {
+    match command {
+        UnknownThreatCommand::Report { config, limit } => {
+            let config = load_valid_config(&config)?;
+            let events = event_store::tail(
+                Path::new(&config.logging.event_log_path),
+                event_log_retention(&config)?,
+                limit,
+            )?;
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&unknown_threats::shadow_report(&events))?
+            );
+            Ok(())
+        }
     }
 }
 

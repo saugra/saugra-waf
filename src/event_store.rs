@@ -22,12 +22,22 @@ pub struct SecurityEvent {
     pub method: String,
     pub path: String,
     pub query: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<RequestEvidence>,
     pub owasp_categories: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub upstream: Option<UpstreamEvent>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub websocket: Option<WebSocketEvent>,
     pub decision: WafDecision,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
+pub struct RequestEvidence {
+    pub content_type: String,
+    pub body_size: usize,
+    pub query_parameter_names: Vec<String>,
+    pub header_names: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -85,6 +95,7 @@ impl SecurityEvent {
             method: method.to_string(),
             path: path.to_string(),
             query: query.to_string(),
+            evidence: None,
             owasp_categories,
             upstream: None,
             websocket: None,
@@ -94,6 +105,11 @@ impl SecurityEvent {
 
     pub fn with_upstream(mut self, upstream: UpstreamEvent) -> Self {
         self.upstream = Some(upstream);
+        self
+    }
+
+    pub fn with_evidence(mut self, evidence: RequestEvidence) -> Self {
+        self.evidence = Some(evidence);
         self
     }
 
@@ -470,6 +486,7 @@ mod tests {
             method: "GET".to_string(),
             path: "/search".to_string(),
             query: "q=test".to_string(),
+            evidence: None,
             owasp_categories: Vec::new(),
             upstream: None,
             websocket: None,
@@ -685,6 +702,8 @@ mod tests {
             owasp_category: None,
             owasp_categories: Vec::new(),
             behavior: None,
+            unknown_threats: None,
+            campaign: None,
             bot_protection: None,
             runtime_allowlist: None,
         }

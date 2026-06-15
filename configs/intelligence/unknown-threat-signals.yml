@@ -1,0 +1,10 @@
+version: 1
+signals:
+  unseen_method:
+    score: 20
+  unseen_content_type:
+    score: 15
+  unseen_query_parameter:
+    score: 10
+  body_size_deviation:
+    score: 15

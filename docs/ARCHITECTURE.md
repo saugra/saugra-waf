@@ -22,7 +22,7 @@ Production deployment examples live in:
 
 - `configs/nginx.production.example.conf`
 - `configs/apache.production.example.conf`
-- `docs/PRODUCTION_DEPLOYMENT.md`
+- `docs/ADMIN_GUIDE.md`
 
 ## Design Philosophy
 
@@ -48,8 +48,7 @@ OWASP Top 10 coverage should be modeled as layered controls, not only request
 regex rules. Request rules handle visible payloads, rate limits handle abuse
 over time, posture checks validate deployment assumptions, external report
 ingestion captures supply chain evidence, and durable logs provide audit and
-tuning evidence. The detailed strategy lives in
-`docs/OWASP_TOP_10_STRATEGY.md`.
+tuning evidence. The [security model](#security-model) defines that strategy.
 
 ## Main Components
 
@@ -276,7 +275,7 @@ force a deterministic block.
 
 Runtime policy changes must be observable. Security events and
 `explain <request-id>` should show when an allowlist entry affected the
-decision. The detailed plan lives in `docs/RUNTIME_ALLOWLIST.md`.
+decision. Operational use is documented in `docs/ADMIN_GUIDE.md`.
 
 ### 6. Decision Engine
 
@@ -343,7 +342,51 @@ Explanation behavior:
 - suggest possible tuning direction
 - classify event type
 
-Saugra may use deterministic templates, an LLM integration, or both. Blocking remains deterministic and based on rules, rate limits, and explicit configuration.
+Saugra uses a provider-neutral asynchronous interface with loopback llama.cpp
+and Qwen3 0.6B as the lightweight default, local Ollama as an alternative,
+native OpenAI-compatible and Gemini HTTPS providers, a deterministic local
+fallback, and an optional command-based adapter.
+Before a model or adapter runs, Saugra builds a minimized input containing route
+shapes, query parameter names, rule
+metadata, scores, baseline signals, behavior history, and campaign counts. Raw
+query values, request bodies, cookies, authorization values, client addresses,
+and upstream credentials are excluded.
+
+Provider output is advisory. Tuning suggestions are restricted to narrow,
+reviewable configuration changes and are never applied automatically. Each
+invocation is written to a JSONL audit trail with model, prompt version, input
+digest, output, latency, fallback status, and failure state. Blocking remains
+deterministic and based on rules, rate limits, scoring, and explicit
+configuration.
+
+All event fields are treated as untrusted data rather than model instructions.
+Provider explanations must preserve the deterministic action and relevant rule,
+behavior, unknown-threat, and campaign identifiers. Model-written score or
+threshold narration is rejected because Saugra renders those values
+deterministically. Missing evidence, malformed structured output, timeout, or
+grounding failure activates the deterministic local fallback.
+
+Remote providers are disabled unless `allow_remote: true` and
+`local_only: false`. Their endpoint must use HTTPS and match
+`endpoint_allowlist`; credentials are read through `api_key_env`, not YAML.
+Operators must document `data_region` and `retention_policy` before validation
+succeeds.
+
+Versioned provider-neutral sanitized cases run through `saugra-waf ai
+evaluate`. The report includes the sanitized explanation and suggestion kinds,
+and tracks schema/provider failures, forbidden privacy fields, prompt-injection
+resistance, grounding checks, suggestion scope, required and forbidden quality
+phrases, and latency.
+`saugra-waf ai anomaly-shadow` applies the same sanitized explanation path to
+retained unknown-threat events for offline operator review. The report cannot
+alter decisions and declares deterministic policy as the only enforcement
+authority.
+
+Generated rule drafts use a separate reviewed lifecycle: `rules draft`,
+`rules replay --fixtures`, `rules approve`, then `rules publish`. Draft
+manifests bind source anomaly IDs, generator metadata, input and replay digests,
+reviewer, approval time, and publication state. Publishing requires monitor
+mode and never edits configured active rule files automatically.
 
 Example:
 
@@ -482,6 +525,7 @@ rules:
     name: Basic SQL Injection Pattern
     category: sql_injection
     severity: high
+    performance_cost: low
     paranoia_level: 1
     targets:
       - query
@@ -489,9 +533,15 @@ rules:
       - url_decode
       - plus_to_space
     pattern: "(?i)(union\\s+select|or\\s+1\\s*=\\s*1|drop\\s+table)"
+    design_intent: Detect common SQL injection markers with bounded normalization.
     explanation: Query data matched a common SQL injection pattern.
     owasp_category: A05:2025-Injection
 ```
+
+`performance_cost` is optional and accepts `low`, `moderate`, or `high`.
+`design_intent` is optional operator-facing documentation. Active metadata can
+be inspected with `saugra-waf rules view <saugra-rule-id>`; omitted optional
+fields are reported as `not specified` rather than inferred by the runtime.
 
 Native rule packs are split into CRS-style files such as
 `REQUEST-941-APPLICATION-ATTACK-XSS.yml` and
@@ -537,8 +587,9 @@ For monitor-first CRS-style tuning, Saugra can load and log rules up to
 are not configured.
 
 Rule exclusions are applied before anomaly scoring. They are intended for
-false-positive tuning and can be scoped by rule ID, category, path prefix, query
-parameter, and header:
+false-positive tuning and can be scoped by rule ID, category, path prefix,
+query parameter, header name, HTTP method, matched target, content type, trusted
+header value, and authenticated identity assertion:
 
 ```yaml
 rules:
@@ -550,7 +601,29 @@ rules:
         - /api/articles
       query_params:
         - content
+      methods:
+        - POST
+      targets:
+        - query
+      content_types:
+        - application/json
+      identities:
+        - name: X-Authenticated-Role
+          values:
+            - editor
 ```
+
+Value and identity conditions are ignored unless the direct peer matches
+`forwarded_headers.trusted_proxies`. Identity headers must additionally appear
+in `forwarded_headers.identity_assertions`. A front proxy must remove
+client-supplied copies before writing an assertion. Sensitive credential
+headers cannot be configured as assertions.
+
+Security events retain privacy-safe request evidence: normalized content type,
+body size, query parameter names, and header names. Request bodies and trusted
+header values are not retained. This supports method, target, content-type,
+parameter-name, and header-name replay while making trusted-value replay an
+explicitly reported limitation.
 
 Rule-pack validation reports metadata such as pack name, version, standards,
 active rule counts, filtered rules, and unsupported CRS imports. Converted CRS
@@ -564,7 +637,7 @@ currently maps `t:urlDecode`, `t:urlDecodeUni`, and `t:lowercase`, honors
 `t:none`, and reports unsupported transform actions as skipped imports.
 
 The CRS import workflow and unsupported feature list are documented in
-`docs/CRS_IMPORT.md`.
+the [Rule Packs And CRS Import](#rule-packs-and-crs-import) section.
 
 Next rule-engine milestones:
 
@@ -572,6 +645,51 @@ Next rule-engine milestones:
 - Add fixtures for every imported CRS category before marking that category
   production-supported.
 - Keep unsupported CRS features explicitly documented.
+
+### Rule Packs And CRS Import
+
+Saugra runs native YAML rule packs. The CRS converter is an offline migration
+tool, not a ModSecurity compatibility layer:
+
+```bash
+saugra-waf rules convert-crs \
+  --input /path/to/coreruleset/rules \
+  --output /etc/saugra-waf/rules/converted-crs.yml
+saugra-waf test-config
+```
+
+Supported CRS input includes `SecRule` with `@rx` or `@pmFromFile`, mapped
+request targets, severity and paranoia tags, and ordered `t:none`,
+`t:urlDecode`, `t:urlDecodeUni`, and `t:lowercase` transforms. Unsupported
+operators, chained rules, complex selectors, collection updates, phase side
+effects, and unknown transforms are reported as `unsupported_imports`.
+Converted packs must be reviewed and deployed in monitor mode first.
+
+## Security Model
+
+Saugra is a defense-in-depth control, not a replacement for application
+authorization, dependency management, operating-system hardening, or security
+testing.
+
+Blocking is deterministic: request rules, rate limits, behavior and bot
+thresholds, unknown-threat policy gates, runtime policy, and explicit operator
+configuration. AI can explain retained evidence and propose tuning, but cannot
+be the sole reason for blocking or activate generated rules.
+
+OWASP Top 10:2025 coverage is layered:
+
+| Layer | Coverage |
+| --- | --- |
+| Request rules | Injection, traversal, XSS, command execution, suspicious protocol and parser inputs |
+| Policy checks | HTTPS, methods, headers, uploads, and forwarded-header assumptions |
+| Behavior controls | Scanning, brute force, credential abuse, and distributed campaigns |
+| External reports | SBOM, dependency, container, and CI security findings |
+| Evidence | Durable events, summaries, explanations, posture, and coverage commands |
+
+This mapping describes Saugra controls; it is not proof that a protected
+application is compliant. Sensitive bodies, credentials, cookies, tokens, and
+authorization values must be masked or excluded. Forwarded identity is trusted
+only from configured proxies, and production state must be durable and bounded.
 
 ## API and Dashboard Architecture
 
@@ -608,6 +726,11 @@ older than the configured retention count.
 `saugra-waf logs tail` and `saugra-waf explain <request-id>` read across the active and
 rotated event files so recent audit and explanation workflows continue after
 rotation.
+
+A request ID is available only while its event remains in those files.
+Retention is based on bytes and file count rather than event age. The shipped
+settings of `100mb` and `10` retain up to one active file and ten rotated files,
+or approximately 1.1 GB. They do not guarantee a fixed number of days.
 
 ## Future Architecture
 

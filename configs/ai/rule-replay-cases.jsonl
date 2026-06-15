@@ -1,0 +1,3 @@
+{"id":"legitimate-search","label":"legitimate","method":"GET","path":"/search","query":"q=summer"}
+{"id":"attack-sqli","label":"attack","method":"GET","path":"/search","query":"q=%27%20OR%201%3D1--"}
+{"id":"attack-xss","label":"attack","method":"GET","path":"/comment","query":"text=%3Cscript%3Ealert(1)%3C%2Fscript%3E"}

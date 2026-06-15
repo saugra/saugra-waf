@@ -8,16 +8,6 @@ copyright: Copyright &copy; Saugra contributors
 
 docs_dir: docs
 
-exclude_docs: |
-  APT_REPOSITORY.md
-  ARCHITECTURE.md
-  CRS_IMPORT.md
-  DEBIAN_PACKAGING.md
-  OFFICIAL_DEBIAN_RELEASE.md
-  PRODUCT_SPEC.md
-  RELEASE_PROCESS.md
-  RUNTIME_ALLOWLIST.md
-
 theme:
   name: material
   logo: img/saugra-waf-logo.jpeg
@@ -49,19 +39,9 @@ theme:
 
 nav:
   - Home: index.md
-  - Getting Started:
-      - Installation: getting-started/installation.md
-      - Quick Start: getting-started/quick-start.md
-      - Ubuntu and Nginx Tutorial: tutorials/install-and-configure-saugra-waf-on-ubuntu.md
-  - Deployment:
-      - Production Deployment: PRODUCTION_DEPLOYMENT.md
-      - Administration: ADMIN_GUIDE.md
-  - Reference:
-      - Configuration: reference/configuration.md
-      - CLI: reference/cli.md
-  - Security:
-      - Security Model: security/security-model.md
-      - OWASP Coverage: OWASP_TOP_10_STRATEGY.md
+  - Administration: ADMIN_GUIDE.md
+  - Architecture: ARCHITECTURE.md
+  - Maintainers: RELEASE_PROCESS.md
   - About:
       - Licensing: LICENSING.md
 
