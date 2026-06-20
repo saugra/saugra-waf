@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 355 64" role="img" aria-labelledby="title">
+  <title id="title">Saugra WAF</title>
+  <g transform="translate(0 16) scale(.5)">
+    <path fill="#62e6b5" d="M32 4 57 18.5V31l-9-5.2v-2.1L32 14.4l-16 9.3v4.6l14 8.1v10.4L7 33.5v-15L32 4Z"/>
+    <path fill="#f3f5ef" d="M32 60 7 45.5V33l9 5.2v2.1l16 9.3 16-9.3v-4.6l-14-8.1V17.2l23 13.3v15L32 60Z"/>
+    <circle cx="32" cy="32" r="4.5" fill="#62e6b5"/>
+  </g>
+  <text x="44" y="42" fill="#f3f5ef" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="27" font-weight="700" letter-spacing="3">SAUGRA</text>
+  <path stroke="#5e756d" d="M260 18v28"/>
+  <text x="278" y="40" fill="#8fa89f" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="16" font-weight="650" letter-spacing="1.5">WAF</text>
+</svg>

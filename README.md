@@ -1,11 +1,13 @@
+<p align="center">
+  <img src="docs/img/saugra-waf.svg" width="355" alt="Saugra WAF">
+</p>
+
 # Saugra WAF
 
 [![CI](https://github.com/saugra/saugra-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/saugra/saugra-waf/actions/workflows/ci.yml?query=branch%3Amain)
 [![codecov](https://codecov.io/github/saugra/saugra-waf/graph/badge.svg)](https://codecov.io/github/saugra/saugra-waf)
 [![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL--3.0--only-blue.svg)](LICENSE)
 [![Rust](https://img.shields.io/badge/Rust-2021-orange.svg)](Cargo.toml)
-
-![Saugra WAF Logo](docs/img/saugra-waf-logo.jpeg)
 
 Saugra is a lightweight, self-hosted Web Application Firewall for developers and
 small teams who want OWASP-style protection, rate limiting, behavior scoring,
