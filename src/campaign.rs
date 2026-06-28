@@ -875,6 +875,53 @@ mod tests {
     }
 
     #[test]
+    fn campaign_state_errors_include_paths() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let invalid_state = temp_dir.path().join("invalid-campaign-state.json");
+        fs::write(&invalid_state, b"not-json").unwrap();
+
+        let read_error = read_state(&invalid_state).unwrap_err();
+        assert!(read_error
+            .to_string()
+            .contains("campaign state is not valid JSON"));
+        assert!(read_error
+            .to_string()
+            .contains("invalid-campaign-state.json"));
+
+        let blocked_parent = temp_dir.path().join("not-a-directory");
+        fs::write(&blocked_parent, b"file").unwrap();
+        let blocked_state = blocked_parent.join("campaign-state.json");
+        let write_error = write_state(&blocked_state, &CampaignState::default()).unwrap_err();
+        assert!(write_error
+            .to_string()
+            .contains("failed to create campaign state directory"));
+        assert!(write_error.to_string().contains("not-a-directory"));
+
+        let lock_error = match StateFileLock::acquire(&blocked_state) {
+            Ok(_) => panic!("lock creation should fail for a path under a file"),
+            Err(error) => error,
+        };
+        assert!(lock_error
+            .to_string()
+            .contains("failed to create campaign lock directory"));
+        assert!(lock_error.to_string().contains("not-a-directory"));
+    }
+
+    #[test]
+    fn campaign_state_replace_errors_include_path() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let directory_path = temp_dir.path().join("campaign-state.json");
+        fs::create_dir(&directory_path).unwrap();
+
+        let error = write_state(&directory_path, &CampaignState::default()).unwrap_err();
+
+        assert!(error
+            .to_string()
+            .contains("failed to replace campaign state"));
+        assert!(error.to_string().contains("campaign-state.json"));
+    }
+
+    #[test]
     fn fingerprints_session_material_without_retaining_it() {
         let first = session_fingerprint("127.0.0.1", "browser", Some(b"session=secret"));
         let second = session_fingerprint("127.0.0.1", "browser", Some(b"session=other"));
