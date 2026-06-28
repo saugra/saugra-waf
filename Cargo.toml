@@ -1,6 +1,6 @@
 [package]
 name = "saugra-waf"
-version = "1.1.1"
+version = "1.1.2"
 edition = "2021"
 description = "A lightweight rule-based + AI-assisted Web Application Firewall."
 license = "AGPL-3.0-only"

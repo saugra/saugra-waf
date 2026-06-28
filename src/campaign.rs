@@ -221,6 +221,10 @@ impl CampaignStore for RedisCampaignStore {
 pub async fn build_store(
     config: &CampaignCorrelationConfig,
 ) -> anyhow::Result<Box<dyn CampaignStore>> {
+    if !config.enabled || config.mode == CampaignMode::Off {
+        return Ok(Box::new(MemoryCampaignStore::default()));
+    }
+
     match config.backend {
         CampaignBackend::Memory => Ok(Box::new(MemoryCampaignStore::default())),
         CampaignBackend::Local => Ok(Box::new(LocalCampaignStore::open(&config.state_path)?)),
@@ -482,18 +486,32 @@ fn read_state(path: &Path) -> anyhow::Result<CampaignState> {
     if !path.exists() {
         return Ok(CampaignState::default());
     }
-    Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("failed to read campaign state {}", path.display()))?;
+    serde_json::from_str(&contents)
+        .with_context(|| format!("campaign state is not valid JSON at {}", path.display()))
 }
 
 fn write_state(path: &Path, state: &CampaignState) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create campaign state directory {}",
+                parent.display()
+            )
+        })?;
     }
     let temporary = PathBuf::from(format!("{}.{}.tmp", path.display(), unix_nanos_now()));
-    fs::write(&temporary, serde_json::to_vec_pretty(state)?)?;
+    fs::write(&temporary, serde_json::to_vec_pretty(state)?).with_context(|| {
+        format!(
+            "failed to write temporary campaign state {}",
+            temporary.display()
+        )
+    })?;
     if let Err(error) = fs::rename(&temporary, path) {
         let _ = fs::remove_file(&temporary);
-        return Err(error.into());
+        return Err(error)
+            .with_context(|| format!("failed to replace campaign state {}", path.display()));
     }
     Ok(())
 }
@@ -506,7 +524,12 @@ impl StateFileLock {
     fn acquire(state_path: &Path) -> anyhow::Result<Self> {
         let path = PathBuf::from(format!("{}.lock", state_path.display()));
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create campaign lock directory {}",
+                    parent.display()
+                )
+            })?;
         }
         for _ in 0..1_000 {
             match OpenOptions::new().write(true).create_new(true).open(&path) {
@@ -521,7 +544,11 @@ impl StateFileLock {
                     }
                     thread::sleep(std::time::Duration::from_millis(10));
                 }
-                Err(error) => return Err(error.into()),
+                Err(error) => {
+                    return Err(error).with_context(|| {
+                        format!("failed to create campaign lock {}", path.display())
+                    });
+                }
             }
         }
         Err(anyhow::anyhow!(
@@ -613,7 +640,7 @@ fn unix_nanos_now() -> u128 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{CampaignBackend, CampaignStageConfig};
+    use crate::config::{CampaignBackend, CampaignStageConfig, WafMode};
 
     #[tokio::test]
     async fn redis_store_reports_invalid_url_with_campaign_context() {
@@ -625,6 +652,40 @@ mod tests {
         assert!(error
             .to_string()
             .contains("campaign_correlation.redis_url is not a valid Redis URL"));
+    }
+
+    #[tokio::test]
+    async fn disabled_store_does_not_touch_local_state_path() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let blocked_parent = temp_dir.path().join("not-a-directory");
+        fs::write(&blocked_parent, b"file").unwrap();
+
+        let config = CampaignCorrelationConfig {
+            enabled: false,
+            backend: CampaignBackend::Local,
+            state_path: blocked_parent.join("campaign.json"),
+            ..CampaignCorrelationConfig::default()
+        };
+
+        let store = build_store(&config).await.unwrap();
+        let categories = vec!["scanner_behavior".to_string()];
+        let outcome = store
+            .evaluate(
+                &config,
+                CampaignRequest {
+                    request_id: "req-1",
+                    client_id: "203.0.113.10",
+                    session_id: "session-1",
+                    path: "/login",
+                    categories: &categories,
+                    server_mode: WafMode::Monitor,
+                },
+            )
+            .await
+            .unwrap();
+
+        assert!(!outcome.enabled);
+        assert_eq!(outcome.storage_backend, "memory");
     }
 
     fn config(policy: CampaignPolicyConfig) -> CampaignCorrelationConfig {

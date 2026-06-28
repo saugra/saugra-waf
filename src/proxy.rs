@@ -214,7 +214,9 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
         .fallback(proxy_request_with_connect_info)
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(listen_addr).await?;
+    let listener = tokio::net::TcpListener::bind(listen_addr)
+        .await
+        .with_context(|| format!("failed to bind Saugra listener at {listen_addr}"))?;
     info!("Saugra listening on http://{}", listen_addr);
     axum::serve(
         listener,

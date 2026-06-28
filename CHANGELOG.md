@@ -4,6 +4,25 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.2 - 2026-06-28
+
+### Fixed
+
+- Prevent disabled or off campaign correlation from opening Redis or local
+  state during startup.
+- Add path-specific context to campaign state and lock-file errors, and add
+  listener bind context for startup failures.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo check --locked --all-targets --all-features`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- `cargo audit`
+- `cargo test --lib campaign::tests::disabled_store_does_not_touch_local_state_path`
+- `cargo test --locked --all-targets --all-features` passed with 261 library
+  tests, 10 CLI tests, and 27 proxy integration tests.
+
 ## 1.1.1 - 2026-06-28
 
 ### Fixed
