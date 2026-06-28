@@ -1,7 +1,7 @@
 # Saugra Licensing
 
-Saugra Community Edition is licensed under the GNU Affero General Public License
-version 3 only:
+Saugra WAF is licensed under the GNU Affero General Public License version 3
+only:
 
 ```txt
 AGPL-3.0-only
@@ -39,8 +39,8 @@ or branding in a confusing way.
 
 See `TRADEMARKS.md` for the Saugra trademark policy.
 
-## Commercial Terms
+## Saugra Console
 
-Separate commercial licenses, support terms, or enterprise agreements may be
-available from the maintainers. Those agreements are separate from the
-AGPL-3.0-only license used for Saugra Community Edition.
+Saugra WAF is not split into separate community and pro editions. Future
+integrations with Saugra Console may be documented separately once the Console
+licensing and distribution model are decided.

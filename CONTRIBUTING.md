@@ -2,7 +2,7 @@
 
 Thank you for your interest in contributing to **Saugra WAF**! We are building a lightweight, rule-based + AI-assisted Web Application Firewall that protects modern web apps and APIs against OWASP Top 10-style attacks.
 
-As an open-core project licensed under
+As an open-source project licensed under
 [AGPL-3.0-only](LICENSE), we aim to make Saugra the easiest, most
 developer-friendly WAF to configure, inspect, and deploy.
 
@@ -18,7 +18,7 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ## Contributor Licensing
 
-By submitting a contribution to Saugra Community Edition, you agree that your
+By submitting a contribution to Saugra WAF, you agree that your
 contribution is licensed under AGPL-3.0-only, the same license as the project,
 unless a file clearly states a different license.
 
@@ -26,10 +26,9 @@ You also confirm that you have the right to submit the contribution and that it
 does not knowingly include code, data, rules, signatures, documentation, or
 other material that is incompatible with AGPL-3.0-only.
 
-Community Edition contributions are accepted for the AGPL-3.0-only codebase.
-They are not assumed to be available for proprietary relicensing or inclusion
-in separately licensed editions unless the contributor has agreed to that
-separately in writing.
+Saugra WAF contributions are accepted for the AGPL-3.0-only codebase. They are
+not assumed to be available under different license terms unless the contributor
+has agreed to that separately in writing.
 
 Do not submit confidential customer data, proprietary rules, private threat
 intelligence, copied commercial signatures, leaked materials, or third-party

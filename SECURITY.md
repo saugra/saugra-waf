@@ -5,8 +5,8 @@ service, network, or deployment is secure. Operators remain responsible for
 secure application development, configuration, monitoring, incident response,
 and compliance obligations.
 
-Saugra Community Edition is provided under AGPL-3.0-only without warranty, as
-described in `LICENSE`.
+Saugra WAF is provided under AGPL-3.0-only without warranty, as described in
+`LICENSE`.
 
 ## Supported Versions
 

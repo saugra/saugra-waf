@@ -1,8 +1,8 @@
 Saugra Web Application Firewall
 Copyright (C) 2026 Emanuel Wanyonyi and Saugra contributors.
 
-Saugra Community Edition is licensed under the GNU Affero General Public
-License version 3 only (AGPL-3.0-only). See LICENSE for the full license text.
+Saugra WAF is licensed under the GNU Affero General Public License version 3
+only (AGPL-3.0-only). See LICENSE for the full license text.
 
 Saugra is provided as an additional security layer. It is not a guarantee that
 an application, service, network, or deployment is secure. Operators remain
