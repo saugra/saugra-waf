@@ -41,7 +41,7 @@ nav:
   - Home: index.md
   - Administration: ADMIN_GUIDE.md
   - Architecture: ARCHITECTURE.md
-  - Maintainers: RELEASE_PROCESS.md
+  - Release process: RELEASE_PROCESS.md
   - About:
       - Licensing: LICENSING.md
 

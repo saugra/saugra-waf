@@ -128,6 +128,9 @@ scripts/build-apt-repository.sh \
 dedicated signing key and trusted CI. Package upgrades must preserve
 operator-owned configuration, seed bundled files only when missing, and never
 start Saugra before the upstream and monitor-first configuration are reviewed.
+Public upgrade instructions must keep installed packages on hold by default,
+unhold them only during a planned maintenance window, and mask
+`saugra-waf.service` while package files are being replaced.
 
 ## Official Debian Archive
 

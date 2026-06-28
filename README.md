@@ -145,7 +145,9 @@ echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.i
   sudo tee /etc/apt/sources.list.d/saugra-waf.list
 
 sudo apt update
+sudo systemctl mask saugra-waf.service
 sudo apt install saugra-waf
+sudo apt-mark hold saugra-waf
 ```
 
 Review the monitor-first production config, validate it, and then start Saugra:
@@ -153,14 +155,18 @@ Review the monitor-first production config, validate it, and then start Saugra:
 ```bash
 sudo editor /etc/saugra-waf/saugra-waf.yml
 sudo saugra-waf test-config
+sudo systemctl unmask saugra-waf.service
 sudo systemctl enable --now saugra-waf
 ```
 
-Future releases can be installed through the normal system upgrade flow:
+Future releases should be installed during a planned maintenance window using
+the [administration upgrade runbook](docs/ADMIN_GUIDE.md#upgrade-to-the-newest-version):
 
 ```bash
 sudo apt update
-sudo apt upgrade
+sudo apt-mark unhold saugra-waf
+sudo apt install --only-upgrade saugra-waf
+sudo apt-mark hold saugra-waf
 ```
 
 ### Prerequisites

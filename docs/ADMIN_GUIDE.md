@@ -42,12 +42,16 @@ Add the signed repository and install Saugra:
 echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" |
   sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
+sudo systemctl mask saugra-waf.service
 sudo apt install saugra-waf
+sudo apt-mark hold saugra-waf
 ```
 
 The package installs the CLI, systemd service, monitor-first production config,
 rule packs, standards, intelligence catalogs, Ollama model policy and evaluation
-fixtures, and writable runtime directories.
+fixtures, and writable runtime directories. The package is held after
+installation so unattended upgrades cannot replace the WAF during normal
+operation. Unhold it only during a planned upgrade window.
 Confirm the installation:
 
 ```bash
@@ -108,7 +112,8 @@ Validate the configuration, then start Redis and Saugra:
 ```bash
 saugra-waf test-config
 sudo systemctl enable --now redis-server
-sudo systemctl enable --now saugra-waf
+sudo systemctl unmask saugra-waf.service
+sudo systemctl enable --now saugra-waf.service
 sudo systemctl status saugra-waf --no-pager
 ```
 
@@ -431,9 +436,21 @@ Back up the active configuration before upgrading:
 sudo cp -a /etc/saugra-waf "/etc/saugra-waf.backup-$(date +%Y%m%d-%H%M%S)"
 ```
 
-Install the newest published version:
+Stop and mask Saugra before replacing package files. The mask prevents package
+hooks, dependency starts, or operator error from starting the service before
+the upgraded configuration has been reviewed:
 
 ```bash
+sudo systemctl stop saugra-waf.service
+sudo systemctl mask saugra-waf.service
+```
+
+Unhold the package only for the maintenance window, then install the newest
+published version:
+
+```bash
+sudo apt-mark unhold saugra-waf
+sudo apt update
 sudo apt install --only-upgrade saugra-waf
 ```
 
@@ -443,14 +460,22 @@ rules, standards, and intelligence catalogs under `/usr/share/saugra-waf`.
 Review those files when the release notes mention configuration or rule-pack
 changes.
 
-Validate the existing configuration before restarting:
+Validate the existing configuration before unmasking and starting the service:
 
 ```bash
 saugra-waf --version
 saugra-waf test-config
-sudo systemctl restart saugra-waf
-sudo systemctl status saugra-waf --no-pager
+sudo systemctl unmask saugra-waf.service
+sudo systemctl start saugra-waf.service
+sudo systemctl status saugra-waf.service --no-pager
 curl -i http://127.0.0.1:8787/_saugra-waf/health
+```
+
+Hold the package again after validation so future unattended upgrades cannot
+replace the running WAF outside a planned maintenance window:
+
+```bash
+sudo apt-mark hold saugra-waf
 ```
 
 Review startup errors and recent security events after the upgrade:
@@ -470,7 +495,9 @@ curl -fsSL https://saugra.github.io/saugra-waf/saugra-waf.gpg |
 echo "deb [signed-by=/usr/share/keyrings/saugra-waf.gpg] https://saugra.github.io/saugra-waf/apt stable main" |
   sudo tee /etc/apt/sources.list.d/saugra-waf.list
 sudo apt update
+sudo systemctl mask saugra-waf.service
 sudo apt install saugra-waf
+sudo apt-mark hold saugra-waf
 ```
 
 As a fallback, download the newest `.deb` from the
@@ -478,9 +505,14 @@ As a fallback, download the newest `.deb` from the
 and install it with `apt` so dependencies are handled:
 
 ```bash
+sudo systemctl stop saugra-waf.service
+sudo systemctl mask saugra-waf.service
+sudo apt-mark unhold saugra-waf
 sudo apt install ./saugra-waf_<version>-1_amd64.deb
 saugra-waf test-config
-sudo systemctl restart saugra-waf
+sudo systemctl unmask saugra-waf.service
+sudo systemctl start saugra-waf.service
+sudo apt-mark hold saugra-waf
 ```
 
 ## Service Basics
