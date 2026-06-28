@@ -9,6 +9,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -206,6 +207,10 @@ impl UnknownThreatStore for LocalUnknownThreatStore {
 }
 
 pub fn build_store(config: &UnknownThreatConfig) -> anyhow::Result<Box<dyn UnknownThreatStore>> {
+    if !config.enabled || config.mode == UnknownThreatMode::Off {
+        return Ok(Box::new(MemoryUnknownThreatStore::default()));
+    }
+
     match config.backend {
         BehaviorBackend::Memory => Ok(Box::new(MemoryUnknownThreatStore::default())),
         BehaviorBackend::Local => Ok(Box::new(LocalUnknownThreatStore::open(&config.state_path)?)),
@@ -795,18 +800,36 @@ fn read_state(path: &Path) -> anyhow::Result<UnknownThreatState> {
     if !path.exists() {
         return Ok(UnknownThreatState::default());
     }
-    Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("failed to read unknown-threat state {}", path.display()))?;
+    serde_json::from_str(&contents).with_context(|| {
+        format!(
+            "unknown-threat state is not valid JSON at {}",
+            path.display()
+        )
+    })
 }
 
 fn write_state(path: &Path, state: &UnknownThreatState) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create unknown-threat state directory {}",
+                parent.display()
+            )
+        })?;
     }
     let temporary_path = temporary_state_path(path);
-    fs::write(&temporary_path, serde_json::to_vec_pretty(state)?)?;
+    fs::write(&temporary_path, serde_json::to_vec_pretty(state)?).with_context(|| {
+        format!(
+            "failed to write temporary unknown-threat state {}",
+            temporary_path.display()
+        )
+    })?;
     if let Err(error) = fs::rename(&temporary_path, path) {
         let _ = fs::remove_file(&temporary_path);
-        return Err(error.into());
+        return Err(error)
+            .with_context(|| format!("failed to replace unknown-threat state {}", path.display()));
     }
     Ok(())
 }
@@ -819,7 +842,12 @@ impl StateFileLock {
     fn acquire(state_path: &Path) -> anyhow::Result<Self> {
         let path = lock_path(state_path);
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
+            fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "failed to create unknown-threat lock directory {}",
+                    parent.display()
+                )
+            })?;
         }
 
         for _ in 0..1_000 {
@@ -935,6 +963,26 @@ mod tests {
             eligible_for_learning: true,
             server_mode: WafMode::Monitor,
         }
+    }
+
+    #[test]
+    fn disabled_store_does_not_touch_local_state_path() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let blocked_parent = temp_dir.path().join("not-a-directory");
+        fs::write(&blocked_parent, b"file").unwrap();
+
+        let mut config = config();
+        config.enabled = false;
+        config.backend = BehaviorBackend::Local;
+        config.state_path = blocked_parent.join("unknown-threats.json");
+
+        let store = build_store(&config).unwrap();
+        let outcome = store
+            .evaluate(&config, request("GET", "/users/42"))
+            .unwrap();
+
+        assert!(!outcome.enabled);
+        assert_eq!(outcome.storage_backend, "memory");
     }
 
     #[test]

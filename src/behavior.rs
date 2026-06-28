@@ -6,6 +6,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -140,6 +141,10 @@ impl BehaviorStore for LocalBehaviorStore {
 }
 
 pub fn build_store(config: &BehaviorConfig) -> anyhow::Result<Box<dyn BehaviorStore>> {
+    if !config.enabled || config.mode == BehaviorMode::Off {
+        return Ok(Box::new(MemoryBehaviorStore::new()));
+    }
+
     match config.backend {
         BehaviorBackend::Memory => Ok(Box::new(MemoryBehaviorStore::new())),
         BehaviorBackend::Local => Ok(Box::new(LocalBehaviorStore::open(&config.state_path)?)),
@@ -381,15 +386,23 @@ fn read_state(path: &Path) -> anyhow::Result<BehaviorState> {
         return Ok(BehaviorState::default());
     }
 
-    let contents = fs::read_to_string(path)?;
-    Ok(serde_json::from_str(&contents)?)
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("failed to read behavior state {}", path.display()))?;
+    serde_json::from_str(&contents)
+        .with_context(|| format!("behavior state is not valid JSON at {}", path.display()))
 }
 
 fn write_state(path: &Path, state: &BehaviorState) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create behavior state directory {}",
+                parent.display()
+            )
+        })?;
     }
-    fs::write(path, serde_json::to_vec_pretty(state)?)?;
+    fs::write(path, serde_json::to_vec_pretty(state)?)
+        .with_context(|| format!("failed to write behavior state {}", path.display()))?;
     Ok(())
 }
 

@@ -7,6 +7,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -138,6 +139,10 @@ impl BotProtectionStore for LocalBotProtectionStore {
 }
 
 pub fn build_store(config: &BotProtectionConfig) -> anyhow::Result<Box<dyn BotProtectionStore>> {
+    if !config.enabled || config.mode == BehaviorMode::Off {
+        return Ok(Box::new(MemoryBotProtectionStore::new()));
+    }
+
     match config.backend {
         BehaviorBackend::Memory => Ok(Box::new(MemoryBotProtectionStore::new())),
         BehaviorBackend::Local => Ok(Box::new(LocalBotProtectionStore::open(&config.state_path)?)),
@@ -538,14 +543,27 @@ fn read_state(path: &Path) -> anyhow::Result<BotProtectionState> {
         return Ok(BotProtectionState::default());
     }
 
-    Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+    let contents = fs::read_to_string(path)
+        .with_context(|| format!("failed to read bot protection state {}", path.display()))?;
+    serde_json::from_str(&contents).with_context(|| {
+        format!(
+            "bot protection state is not valid JSON at {}",
+            path.display()
+        )
+    })
 }
 
 fn write_state(path: &Path, state: &BotProtectionState) -> anyhow::Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
+        fs::create_dir_all(parent).with_context(|| {
+            format!(
+                "failed to create bot protection state directory {}",
+                parent.display()
+            )
+        })?;
     }
-    fs::write(path, serde_json::to_vec_pretty(state)?)?;
+    fs::write(path, serde_json::to_vec_pretty(state)?)
+        .with_context(|| format!("failed to write bot protection state {}", path.display()))?;
     Ok(())
 }
 
