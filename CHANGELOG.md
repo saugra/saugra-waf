@@ -21,6 +21,7 @@ All notable changes to Saugra are documented here.
 - `cargo check`
 - `cargo test --lib unknown_threats::tests::disabled_store_does_not_touch_local_state_path`
 - `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- `cargo audit`
 - `cargo test --locked --all-targets --all-features` passed with 260 library
   tests, 10 CLI tests, and 27 proxy integration tests.
 
