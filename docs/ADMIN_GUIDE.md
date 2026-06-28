@@ -1,6 +1,6 @@
-# Saugra Admin Guide
+# Saugra WAF Administration Guide
 
-This guide is the day-to-day operator runbook for installed Saugra servers. It
+This guide is the day-to-day operator runbook for Saugra WAF deployments. It
 covers service checks, common commands, troubleshooting, runtime allowlisting,
 runtime blocking, logs, and explanations.
 
@@ -1033,8 +1033,8 @@ bot_protection:
    Keep specific high-confidence paths such as `/wp-admin`, `/phpmyadmin`, and
    `/adminer.php`. The bundled catalog intentionally does not classify the
    generic `/admin` prefix as a scanner path.
-6. If a deterministic rule is noisy for a valid route or parameter, keep the
-   server in monitor mode and add the narrowest practical `rules.exclusions`
+6. If a deterministic rule is noisy for a valid route or parameter, keep Saugra
+   WAF in monitor mode and add the narrowest practical `rules.exclusions`
    entry after request-ID review. Prefer method, target, content type, route,
    and parameter scopes over a global rule exclusion.
 7. For identity-aware tuning, configure the assertion header under

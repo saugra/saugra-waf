@@ -307,9 +307,9 @@ Production references:
 - `configs/apache.production.example.conf`
 - `examples/django-channels-daphne-nginx/`
 
-## Install On A Server
+## Install On An Ubuntu Or Debian Host
 
-The recommended server install is the signed APT repository shown in
+The recommended package installation path is the signed APT repository shown in
 [Quick Start](#install-on-ubuntu-or-debian). It installs the binary, systemd
 unit, production configuration, rule packs, and runtime directories.
 
