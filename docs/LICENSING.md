@@ -41,6 +41,6 @@ See `TRADEMARKS.md` for the Saugra trademark policy.
 
 ## Saugra Console
 
-Saugra WAF is not split into separate community and pro editions. Future
-integrations with Saugra Console may be documented separately once the Console
-licensing and distribution model are decided.
+Saugra WAF is a fully open-source, community-based project. It may integrate
+with Saugra Console as an optional operations dashboard for managing rules,
+policies, and multi-instance deployments across Saugra WAF and Saugra EDR.

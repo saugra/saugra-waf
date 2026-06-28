@@ -415,6 +415,6 @@ License v3.0 only (AGPL-3.0-only)](LICENSE).
 See [licensing](docs/LICENSING.md) for guidance on AGPL-3.0-only use, modified
 network deployments, warranty and liability limits, and trademark policy.
 
-Saugra WAF is not split into separate community and pro editions. Future
-integrations with Saugra Console may be documented separately once the Console
-licensing and distribution model are decided.
+Saugra WAF is a fully open-source, community-based project. It may integrate
+with Saugra Console as an optional operations dashboard for managing rules,
+policies, and multi-instance deployments across Saugra WAF and Saugra EDR.
