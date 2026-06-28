@@ -4,6 +4,26 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.1 - 2026-06-28
+
+### Fixed
+
+- Prevent disabled or off behavior, bot-protection, and unknown-threat stores
+  from opening local state files during startup, avoiding systemd permission
+  failures when optional local state paths are not writable.
+- Add path-specific context to local behavior, bot-protection, and
+  unknown-threat state-file errors so startup journals identify the failing
+  file or directory.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo check`
+- `cargo test --lib unknown_threats::tests::disabled_store_does_not_touch_local_state_path`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- `cargo test --locked --all-targets --all-features` passed with 260 library
+  tests, 10 CLI tests, and 27 proxy integration tests.
+
 ## 1.1.0 - 2026-06-15
 
 ### Added
