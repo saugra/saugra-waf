@@ -141,6 +141,42 @@ inclusion, with Ubuntu sync where possible.
 - [ ] Upload to mentors.debian.net and request sponsorship.
 - [ ] Track Debian NEW review and Ubuntu sync after Debian acceptance.
 
+## Phase 8.5 — Saugra Console Integration
+
+Saugra WAF should remain fully useful as a standalone self-hosted WAF, while
+also being able to enroll into Saugra Console for central inventory,
+telemetry, policy, investigations, relay operation, and audit workflows.
+
+- [x] Depend on the shared `saugra-console-contracts` crate for Console wire
+      payloads.
+- [x] Add a WAF event adapter that converts local `SecurityEvent` records into
+      Console-valid `EventIngestRequest` records with `event_family`,
+      `occurred_at`, `event_id`, `severity`, `action`, and `risk_score`.
+- [x] Add a WAF heartbeat adapter that reports WAF inventory and capabilities
+      through the Console `HeartbeatRequest` contract.
+- [ ] Add protected Console node enrollment using one-time product-scoped
+      enrollment tokens.
+- [ ] Store the returned Console node credential in a protected local credential
+      file or platform key store with explicit permissions checks.
+- [ ] Add authenticated Console requests with bearer credential,
+      `X-Saugra-Timestamp`, and unique `X-Saugra-Nonce` replay protection
+      headers.
+- [ ] Add durable Console telemetry delivery to `/api/v1/ingest/events` without
+      weakening local JSONL logging or `logs tail`/`explain` workflows.
+- [ ] Send periodic WAF health and inventory heartbeats to
+      `/api/v1/ingest/health`.
+- [ ] Fetch signed effective WAF policy/rule bundles from
+      `/api/v1/policy/effective`, verify signature/digest/trusted key/product
+      compatibility, and preserve the last verified safe policy offline.
+- [ ] Add response-command support only for deterministic WAF-safe actions such
+      as managed runtime block/allow policy changes with expiry and audit
+      records.
+- [ ] Support Saugra Relay endpoints with the same contracts for restricted
+      networks.
+- [ ] Add integration tests that validate WAF payloads with Console contract
+      validators and cover accepted, duplicate, retry, and rejected
+      acknowledgements.
+
 ## Phase 3 — Production-Ready Proxy Verification + Abuse Controls
 
 - [x] Add JSON decision output shape tests.

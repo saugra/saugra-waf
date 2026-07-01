@@ -3,6 +3,7 @@ pub mod behavior;
 pub mod bot;
 pub mod campaign;
 pub mod config;
+pub mod console;
 pub mod crs_convert;
 pub mod decision;
 pub mod event_store;
