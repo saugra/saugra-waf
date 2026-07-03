@@ -149,6 +149,10 @@ telemetry, policy, investigations, relay operation, and audit workflows.
 
 - [x] Depend on the shared `saugra-console-contracts` crate for Console wire
       payloads.
+- [ ] Replace local relative `saugra-console-contracts` path dependencies with
+      a portable versioned dependency strategy: consume a published/internal
+      registry crate or a pinned Git tag/revision, with local `path` overrides
+      reserved for developer workspace builds.
 - [x] Add a WAF event adapter that converts local `SecurityEvent` records into
       Console-valid `EventIngestRequest` records with `event_family`,
       `occurred_at`, `event_id`, `severity`, `action`, and `risk_score`.
