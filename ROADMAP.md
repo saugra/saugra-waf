@@ -149,7 +149,7 @@ telemetry, policy, investigations, relay operation, and audit workflows.
 
 - [x] Depend on the shared `saugra-console-contracts` crate for Console wire
       payloads.
-- [ ] Replace local relative `saugra-console-contracts` path dependencies with
+- [x] Replace local relative `saugra-console-contracts` path dependencies with
       a portable versioned dependency strategy: consume a published/internal
       registry crate or a pinned Git tag/revision, with local `path` overrides
       reserved for developer workspace builds.
