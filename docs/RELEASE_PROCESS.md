@@ -60,12 +60,14 @@ Confirm that the secret name is present without exposing its value:
 gh secret list --repo saugra/saugra-waf
 ```
 
-Release CI verifies that this token can read the pinned contracts tag before
-installing Rust or running Cargo. A missing, expired, unapproved, or
-under-scoped token fails immediately with an error naming
-`SAUGRA_CONTRACTS_TOKEN` and `saugra/saugra-console-contracts`. Rotate the token
-before expiration by generating a replacement with the same minimal access and
-running `gh secret set` again; GitHub replaces the stored value atomically.
+Release CI verifies through the GitHub API that this token can read the pinned
+contracts tag before installing Rust or running Cargo. It then configures
+PAT-compatible, authenticated Git fetching inside the ephemeral runner. A
+missing, expired, unapproved, or under-scoped token fails immediately with an
+error naming `SAUGRA_CONTRACTS_TOKEN` and
+`saugra/saugra-console-contracts`. Rotate the token before expiration by
+generating a replacement with the same minimal access and running
+`gh secret set` again; GitHub replaces the stored value atomically.
 
 ## Prepare
 

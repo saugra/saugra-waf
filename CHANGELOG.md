@@ -4,6 +4,13 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.5 - 2026-07-13
+
+### Fixed
+
+- Validate private Console contracts access through GitHub's API and configure
+  PAT-compatible Git authentication for Cargo release builds.
+
 ## 1.1.4 - 2026-07-13
 
 ### Fixed
