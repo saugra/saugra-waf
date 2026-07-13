@@ -4,6 +4,11 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+### Fixed
+
+- Make release CI fail before Rust setup with actionable guidance when the
+  private Console contracts dependency or its pinned tag cannot be accessed.
+
 ## 1.1.3 - 2026-07-13
 
 ### Added

@@ -23,6 +23,12 @@ Configure `SAUGRA_APT_GPG_KEY_ID`, `SAUGRA_APT_GPG_PRIVATE_KEY`, and
 `SAUGRA_APT_GPG_PASSPHRASE` as GitHub Actions secrets. Keep an encrypted
 offline backup and never commit exported private keys.
 
+Configure `SAUGRA_CONTRACTS_TOKEN` as a GitHub Actions secret containing a
+fine-grained, read-only token with access to the private
+`saugra/saugra-console-contracts` repository. Release CI verifies access to the
+pinned contracts tag before installing Rust or running Cargo, then uses the
+token only inside the ephemeral release runner to fetch that dependency.
+
 ## Prepare
 
 1. Confirm the version in `Cargo.toml`.
