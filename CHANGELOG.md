@@ -4,10 +4,20 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.4 - 2026-07-13
+
 ### Fixed
 
 - Make release CI fail before Rust setup with actionable guidance when the
   private Console contracts dependency or its pinned tag cannot be accessed.
+- Configure authenticated Cargo fetching for the pinned private Console
+  contracts dependency after the release access check succeeds.
+
+### Documentation
+
+- Document least-privilege generation, secure repository-secret setup,
+  verification, approval, failure handling, and rotation for
+  `SAUGRA_CONTRACTS_TOKEN`.
 
 ## 1.1.3 - 2026-07-13
 

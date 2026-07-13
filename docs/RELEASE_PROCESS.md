@@ -23,11 +23,49 @@ Configure `SAUGRA_APT_GPG_KEY_ID`, `SAUGRA_APT_GPG_PRIVATE_KEY`, and
 `SAUGRA_APT_GPG_PASSPHRASE` as GitHub Actions secrets. Keep an encrypted
 offline backup and never commit exported private keys.
 
-Configure `SAUGRA_CONTRACTS_TOKEN` as a GitHub Actions secret containing a
-fine-grained, read-only token with access to the private
-`saugra/saugra-console-contracts` repository. Release CI verifies access to the
-pinned contracts tag before installing Rust or running Cargo, then uses the
-token only inside the ephemeral release runner to fetch that dependency.
+### Console Contracts Dependency Token
+
+Release builds fetch the private `saugra/saugra-console-contracts` repository.
+Create a dedicated fine-grained personal access token instead of reusing a
+maintainer token with broad organization or account permissions:
+
+1. In GitHub, open **Settings**, **Developer settings**, **Personal access
+   tokens**, **Fine-grained tokens**, then select **Generate new token**.
+2. Use a recognizable name such as `saugra-waf-contracts-read` and choose the
+   shortest practical expiration allowed by the organization.
+3. Select `saugra` as the resource owner. If the organization requires token
+   approval, enter a release-build justification and wait for approval before
+   tagging a release.
+4. Under **Repository access**, select **Only select repositories**, then choose
+   only `saugra-console-contracts`.
+5. Under **Repository permissions**, grant **Contents: Read-only**. Leave all
+   other optional repository and organization permissions unset.
+6. Generate the token and copy it once. Never paste it into issues, chat, shell
+   history, YAML, logs, commits, or release notes.
+
+Store the token as an Actions secret on the WAF repository. This command reads
+the value interactively; paste the token and press `Ctrl+D`:
+
+```bash
+gh secret set SAUGRA_CONTRACTS_TOKEN --repo saugra/saugra-waf
+```
+
+Alternatively, open the `saugra/saugra-waf` repository in GitHub and use
+**Settings**, **Secrets and variables**, **Actions**, **New repository secret**.
+Name the secret exactly `SAUGRA_CONTRACTS_TOKEN`.
+
+Confirm that the secret name is present without exposing its value:
+
+```bash
+gh secret list --repo saugra/saugra-waf
+```
+
+Release CI verifies that this token can read the pinned contracts tag before
+installing Rust or running Cargo. A missing, expired, unapproved, or
+under-scoped token fails immediately with an error naming
+`SAUGRA_CONTRACTS_TOKEN` and `saugra/saugra-console-contracts`. Rotate the token
+before expiration by generating a replacement with the same minimal access and
+running `gh secret set` again; GitHub replaces the stored value atomically.
 
 ## Prepare
 
