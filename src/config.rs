@@ -41,6 +41,12 @@ pub enum ConfigError {
     InvalidEventLogMaxFiles,
     #[error("logging.timezone must be UTC, Africa/Nairobi, or a fixed offset such as +03:00")]
     InvalidLoggingTimezone,
+    #[error("console.management_url must be an http:// or https:// URL when configured")]
+    InvalidConsoleManagementUrl,
+    #[error("console.external_id must not be blank when console is enabled")]
+    InvalidConsoleExternalId,
+    #[error("console.credential_path must not be blank when configured")]
+    InvalidConsoleCredentialPath,
     #[error("rate_limit.requests_per_minute must be greater than zero")]
     InvalidRateLimit,
     #[error("rate_limit.routes entries must include a non-empty path")]
@@ -311,6 +317,8 @@ pub struct SaugraConfig {
     #[serde(default)]
     pub logging: LoggingConfig,
     #[serde(default)]
+    pub console: ConsoleConfig,
+    #[serde(default)]
     pub websocket: WebSocketConfig,
     #[serde(default)]
     pub posture: PostureConfig,
@@ -322,6 +330,28 @@ pub struct SaugraConfig {
     pub security_summary: SecuritySummaryConfig,
     #[serde(default)]
     pub storage_cleanup: StorageCleanupConfig,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+pub struct ConsoleConfig {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub management_url: Option<String>,
+    #[serde(default)]
+    pub external_id: Option<String>,
+    #[serde(default)]
+    pub display_name: Option<String>,
+    #[serde(default)]
+    pub credential_path: Option<PathBuf>,
+}
+
+impl ConsoleConfig {
+    pub fn credential_path(&self, event_log_path: &str) -> PathBuf {
+        self.credential_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-credential.json")))
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -1382,6 +1412,30 @@ impl SaugraConfig {
 
         if !crate::event_store::is_supported_timestamp_timezone(&self.logging.timezone) {
             return Err(ConfigError::InvalidLoggingTimezone);
+        }
+
+        if let Some(url) = self.console.management_url.as_deref() {
+            if url.trim().is_empty() || !(url.starts_with("http://") || url.starts_with("https://"))
+            {
+                return Err(ConfigError::InvalidConsoleManagementUrl);
+            }
+        }
+        if self.console.enabled
+            && self
+                .console
+                .external_id
+                .as_deref()
+                .is_none_or(|value| value.trim().is_empty())
+        {
+            return Err(ConfigError::InvalidConsoleExternalId);
+        }
+        if self
+            .console
+            .credential_path
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(ConfigError::InvalidConsoleCredentialPath);
         }
 
         if self.rate_limit.requests_per_minute == 0 {

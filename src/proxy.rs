@@ -1777,6 +1777,7 @@ mod tests {
             runtime_policy: Default::default(),
             ai: Default::default(),
             logging: Default::default(),
+            console: Default::default(),
             websocket: Default::default(),
             posture: Default::default(),
             reports: Default::default(),

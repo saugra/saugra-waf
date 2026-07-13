@@ -6,7 +6,7 @@ use std::{
 use anyhow::Context;
 use clap::{Parser, Subcommand};
 use saugra_waf::{
-    ai, behavior, bot, config::SaugraConfig, crs_convert, event_store,
+    ai, behavior, bot, config::SaugraConfig, console, crs_convert, event_store,
     event_store::EventLogRetention, logging, owasp, posture, proxy, reports, rule_drafts, rules,
     runtime_policy, security_summary, standards, storage_cleanup, unknown_threats,
 };
@@ -101,6 +101,24 @@ enum Commands {
     Ai {
         #[command(subcommand)]
         command: AiCommand,
+    },
+    /// Enroll and connect this WAF node to Saugra Console.
+    Console {
+        #[command(subcommand)]
+        command: ConsoleCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum ConsoleCommand {
+    /// Enroll using a one-time WAF enrollment token from Saugra Console.
+    Enroll {
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[arg(long, env = "SAUGRA_CONSOLE_ENROLLMENT_TOKEN", hide_env_values = true)]
+        enrollment_token: String,
+        #[arg(long)]
+        display_name: Option<String>,
     },
 }
 
@@ -415,6 +433,26 @@ async fn main() -> anyhow::Result<()> {
             logging::init(&config.logging)?;
             proxy::run(config).await
         }
+        Commands::Console { command } => match command {
+            ConsoleCommand::Enroll {
+                config,
+                enrollment_token,
+                display_name,
+            } => {
+                let config = load_valid_config(&config)?;
+                let credential = console::enroll_with_console(
+                    &config,
+                    &enrollment_token,
+                    display_name.as_deref(),
+                )
+                .await?;
+                println!(
+                    "enrolled with Saugra Console as node {} (tenant {}, credential fingerprint {})",
+                    credential.node_id, credential.tenant_id, credential.credential_fingerprint
+                );
+                Ok(())
+            }
+        },
         Commands::Rules { command } => match command {
             RulesCommand::List { config } => {
                 let config = load_valid_config(&config)?;

@@ -328,6 +328,16 @@ logging:
   event_log_max_files: 10
   timezone: Africa/Nairobi
 
+# Optional Saugra Console enrollment. The enrollment token is a one-time secret
+# passed to the CLI, never persisted in YAML. The returned node credential is
+# stored with owner-only permissions at credential_path.
+console:
+  enabled: false
+  management_url: https://console.saugra.example
+  external_id: waf-example-com
+  display_name: Example.com WAF
+  credential_path: /var/lib/saugra-waf/console-credential.json
+
 # Security summaries are generated from the durable JSONL security event log.
 # They are intended for daily operator review without watching logs all day.
 #

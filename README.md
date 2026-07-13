@@ -418,3 +418,15 @@ network deployments, warranty and liability limits, and trademark policy.
 Saugra WAF is a fully open-source, community-based project. It may integrate
 with Saugra Console as an optional operations dashboard for managing rules,
 policies, and multi-instance deployments across Saugra WAF and Saugra EDR.
+
+To enroll a WAF node, configure the optional `console` YAML section, create a
+one-time WAF enrollment token in Console, and run:
+
+```bash
+sudo saugra-waf console enroll \
+  --config /etc/saugra-waf/saugra-waf.yml \
+  --enrollment-token '<one-time-token>'
+```
+
+For production credential paths and re-enrollment guidance, see the
+[administrator guide](docs/ADMIN_GUIDE.md#saugra-console-enrollment).

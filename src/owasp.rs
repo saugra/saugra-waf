@@ -392,6 +392,7 @@ mod tests {
                 event_log_max_files: 30,
                 ..LoggingConfig::default()
             },
+            console: Default::default(),
             websocket: Default::default(),
             posture: Default::default(),
             reports: Default::default(),

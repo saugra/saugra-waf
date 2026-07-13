@@ -4,6 +4,36 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.3 - 2026-07-13
+
+### Added
+
+- Add optional Saugra Console enrollment configuration with stable WAF node
+  identity, Console URL, display name, and protected credential path.
+- Add `saugra-waf console enroll` using one-time WAF enrollment tokens and the
+  shared Saugra Console enrollment contract.
+- Validate Console enrollment responses as WAF credentials and atomically
+  persist returned node credentials with owner-only permissions on Unix.
+
+### Security
+
+- Keep one-time enrollment tokens outside YAML, with optional delivery through
+  `SAUGRA_CONSOLE_ENROLLMENT_TOKEN` to avoid shell-history exposure.
+- Reject credentials issued for another Saugra product and avoid printing the
+  returned node credential in normal CLI output.
+
+### Verified
+
+- `cargo fmt --all -- --check`
+- `cargo check --locked --all-targets --all-features`
+- `cargo clippy --locked --all-targets --all-features -- -D warnings`
+- `cargo test --locked --test console_integration --test cli`
+- `cargo test --locked --all-targets --all-features` passed with 263 library
+  tests, 10 CLI tests, 4 Console integration tests, and 27 proxy integration
+  tests.
+- `cargo deb --locked` built `saugra-waf_1.1.3-1_amd64.deb`; package metadata
+  and contents were inspected with `dpkg-deb`.
+
 ## 1.1.2 - 2026-06-28
 
 ### Fixed

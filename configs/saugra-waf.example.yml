@@ -2,6 +2,15 @@ server:
   listen: 127.0.0.1:8787
   mode: monitor
 
+# Optional Saugra Console enrollment. Generate a one-time WAF enrollment token
+# in Console, then run `saugra-waf console enroll`. Never store that token here.
+# console:
+#   enabled: true
+#   management_url: https://console.saugra.example
+#   external_id: waf-example-com
+#   display_name: Example.com WAF
+#   credential_path: ./data/saugra-waf/console-credential.json
+
 upstreams:
   - name: app
     host: example.com

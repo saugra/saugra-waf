@@ -1160,6 +1160,47 @@ Do not switch production rate limiting to `memory` as a permanent fix. Memory
 state resets on restart and does not coordinate across multiple Saugra
 instances.
 
+## Saugra Console Enrollment
+
+Console integration is optional and does not replace local inspection, blocking,
+event retention, or explanation workflows. Configure a stable external node ID
+and a protected credential location:
+
+```yaml
+console:
+  enabled: true
+  management_url: https://console.saugra.example
+  external_id: waf-example-com
+  display_name: Example.com WAF
+  credential_path: /var/lib/saugra-waf/console-credential.json
+```
+
+Create a one-time token for product **WAF** under Console's node enrollment
+screen. Enroll as the service owner or root so Saugra can create the credential
+directory and file:
+
+```bash
+sudo saugra-waf console enroll \
+  --config /etc/saugra-waf/saugra-waf.yml \
+  --enrollment-token '<one-time-token>'
+```
+
+Alternatively, provide the token through `SAUGRA_CONSOLE_ENROLLMENT_TOKEN` to
+avoid placing it in shell history. The command sends `POST /api/v1/nodes/enroll`
+with the one-time token as a bearer credential. It validates that Console
+returns a WAF credential and atomically stores it with mode `0600` on Unix.
+Never put an enrollment token or returned node credential in YAML.
+
+Enrollment currently establishes and stores node identity. Automatic event
+delivery, heartbeat scheduling, and Console policy synchronization are separate
+integration capabilities and are not enabled merely by enrollment. Local WAF
+protection continues if Console is unavailable.
+
+Re-enroll only if the node credential is lost, expired, or revoked, or if the
+node must deliberately receive a new identity. Revoke the old Console node
+credential first, preserve it only as required by your audit policy, generate a
+fresh one-time WAF token, and rerun the enrollment command.
+
 ### WebSocket Routing Failures
 
 1. Confirm the public proxy routes `/ws/` through Saugra if Saugra should

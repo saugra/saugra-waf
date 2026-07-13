@@ -1368,6 +1368,7 @@ fn test_config(mode: WafMode, requests_per_minute: u32) -> SaugraConfig {
         runtime_policy: Default::default(),
         ai: AiConfig::default(),
         logging: LoggingConfig::default(),
+        console: Default::default(),
         websocket: Default::default(),
         posture: Default::default(),
         reports: Default::default(),

@@ -919,6 +919,7 @@ mod tests {
                 event_log_path: temp_dir.path().join("events.jsonl").display().to_string(),
                 ..Default::default()
             },
+            console: Default::default(),
             websocket: Default::default(),
             posture: Default::default(),
             reports: Default::default(),
