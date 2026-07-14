@@ -4,6 +4,34 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.6 - 2026-07-14
+
+### Added
+
+- Send periodic authenticated WAF health and inventory heartbeats to Saugra
+  Console after enrollment.
+- Deliver allow, monitor, and block decisions to the enrolled tenant and WAF
+  node through bounded Console event batches.
+- Add a durable, owner-protected local Console outbox so events survive process,
+  Console, and network interruptions without weakening local JSONL logging.
+- Handle accepted, duplicate, permanently rejected, and retryable Console
+  delivery acknowledgements while preserving retryable records locally.
+- Add configurable heartbeat interval, delivery interval, batch size, and
+  outbox path with production-oriented defaults and validation.
+
+### Security
+
+- Authenticate every telemetry request with the enrolled node credential, a
+  current timestamp, and a unique nonce for replay protection.
+- Keep local inspection and blocking operational when Console is unavailable,
+  and avoid exposing the node credential in configuration or telemetry logs.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo check --all-targets`
+- `cargo test --locked --all-targets --all-features` passed with 307 tests.
+
 ## 1.1.5 - 2026-07-13
 
 ### Fixed

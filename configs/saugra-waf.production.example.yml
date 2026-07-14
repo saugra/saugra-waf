@@ -337,6 +337,11 @@ console:
   external_id: waf-example-com
   display_name: Example.com WAF
   credential_path: /var/lib/saugra-waf/console-credential.json
+  # Events are committed here before delivery and survive Console/network outages.
+  outbox_path: /var/lib/saugra-waf/console-outbox.jsonl
+  heartbeat_interval_secs: 60
+  delivery_interval_secs: 5
+  batch_size: 100
 
 # Security summaries are generated from the durable JSONL security event log.
 # They are intended for daily operator review without watching logs all day.

@@ -47,6 +47,12 @@ pub enum ConfigError {
     InvalidConsoleExternalId,
     #[error("console.credential_path must not be blank when configured")]
     InvalidConsoleCredentialPath,
+    #[error("console.outbox_path must not be blank when configured")]
+    InvalidConsoleOutboxPath,
+    #[error("console heartbeat and delivery intervals must be greater than zero")]
+    InvalidConsoleInterval,
+    #[error("console.batch_size must be between 1 and 500")]
+    InvalidConsoleBatchSize,
     #[error("rate_limit.requests_per_minute must be greater than zero")]
     InvalidRateLimit,
     #[error("rate_limit.routes entries must include a non-empty path")]
@@ -332,7 +338,7 @@ pub struct SaugraConfig {
     pub storage_cleanup: StorageCleanupConfig,
 }
 
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct ConsoleConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -344,6 +350,40 @@ pub struct ConsoleConfig {
     pub display_name: Option<String>,
     #[serde(default)]
     pub credential_path: Option<PathBuf>,
+    #[serde(default)]
+    pub outbox_path: Option<PathBuf>,
+    #[serde(default = "default_console_heartbeat_interval_secs")]
+    pub heartbeat_interval_secs: u64,
+    #[serde(default = "default_console_delivery_interval_secs")]
+    pub delivery_interval_secs: u64,
+    #[serde(default = "default_console_batch_size")]
+    pub batch_size: usize,
+}
+
+fn default_console_heartbeat_interval_secs() -> u64 {
+    60
+}
+fn default_console_delivery_interval_secs() -> u64 {
+    5
+}
+fn default_console_batch_size() -> usize {
+    100
+}
+
+impl Default for ConsoleConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            management_url: None,
+            external_id: None,
+            display_name: None,
+            credential_path: None,
+            outbox_path: None,
+            heartbeat_interval_secs: default_console_heartbeat_interval_secs(),
+            delivery_interval_secs: default_console_delivery_interval_secs(),
+            batch_size: default_console_batch_size(),
+        }
+    }
 }
 
 impl ConsoleConfig {
@@ -351,6 +391,12 @@ impl ConsoleConfig {
         self.credential_path
             .clone()
             .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-credential.json")))
+    }
+
+    pub fn outbox_path(&self, event_log_path: &str) -> PathBuf {
+        self.outbox_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-outbox.jsonl")))
     }
 }
 
@@ -1436,6 +1482,20 @@ impl SaugraConfig {
             .is_some_and(|path| path.as_os_str().is_empty())
         {
             return Err(ConfigError::InvalidConsoleCredentialPath);
+        }
+        if self
+            .console
+            .outbox_path
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(ConfigError::InvalidConsoleOutboxPath);
+        }
+        if self.console.heartbeat_interval_secs == 0 || self.console.delivery_interval_secs == 0 {
+            return Err(ConfigError::InvalidConsoleInterval);
+        }
+        if !(1..=500).contains(&self.console.batch_size) {
+            return Err(ConfigError::InvalidConsoleBatchSize);
         }
 
         if self.rate_limit.requests_per_minute == 0 {
@@ -3027,6 +3087,27 @@ mod tests {
 
         assert!(config.validate().is_ok());
         assert_eq!(config.max_body_size_bytes().unwrap(), 2 * 1024 * 1024);
+    }
+
+    #[test]
+    fn validates_console_delivery_bounds() {
+        let mut config: SaugraConfig =
+            serde_yaml::from_str(include_str!("../configs/saugra-waf.example.yml")).unwrap();
+        assert_eq!(config.console.heartbeat_interval_secs, 60);
+        assert_eq!(config.console.delivery_interval_secs, 5);
+        assert_eq!(config.console.batch_size, 100);
+
+        config.console.batch_size = 501;
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidConsoleBatchSize)
+        ));
+        config.console.batch_size = 100;
+        config.console.delivery_interval_secs = 0;
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidConsoleInterval)
+        ));
     }
 
     #[test]

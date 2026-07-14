@@ -1169,10 +1169,14 @@ and a protected credential location:
 ```yaml
 console:
   enabled: true
-  management_url: https://console.saugra.example
+  management_url: https://console.example.com
   external_id: waf-example-com
   display_name: Example.com WAF
   credential_path: /var/lib/saugra-waf/console-credential.json
+  outbox_path: /var/lib/saugra-waf/console-outbox.jsonl
+  heartbeat_interval_secs: 60
+  delivery_interval_secs: 5
+  batch_size: 100
 ```
 
 Create a one-time token for product **WAF** under Console's node enrollment
@@ -1191,10 +1195,19 @@ with the one-time token as a bearer credential. It validates that Console
 returns a WAF credential and atomically stores it with mode `0600` on Unix.
 Never put an enrollment token or returned node credential in YAML.
 
-Enrollment currently establishes and stores node identity. Automatic event
-delivery, heartbeat scheduling, and Console policy synchronization are separate
-integration capabilities and are not enabled merely by enrollment. Local WAF
-protection continues if Console is unavailable.
+When `console.enabled` is true, `saugra-waf run` loads the enrolled node
+credential, sends periodic health heartbeats, and delivers every locally
+recorded allow, monitor, and block decision in bounded batches. Events are
+first committed to the configured durable Console outbox. Accepted, duplicate,
+and permanently rejected records leave the outbox; retryable records remain for
+the next delivery attempt. Local inspection, blocking, JSONL logging, and
+explanation continue if Console is unavailable.
+
+Configure `console.outbox_path` on durable local storage writable by the WAF
+service account. `heartbeat_interval_secs`, `delivery_interval_secs`, and
+`batch_size` default to `60`, `5`, and `100`; batch size must remain between 1
+and Console's 500-record limit. Console policy synchronization remains a
+separate integration capability.
 
 Re-enroll only if the node credential is lost, expired, or revoked, or if the
 node must deliberately receive a new identity. Revoke the old Console node

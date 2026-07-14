@@ -1,6 +1,6 @@
 [package]
 name = "saugra-waf"
-version = "1.1.5"
+version = "1.1.6"
 edition = "2021"
 description = "A lightweight rule-based + AI-assisted Web Application Firewall."
 license = "AGPL-3.0-only"
@@ -63,7 +63,7 @@ serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
 thiserror = "2.0"
-tokio = { version = "1.39", features = ["io-util", "macros", "process", "rt-multi-thread", "signal"] }
+tokio = { version = "1.39", features = ["io-util", "macros", "process", "rt-multi-thread", "signal", "time"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
 uuid = { version = "1.10", features = ["v4", "serde"] }

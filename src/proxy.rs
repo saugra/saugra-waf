@@ -35,6 +35,7 @@ use crate::{
         ForwardedHeadersConfig, RouteRateLimitConfig, RuntimeAllowlistEffect, SaugraConfig,
         UpstreamConfig, WafMode,
     },
+    console::{self, ConsoleOutbox},
     decision::{WafAction, WafDecision},
     event_store::{
         self, EventLogRetention, RequestEvidence, SecurityEvent, UpstreamEvent, WebSocketEvent,
@@ -59,6 +60,7 @@ pub struct ProxyState {
     runtime_policy: Arc<RuntimePolicyHandle>,
     event_log_path: PathBuf,
     event_log_retention: EventLogRetention,
+    console_outbox: Option<ConsoleOutbox>,
     rule_set: Arc<RuleSet>,
 }
 
@@ -105,6 +107,7 @@ impl ProxyState {
             runtime_policy,
             event_log_path,
             event_log_retention,
+            console_outbox: None,
             rule_set,
         })
     }
@@ -198,7 +201,15 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
         max_files: config.logging.event_log_max_files,
     };
     let campaign_store = Arc::from(campaign::build_store(&config.campaign_correlation).await?);
-    let state = ProxyState::with_campaign_store(
+    let console_outbox = config
+        .console
+        .enabled
+        .then(|| ConsoleOutbox::from_config(&config));
+    let _console_task = console_outbox
+        .as_ref()
+        .map(|outbox| console::start_telemetry(&config, outbox.clone()))
+        .transpose()?;
+    let mut state = ProxyState::with_campaign_store(
         config,
         Arc::new(HyperUpstreamTransport {
             client: Client::builder(TokioExecutor::new()).build(HttpConnector::new()),
@@ -208,6 +219,7 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
         event_log_path,
         event_log_retention,
     )?;
+    state.console_outbox = console_outbox;
 
     let app = Router::new()
         .route("/_saugra-waf/health", get(health))
@@ -1500,6 +1512,11 @@ fn record_event(
             %error,
             "failed to write security event"
         );
+    }
+    if let Some(outbox) = &state.console_outbox {
+        if let Err(error) = outbox.append(&event) {
+            warn!(request_id = %decision.request_id, %error, "failed to persist event to Console outbox");
+        }
     }
 }
 

@@ -10,6 +10,10 @@ server:
 #   external_id: waf-example-com
 #   display_name: Example.com WAF
 #   credential_path: ./data/saugra-waf/console-credential.json
+#   outbox_path: ./data/saugra-waf/console-outbox.jsonl
+#   heartbeat_interval_secs: 60
+#   delivery_interval_secs: 5
+#   batch_size: 100
 
 upstreams:
   - name: app

@@ -10,7 +10,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 7 complete — Operator workflows and scheduled security summaries**
+Current phase: **Phase 8.5 in progress — Saugra Console telemetry integration**
 
 The repository has a working Rust foundation:
 
@@ -49,7 +49,7 @@ cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 Current test status:
 
 ```txt
-288 tests pass in a normal local/CI environment, including the two WebSocket
+307 tests pass in a normal local/CI environment, including the two WebSocket
 raw-socket tunnel tests.
 ```
 
@@ -158,16 +158,20 @@ telemetry, policy, investigations, relay operation, and audit workflows.
       `occurred_at`, `event_id`, `severity`, `action`, and `risk_score`.
 - [x] Add a WAF heartbeat adapter that reports WAF inventory and capabilities
       through the Console `HeartbeatRequest` contract.
-- [ ] Add protected Console node enrollment using one-time product-scoped
+- [x] Add protected Console node enrollment using one-time product-scoped
       enrollment tokens.
-- [ ] Store the returned Console node credential in a protected local credential
+- [x] Store the returned Console node credential in a protected local credential
       file or platform key store with explicit permissions checks.
-- [ ] Add authenticated Console requests with bearer credential,
+- [x] Add authenticated Console requests with bearer credential,
       `X-Saugra-Timestamp`, and unique `X-Saugra-Nonce` replay protection
       headers.
-- [ ] Add durable Console telemetry delivery to `/api/v1/ingest/events` without
+- [x] Add durable Console telemetry delivery to `/api/v1/ingest/events` without
       weakening local JSONL logging or `logs tail`/`explain` workflows.
-- [ ] Send periodic WAF health and inventory heartbeats to
+- [x] Deliver allow, monitor, and block decisions for each enrolled tenant WAF,
+      preserving Console tenant and node identity on every batch.
+- [x] Process accepted, duplicate, rejected, and retry acknowledgements so only
+      terminal events leave the durable local outbox.
+- [x] Send periodic WAF health and inventory heartbeats to
       `/api/v1/ingest/health`.
 - [ ] Fetch signed effective WAF policy/rule bundles from
       `/api/v1/policy/effective`, verify signature/digest/trusted key/product
@@ -177,9 +181,9 @@ telemetry, policy, investigations, relay operation, and audit workflows.
       records.
 - [ ] Support Saugra Relay endpoints with the same contracts for restricted
       networks.
-- [ ] Add integration tests that validate WAF payloads with Console contract
-      validators and cover accepted, duplicate, retry, and rejected
-      acknowledgements.
+- [ ] Add live Console integration tests that validate WAF payloads with
+      Console contract validators and cover accepted, duplicate, retry, and
+      rejected acknowledgements.
 
 ## Phase 3 — Production-Ready Proxy Verification + Abuse Controls
 
