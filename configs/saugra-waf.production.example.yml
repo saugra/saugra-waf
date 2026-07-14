@@ -342,6 +342,11 @@ console:
   heartbeat_interval_secs: 60
   delivery_interval_secs: 5
   batch_size: 100
+  policy_poll_interval_secs: 30
+  policy_cache_path: /var/lib/saugra-waf/console-policy.json
+  # Copy the key ID and public key shown in Console's Policy library. Managed
+  # policy remains disabled when no trusted signing keys are configured.
+  trusted_signing_keys: {}
 
 # Security summaries are generated from the durable JSONL security event log.
 # They are intended for daily operator review without watching logs all day.

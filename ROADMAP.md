@@ -49,7 +49,7 @@ cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 Current test status:
 
 ```txt
-307 tests pass in a normal local/CI environment, including the two WebSocket
+310 tests pass in a normal local/CI environment, including the two WebSocket
 raw-socket tunnel tests.
 ```
 
@@ -173,9 +173,29 @@ telemetry, policy, investigations, relay operation, and audit workflows.
       terminal events leave the durable local outbox.
 - [x] Send periodic WAF health and inventory heartbeats to
       `/api/v1/ingest/health`.
-- [ ] Fetch signed effective WAF policy/rule bundles from
+- [x] Report active WAF rule IDs, sources, severity, category, target, risk,
+      effective action, and tuning thresholds so tenant administrators can
+      inspect each connected WAF in Console.
+- [ ] Add a WAF-focused Console editor for immutable policy revisions covering
+      mode, anomaly thresholds, detection/blocking paranoia, enabled rules,
+      disabled rules/categories, and narrowly scoped exclusions.
+- [ ] Preview policy and exclusion impact against retained tenant telemetry
+      before signing or assigning a revision.
+- [x] Support tenant, group, and individual-WAF assignment with monitor,
+      canary, and enforcement rollout stages.
+- [x] Fetch signed effective WAF policy/rule bundles from
       `/api/v1/policy/effective`, verify signature/digest/trusted key/product
       compatibility, and preserve the last verified safe policy offline.
+- [x] Validate managed rule disables and scoped exclusions locally, activate
+      them atomically,
+      and retain the last-known-good policy when validation or Console access
+      fails.
+- [ ] Report resolved, downloaded, rejected, activated, and rolled-back policy
+      state with node, revision, digest, reason, and timestamps.
+- [ ] Provide explicit rollback and local emergency override workflows without
+      allowing Console policy to disable standalone protection silently.
+- [ ] Audit every policy edit, signature, assignment, rollout, activation,
+      rejection, exclusion, and rollback within its tenant boundary.
 - [ ] Add response-command support only for deterministic WAF-safe actions such
       as managed runtime block/allow policy changes with expiry and audit
       records.

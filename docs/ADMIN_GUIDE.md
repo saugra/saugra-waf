@@ -1177,6 +1177,10 @@ console:
   heartbeat_interval_secs: 60
   delivery_interval_secs: 5
   batch_size: 100
+  policy_poll_interval_secs: 30
+  policy_cache_path: /var/lib/saugra-waf/console-policy.json
+  trusted_signing_keys:
+    console-key-id: base64url-ed25519-public-key
 ```
 
 Create a one-time token for product **WAF** under Console's node enrollment
@@ -1213,7 +1217,40 @@ Configure `console.outbox_path` on durable local storage writable by the WAF
 service account. `heartbeat_interval_secs`, `delivery_interval_secs`, and
 `batch_size` default to `60`, `5`, and `100`; batch size must remain between 1
 and Console's 500-record limit. Console policy synchronization remains a
-separate integration capability.
+separate, explicitly trusted capability. Copy the policy key ID and public key
+shown in Console's **Policy library** into `trusted_signing_keys`. When the map
+is empty, the WAF continues reporting inventory and telemetry but does not fetch
+or activate managed policy.
+
+With a trusted key configured, the WAF polls the assigned signed policy every
+`policy_poll_interval_secs` (default `30`). It verifies the Ed25519 signature,
+SHA-256 digest, signed payload, tenant, product, policy key, and revision before
+locally validating exclusions. Valid policies are stored atomically at
+`policy_cache_path` and activated without restarting request handling. The
+verified cached policy is restored after restart; invalid or unavailable
+Console policy leaves the last-known-good policy or local YAML configuration
+active.
+
+The initial managed WAF rule schema is:
+
+```yaml
+mode: monitor
+rules:
+  disabled_rule_ids:
+    - SAUGRA-XSS-001
+  disabled_categories: []
+  exclusions:
+    - name: Allow HTML in the trusted preview route
+      rule_ids: [SAUGRA-XSS-001]
+      path_prefixes: [/articles/preview]
+      methods: [POST]
+```
+
+Create an immutable WAF policy revision in Console, sign it, assign it to a
+tenant, group, or node, and begin in monitor or canary rollout. The WAF treats
+disabled rules and categories as explicit global exclusions and validates all
+scoped exclusions through the same local configuration and rule-loader checks
+used at startup.
 
 Re-enroll only if the node credential is lost, expired, or revoked, or if the
 node must deliberately receive a new identity. Revoke the old Console node

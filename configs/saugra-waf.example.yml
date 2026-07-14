@@ -14,6 +14,10 @@ server:
 #   heartbeat_interval_secs: 60
 #   delivery_interval_secs: 5
 #   batch_size: 100
+#   policy_poll_interval_secs: 30
+#   policy_cache_path: ./data/saugra-waf/console-policy.json
+#   trusted_signing_keys:
+#     console-key-id: base64url-ed25519-public-key
 
 upstreams:
   - name: app

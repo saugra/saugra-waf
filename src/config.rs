@@ -53,6 +53,12 @@ pub enum ConfigError {
     InvalidConsoleInterval,
     #[error("console.batch_size must be between 1 and 500")]
     InvalidConsoleBatchSize,
+    #[error("console.policy_poll_interval_secs must be greater than zero")]
+    InvalidConsolePolicyPollInterval,
+    #[error("console.policy_cache_path must not be blank when configured")]
+    InvalidConsolePolicyCachePath,
+    #[error("console.trusted_signing_keys must use non-blank key IDs and public keys")]
+    InvalidConsoleTrustedSigningKey,
     #[error("rate_limit.requests_per_minute must be greater than zero")]
     InvalidRateLimit,
     #[error("rate_limit.routes entries must include a non-empty path")]
@@ -358,6 +364,12 @@ pub struct ConsoleConfig {
     pub delivery_interval_secs: u64,
     #[serde(default = "default_console_batch_size")]
     pub batch_size: usize,
+    #[serde(default = "default_console_policy_poll_interval_secs")]
+    pub policy_poll_interval_secs: u64,
+    #[serde(default)]
+    pub policy_cache_path: Option<PathBuf>,
+    #[serde(default)]
+    pub trusted_signing_keys: std::collections::BTreeMap<String, String>,
 }
 
 fn default_console_heartbeat_interval_secs() -> u64 {
@@ -368,6 +380,9 @@ fn default_console_delivery_interval_secs() -> u64 {
 }
 fn default_console_batch_size() -> usize {
     100
+}
+fn default_console_policy_poll_interval_secs() -> u64 {
+    30
 }
 
 impl Default for ConsoleConfig {
@@ -382,6 +397,9 @@ impl Default for ConsoleConfig {
             heartbeat_interval_secs: default_console_heartbeat_interval_secs(),
             delivery_interval_secs: default_console_delivery_interval_secs(),
             batch_size: default_console_batch_size(),
+            policy_poll_interval_secs: default_console_policy_poll_interval_secs(),
+            policy_cache_path: None,
+            trusted_signing_keys: std::collections::BTreeMap::new(),
         }
     }
 }
@@ -397,6 +415,12 @@ impl ConsoleConfig {
         self.outbox_path
             .clone()
             .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-outbox.jsonl")))
+    }
+
+    pub fn policy_cache_path(&self, event_log_path: &str) -> PathBuf {
+        self.policy_cache_path
+            .clone()
+            .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-policy.json")))
     }
 }
 
@@ -1496,6 +1520,25 @@ impl SaugraConfig {
         }
         if !(1..=500).contains(&self.console.batch_size) {
             return Err(ConfigError::InvalidConsoleBatchSize);
+        }
+        if self.console.policy_poll_interval_secs == 0 {
+            return Err(ConfigError::InvalidConsolePolicyPollInterval);
+        }
+        if self
+            .console
+            .policy_cache_path
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(ConfigError::InvalidConsolePolicyCachePath);
+        }
+        if self.console.trusted_signing_keys.iter().any(|(id, key)| {
+            id.trim().is_empty()
+                || id.len() > 80
+                || key.trim().is_empty()
+                || key.chars().any(char::is_whitespace)
+        }) {
+            return Err(ConfigError::InvalidConsoleTrustedSigningKey);
         }
 
         if self.rate_limit.requests_per_minute == 0 {
@@ -3096,6 +3139,7 @@ mod tests {
         assert_eq!(config.console.heartbeat_interval_secs, 60);
         assert_eq!(config.console.delivery_interval_secs, 5);
         assert_eq!(config.console.batch_size, 100);
+        assert_eq!(config.console.policy_poll_interval_secs, 30);
 
         config.console.batch_size = 501;
         assert!(matches!(
@@ -3107,6 +3151,12 @@ mod tests {
         assert!(matches!(
             config.validate(),
             Err(ConfigError::InvalidConsoleInterval)
+        ));
+        config.console.delivery_interval_secs = 5;
+        config.console.policy_poll_interval_secs = 0;
+        assert!(matches!(
+            config.validate(),
+            Err(ConfigError::InvalidConsolePolicyPollInterval)
         ));
     }
 

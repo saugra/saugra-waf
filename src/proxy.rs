@@ -35,7 +35,7 @@ use crate::{
         ForwardedHeadersConfig, RouteRateLimitConfig, RuntimeAllowlistEffect, SaugraConfig,
         UpstreamConfig, WafMode,
     },
-    console::{self, ConsoleOutbox},
+    console::{self, ConsoleOutbox, ManagedPolicyHandle},
     decision::{WafAction, WafDecision},
     event_store::{
         self, EventLogRetention, RequestEvidence, SecurityEvent, UpstreamEvent, WebSocketEvent,
@@ -61,6 +61,7 @@ pub struct ProxyState {
     event_log_path: PathBuf,
     event_log_retention: EventLogRetention,
     console_outbox: Option<ConsoleOutbox>,
+    managed_policy: ManagedPolicyHandle,
     rule_set: Arc<RuleSet>,
 }
 
@@ -108,6 +109,7 @@ impl ProxyState {
             event_log_path,
             event_log_retention,
             console_outbox: None,
+            managed_policy: ManagedPolicyHandle::default(),
             rule_set,
         })
     }
@@ -205,9 +207,10 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
         .console
         .enabled
         .then(|| ConsoleOutbox::from_config(&config));
+    let managed_policy = ManagedPolicyHandle::default();
     let _console_task = console_outbox
         .as_ref()
-        .map(|outbox| console::start_telemetry(&config, outbox.clone()))
+        .map(|outbox| console::start_telemetry(&config, outbox.clone(), managed_policy.clone()))
         .transpose()?;
     let mut state = ProxyState::with_campaign_store(
         config,
@@ -220,6 +223,7 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
         event_log_retention,
     )?;
     state.console_outbox = console_outbox;
+    state.managed_policy = managed_policy;
 
     let app = Router::new()
         .route("/_saugra-waf/health", get(health))
@@ -416,9 +420,10 @@ async fn proxy_request_inner(
         content_type: &content_type,
         trusted_proxy: trusted_forwarded_headers,
     };
+    let exclusions = effective_rule_exclusions(&state);
     let matches = state
         .rule_set
-        .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
+        .inspect_with_exclusions(&request_parts, &exclusions);
     let session_id = campaign::session_fingerprint(
         &client_ip,
         &user_agent,
@@ -558,9 +563,10 @@ async fn proxy_websocket_handshake(
         content_type: &content_type,
         trusted_proxy: trusted_forwarded_headers,
     };
+    let exclusions = effective_rule_exclusions(&state);
     let mut matches = state
         .rule_set
-        .inspect_with_exclusions(&request_parts, &state.config.rules.exclusions);
+        .inspect_with_exclusions(&request_parts, &exclusions);
     matches.extend(websocket_policy_matches(&state, &parts.headers));
 
     let session_id = campaign::session_fingerprint(
@@ -1425,6 +1431,12 @@ fn is_sensitive_header(name: &HeaderName) -> bool {
     )
 }
 
+fn effective_rule_exclusions(state: &ProxyState) -> Vec<crate::config::RuleExclusionConfig> {
+    let mut exclusions = state.config.rules.exclusions.clone();
+    exclusions.extend(state.managed_policy.exclusions());
+    exclusions
+}
+
 fn log_decision(
     method: &Method,
     path: &str,
@@ -1802,5 +1814,44 @@ mod tests {
             security_summary: Default::default(),
             storage_cleanup: Default::default(),
         }
+    }
+
+    #[test]
+    fn managed_policy_exclusions_are_combined_with_local_exclusions() {
+        let mut config = test_config(WafMode::Monitor, 10);
+        config
+            .rules
+            .exclusions
+            .push(crate::config::RuleExclusionConfig {
+                name: Some("Local exclusion".into()),
+                rule_ids: vec!["LOCAL-001".into()],
+                path_prefixes: vec!["/local".into()],
+                ..Default::default()
+            });
+        let mut state = ProxyState::with_transport(
+            config,
+            Arc::new(TestUpstreamTransport),
+            Arc::new(crate::rate_limit::MemoryRateLimitStore::new()),
+            PathBuf::from("logs/test-managed-policy-events.jsonl"),
+            EventLogRetention {
+                max_size_bytes: 1024 * 1024,
+                max_files: 3,
+            },
+        )
+        .unwrap();
+        state.managed_policy = ManagedPolicyHandle::default();
+        state
+            .managed_policy
+            .activate(vec![crate::config::RuleExclusionConfig {
+                name: Some("Managed exclusion".into()),
+                rule_ids: vec!["MANAGED-001".into()],
+                path_prefixes: vec!["/managed".into()],
+                ..Default::default()
+            }]);
+
+        let exclusions = effective_rule_exclusions(&state);
+        assert_eq!(exclusions.len(), 2);
+        assert_eq!(exclusions[0].rule_ids, vec!["LOCAL-001"]);
+        assert_eq!(exclusions[1].rule_ids, vec!["MANAGED-001"]);
     }
 }

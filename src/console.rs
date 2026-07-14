@@ -3,23 +3,91 @@ use std::{
     fs::{self, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, RwLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
 use anyhow::{bail, Context, Result};
+use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use reqwest::{Client, Url};
 use saugra_console_contracts::{
-    DeliveryAcknowledgement, EnrollmentRequest, EnrollmentResponse, EventIngestRequest,
-    HeartbeatAcknowledgement, HeartbeatRequest, ManagedNodeRef, SaugraProduct,
+    DeliveryAcknowledgement, EffectivePolicyResponse, EnrollmentRequest, EnrollmentResponse,
+    EventIngestRequest, HeartbeatAcknowledgement, HeartbeatRequest, ManagedNodeRef, SaugraProduct,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
-use crate::{config::SaugraConfig, event_store::SecurityEvent};
+use crate::{
+    config::{RuleExclusionConfig, SaugraConfig},
+    event_store::SecurityEvent,
+    rules,
+};
 use tracing::{info, warn};
 
 pub const CONSOLE_PROTOCOL_VERSION: u16 = 1;
+
+#[derive(Clone, Default)]
+pub struct ManagedPolicyHandle {
+    state: Arc<RwLock<ManagedPolicyState>>,
+}
+
+#[derive(Default)]
+struct ManagedPolicyState {
+    exclusions: Vec<RuleExclusionConfig>,
+    policy_key: Option<String>,
+    revision: Option<i64>,
+    digest: Option<String>,
+}
+
+impl ManagedPolicyHandle {
+    pub fn exclusions(&self) -> Vec<RuleExclusionConfig> {
+        self.state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .exclusions
+            .clone()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn activate(&self, exclusions: Vec<RuleExclusionConfig>) {
+        self.state
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .exclusions = exclusions;
+    }
+
+    fn activate_verified(
+        &self,
+        response: &EffectivePolicyResponse,
+        exclusions: Vec<RuleExclusionConfig>,
+    ) {
+        *self
+            .state
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = ManagedPolicyState {
+            exclusions,
+            policy_key: Some(response.policy_key.clone()),
+            revision: Some(response.revision),
+            digest: Some(response.signature.sha256.clone()),
+        };
+    }
+
+    fn status(&self) -> Value {
+        let state = self
+            .state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        json!({
+            "policy_key": state.policy_key,
+            "revision": state.revision,
+            "digest": state.digest,
+            "managed_exclusions": state.exclusions.len(),
+            "status": if state.policy_key.is_some() { "active" } else { "local" }
+        })
+    }
+}
 
 #[derive(Clone)]
 pub struct ConsoleOutbox {
@@ -212,7 +280,10 @@ pub fn enrollment_request(
             "request_inspection": true,
             "request_blocking": true,
             "monitor_mode": true,
-            "security_event_storage": true
+            "security_event_storage": true,
+            "rule_inventory": true,
+            "managed_policy": true,
+            "managed_exclusions": true
         }),
     };
     request.validate()?;
@@ -377,17 +448,20 @@ fn authenticated(
         .header("X-Saugra-Nonce", uuid::Uuid::new_v4().to_string())
 }
 
-async fn send_heartbeat(client: &Client, base: &str, credential: &ConsoleCredential) -> Result<()> {
+async fn send_heartbeat(
+    client: &Client,
+    base: &str,
+    credential: &ConsoleCredential,
+    config: &SaugraConfig,
+    managed_policy: &ManagedPolicyHandle,
+) -> Result<()> {
+    let inventory = rule_inventory(config, managed_policy)?;
     let heartbeat = heartbeat_request(
         &credential.tenant_id,
         &credential.node_id,
         now_unix_secs(),
         "healthy",
-        json!({
-            "platform": std::env::consts::OS,
-            "agent_version": env!("CARGO_PKG_VERSION"),
-            "capabilities": ["waf.request.inspect", "waf.request.monitor", "waf.request.block", "waf.telemetry.events"]
-        }),
+        inventory,
     );
     let response = authenticated(
         client.post(endpoint(base, "api/v1/ingest/health")?),
@@ -411,6 +485,81 @@ async fn send_heartbeat(client: &Client, base: &str, credential: &ConsoleCredent
         bail!("Console heartbeat acknowledgement node mismatch");
     }
     Ok(())
+}
+
+pub fn rule_inventory(
+    config: &SaugraConfig,
+    managed_policy: &ManagedPolicyHandle,
+) -> Result<Value> {
+    let rule_set = rules::load_rule_set(&config.rules)
+        .context("failed to build Console inventory from active WAF rules")?;
+    let source_paths = config
+        .rules
+        .files
+        .iter()
+        .map(|path| path.display().to_string())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let default_action = match config.server.mode {
+        crate::config::WafMode::Off => "allow",
+        crate::config::WafMode::Monitor => "monitor",
+        crate::config::WafMode::Block | crate::config::WafMode::Strict => "block",
+    };
+    let managed_exclusions = managed_policy.exclusions();
+    let inventory = rule_set
+        .rules()
+        .iter()
+        .map(|rule| {
+            let disabled = managed_exclusions.iter().any(|exclusion| {
+                let targets_rule = exclusion.rule_ids.iter().any(|id| id == &rule.id)
+                    || exclusion
+                        .categories
+                        .iter()
+                        .any(|category| category == &rule.category);
+                let global = exclusion.path_prefixes.is_empty()
+                    && exclusion.query_params.is_empty()
+                    && exclusion.headers.is_empty()
+                    && exclusion.methods.is_empty()
+                    && exclusion.targets.is_empty()
+                    && exclusion.content_types.is_empty()
+                    && exclusion.trusted_headers.is_empty()
+                    && exclusion.identities.is_empty();
+                targets_rule && global
+            });
+            json!({
+                "id": rule.id,
+                "name": rule.name,
+                "source_path": source_paths,
+                "source_kind": "local_rule_pack",
+                "source_version": env!("CARGO_PKG_VERSION"),
+                "severity": rule.severity.to_string(),
+                "risk_score": rule.severity.risk_score(),
+                "action": default_action,
+                "enabled": !disabled,
+                "category": rule.category,
+                "target": rule.target.to_string(),
+                "paranoia_level": rule.paranoia_level,
+                "owasp_category": rule.owasp_category,
+                "tags": [rule.category.clone(), rule.target.to_string()]
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "platform": std::env::consts::OS,
+        "agent_version": env!("CARGO_PKG_VERSION"),
+        "mode": format!("{:?}", config.server.mode).to_ascii_lowercase(),
+        "detection_paranoia_level": config.rules.detection_paranoia_level(),
+        "blocking_paranoia_level": config.rules.blocking_paranoia_level(),
+        "inbound_anomaly_threshold": config.rules.inbound_anomaly_threshold,
+        "managed_exclusions": managed_exclusions.len(),
+        "managed_policy": managed_policy.status(),
+        "capabilities": [
+            "waf.request.inspect", "waf.request.monitor", "waf.request.block",
+            "waf.telemetry.events", "waf.rules.inventory", "waf.policy.signed",
+            "waf.policy.exclusions"
+        ],
+        "rule_inventory": inventory
+    }))
 }
 
 async fn deliver_batch(
@@ -464,9 +613,240 @@ async fn deliver_batch(
     Ok(delivered)
 }
 
+fn verify_effective_policy(
+    response: &EffectivePolicyResponse,
+    credential: &ConsoleCredential,
+    config: &SaugraConfig,
+) -> Result<Vec<RuleExclusionConfig>> {
+    if response.signature.algorithm != "ed25519" {
+        bail!("unsupported Console policy signature algorithm");
+    }
+    let trusted_key = config
+        .console
+        .trusted_signing_keys
+        .get(&response.signature.key_id)
+        .ok_or_else(|| anyhow::anyhow!("Console policy signing key is not trusted"))?;
+    if trusted_key != &response.signature.public_key {
+        bail!("Console policy embedded public key does not match the trusted key");
+    }
+    let payload = URL_SAFE_NO_PAD
+        .decode(&response.signature.signed_payload)
+        .context("Console policy signed payload is not valid base64url")?;
+    let digest = format!("{:x}", Sha256::digest(&payload));
+    if digest != response.signature.sha256 {
+        bail!("Console policy digest verification failed");
+    }
+    let signed_bundle: Value =
+        serde_json::from_slice(&payload).context("Console policy signed payload is not JSON")?;
+    if signed_bundle != response.bundle {
+        bail!("Console policy bundle differs from its signed payload");
+    }
+    let public_key: [u8; 32] = URL_SAFE_NO_PAD
+        .decode(trusted_key)
+        .context("trusted Console signing key is not valid base64url")?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("trusted Console signing key must contain 32 bytes"))?;
+    let signature: [u8; 64] = URL_SAFE_NO_PAD
+        .decode(&response.signature.signature)
+        .context("Console policy signature is not valid base64url")?
+        .try_into()
+        .map_err(|_| anyhow::anyhow!("Console policy signature must contain 64 bytes"))?;
+    VerifyingKey::from_bytes(&public_key)
+        .context("trusted Console signing key is invalid")?
+        .verify(&payload, &Signature::from_bytes(&signature))
+        .context("Console policy signature verification failed")?;
+
+    if response.bundle["protocol_version"] != 1
+        || response.bundle["tenant_id"] != credential.tenant_id
+        || response.bundle["product"] != "waf"
+        || response.bundle["policy_key"] != response.policy_key
+        || response.bundle["revision"] != response.revision
+    {
+        bail!("Console policy identity does not match this WAF assignment");
+    }
+    if response.bundle["schema_version"] != 1 {
+        bail!("Console policy schema version is not supported by this WAF");
+    }
+    let minimum_agent_version = response.bundle["minimum_agent_version"]
+        .as_str()
+        .ok_or_else(|| anyhow::anyhow!("Console policy minimum agent version is missing"))?;
+    if !version_at_least(env!("CARGO_PKG_VERSION"), minimum_agent_version)? {
+        bail!("Console policy requires a newer WAF agent");
+    }
+
+    let rules = response.bundle.pointer("/policy/rules");
+    let mut exclusions = rules
+        .and_then(|rules| rules.get("exclusions"))
+        .cloned()
+        .map(serde_json::from_value::<Vec<RuleExclusionConfig>>)
+        .transpose()
+        .context("Console policy contains invalid WAF rule exclusions")?
+        .unwrap_or_default();
+    if let Some(value) = rules.and_then(|rules| rules.get("disabled_rule_ids")) {
+        let rule_ids = value
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("disabled_rule_ids must be an array"))?;
+        exclusions.push(RuleExclusionConfig {
+            name: Some("Console-managed disabled rules".to_string()),
+            rule_ids: rule_ids
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .filter(|value| !value.trim().is_empty())
+                        .map(ToOwned::to_owned)
+                        .ok_or_else(|| anyhow::anyhow!("disabled rule IDs must be strings"))
+                })
+                .collect::<Result<Vec<_>>>()?,
+            ..RuleExclusionConfig::default()
+        });
+    }
+    if let Some(value) = rules.and_then(|rules| rules.get("disabled_categories")) {
+        let categories = value
+            .as_array()
+            .ok_or_else(|| anyhow::anyhow!("disabled_categories must be an array"))?;
+        exclusions.push(RuleExclusionConfig {
+            name: Some("Console-managed disabled categories".to_string()),
+            categories: categories
+                .iter()
+                .map(|value| {
+                    value
+                        .as_str()
+                        .filter(|value| !value.trim().is_empty())
+                        .map(ToOwned::to_owned)
+                        .ok_or_else(|| anyhow::anyhow!("disabled categories must be strings"))
+                })
+                .collect::<Result<Vec<_>>>()?,
+            ..RuleExclusionConfig::default()
+        });
+    }
+    exclusions
+        .retain(|exclusion| !exclusion.rule_ids.is_empty() || !exclusion.categories.is_empty());
+    let active_rules = rules::load_rule_set(&config.rules)
+        .context("failed to load active rules while validating Console policy")?;
+    for exclusion in &exclusions {
+        for rule_id in &exclusion.rule_ids {
+            if active_rules.rules_by_id(rule_id).is_empty() {
+                bail!("Console policy references unknown or inactive rule ID {rule_id}");
+            }
+        }
+        for category in &exclusion.categories {
+            if !active_rules
+                .rules()
+                .iter()
+                .any(|rule| &rule.category == category)
+            {
+                bail!("Console policy references unknown or inactive category {category}");
+            }
+        }
+    }
+    let mut validation = config.clone();
+    validation.rules.exclusions.extend(exclusions.clone());
+    validation
+        .validate()
+        .context("Console policy failed local WAF configuration validation")?;
+    rules::load_rule_set_with_report(&validation.rules)
+        .context("Console policy failed local WAF rule validation")?;
+    Ok(exclusions)
+}
+
+fn version_at_least(actual: &str, minimum: &str) -> Result<bool> {
+    fn parts(value: &str) -> Result<Vec<u64>> {
+        value
+            .split('.')
+            .map(|part| {
+                part.split_once('-')
+                    .map(|(number, _)| number)
+                    .unwrap_or(part)
+                    .parse::<u64>()
+                    .with_context(|| format!("invalid semantic version {value}"))
+            })
+            .collect()
+    }
+    let mut actual = parts(actual)?;
+    let mut minimum = parts(minimum)?;
+    let length = actual.len().max(minimum.len());
+    actual.resize(length, 0);
+    minimum.resize(length, 0);
+    Ok(actual >= minimum)
+}
+
+fn persist_effective_policy(
+    config: &SaugraConfig,
+    response: &EffectivePolicyResponse,
+) -> Result<()> {
+    let path = config
+        .console
+        .policy_cache_path(&config.logging.event_log_path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let temporary = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    fs::write(&temporary, serde_json::to_vec_pretty(response)?)?;
+    protect_file(&temporary)?;
+    fs::rename(&temporary, &path)
+        .with_context(|| format!("failed to store verified Console policy {}", path.display()))?;
+    Ok(())
+}
+
+fn load_cached_policy(
+    config: &SaugraConfig,
+    credential: &ConsoleCredential,
+) -> Result<Option<(EffectivePolicyResponse, Vec<RuleExclusionConfig>)>> {
+    let path = config
+        .console
+        .policy_cache_path(&config.logging.event_log_path);
+    if !path.exists() {
+        return Ok(None);
+    }
+    let response: EffectivePolicyResponse = serde_json::from_slice(
+        &fs::read(&path)
+            .with_context(|| format!("failed to read cached Console policy {}", path.display()))?,
+    )
+    .context("cached Console policy is not valid JSON")?;
+    let exclusions = verify_effective_policy(&response, credential, config)
+        .context("cached Console policy verification failed")?;
+    Ok(Some((response, exclusions)))
+}
+
+async fn fetch_effective_policy(
+    client: &Client,
+    base: &str,
+    credential: &ConsoleCredential,
+    config: &SaugraConfig,
+    managed_policy: &ManagedPolicyHandle,
+) -> Result<Option<(String, i64, usize)>> {
+    let response = authenticated(
+        client.get(endpoint(base, "api/v1/policy/effective")?),
+        credential,
+    )
+    .send()
+    .await
+    .context("failed to fetch effective Console policy")?;
+    if response.status() == reqwest::StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    let status = response.status();
+    let body = response.bytes().await?;
+    if !status.is_success() {
+        bail!(
+            "Console effective policy fetch failed with HTTP {status}: {}",
+            String::from_utf8_lossy(&body)
+        );
+    }
+    let response: EffectivePolicyResponse =
+        serde_json::from_slice(&body).context("invalid Console effective policy response")?;
+    let exclusions = verify_effective_policy(&response, credential, config)?;
+    persist_effective_policy(config, &response)?;
+    let count = exclusions.len();
+    managed_policy.activate_verified(&response, exclusions);
+    Ok(Some((response.policy_key, response.revision, count)))
+}
+
 pub fn start_telemetry(
     config: &SaugraConfig,
     outbox: ConsoleOutbox,
+    managed_policy: ManagedPolicyHandle,
 ) -> Result<tokio::task::JoinHandle<()>> {
     let credential = ConsoleCredentialStore::from_config(config).load()
         .context("Console is enabled but its node credential could not be loaded; run `saugra-waf console enroll`")?;
@@ -476,15 +856,40 @@ pub fn start_telemetry(
     let heartbeat_interval = config.console.heartbeat_interval_secs;
     let delivery_interval = config.console.delivery_interval_secs;
     let batch_size = config.console.batch_size;
+    rule_inventory(config, &managed_policy)?;
+    let policy_interval = config.console.policy_poll_interval_secs;
+    let policy_enabled = !config.console.trusted_signing_keys.is_empty();
+    let policy_config = config.clone();
+    let heartbeat_config = config.clone();
+    if policy_enabled {
+        match load_cached_policy(config, &credential) {
+            Ok(Some((response, exclusions))) => {
+                let count = exclusions.len();
+                managed_policy.activate_verified(&response, exclusions);
+                info!(
+                    policy_key = %response.policy_key,
+                    revision = response.revision,
+                    exclusions = count,
+                    "verified cached Console WAF policy activated"
+                );
+            }
+            Ok(None) => {}
+            Err(error) => warn!(
+                %error,
+                "cached Console WAF policy rejected; local configuration remains active"
+            ),
+        }
+    }
     Ok(tokio::spawn(async move {
         let client = Client::new();
         let mut heartbeats =
             tokio::time::interval(std::time::Duration::from_secs(heartbeat_interval));
         let mut deliveries =
             tokio::time::interval(std::time::Duration::from_secs(delivery_interval));
+        let mut policies = tokio::time::interval(std::time::Duration::from_secs(policy_interval));
         loop {
             tokio::select! {
-                _ = heartbeats.tick() => match send_heartbeat(&client, &base, &credential).await {
+                _ = heartbeats.tick() => match send_heartbeat(&client, &base, &credential, &heartbeat_config, &managed_policy).await {
                     Ok(()) => info!(node_id = %credential.node_id, "Console heartbeat acknowledged"),
                     Err(error) => warn!(%error, "Console heartbeat failed; local WAF protection remains active"),
                 },
@@ -492,7 +897,12 @@ pub fn start_telemetry(
                     Ok(count) if count > 0 => info!(count, "Console WAF events acknowledged"),
                     Ok(_) => {},
                     Err(error) => warn!(%error, "Console event delivery failed; events remain in the durable outbox"),
-                }
+                },
+                _ = policies.tick(), if policy_enabled => match fetch_effective_policy(&client, &base, &credential, &policy_config, &managed_policy).await {
+                    Ok(Some((policy_key, revision, exclusions))) => info!(%policy_key, revision, exclusions, "verified Console WAF policy activated"),
+                    Ok(None) => {},
+                    Err(error) => warn!(%error, "Console WAF policy rejected; last-known-good policy remains active"),
+                },
             }
         }
     }))
@@ -502,6 +912,8 @@ pub fn start_telemetry(
 mod tests {
     use super::*;
     use crate::decision::{WafAction, WafDecision};
+    use ed25519_dalek::{Signer, SigningKey};
+    use saugra_console_contracts::{PolicyBundleSignature, PolicyStage};
 
     fn event(id: &str, action: WafAction) -> SecurityEvent {
         SecurityEvent::new(
@@ -580,5 +992,113 @@ mod tests {
             .parse::<u64>()
             .is_ok());
         assert!((16..=128).contains(&request.headers()["x-saugra-nonce"].len()));
+    }
+
+    #[test]
+    fn active_rule_inventory_is_console_displayable() {
+        let config =
+            SaugraConfig::from_file(std::path::Path::new("configs/saugra-waf.example.yml"))
+                .unwrap();
+        let inventory = rule_inventory(&config, &ManagedPolicyHandle::default()).unwrap();
+        let rules = inventory["rule_inventory"].as_array().unwrap();
+
+        assert!(!rules.is_empty());
+        assert_eq!(inventory["mode"], "monitor");
+        assert!(rules.iter().all(|rule| {
+            rule["id"].as_str().is_some_and(|value| !value.is_empty())
+                && rule["name"].as_str().is_some_and(|value| !value.is_empty())
+                && rule["severity"].is_string()
+                && rule["risk_score"].is_number()
+                && rule["enabled"] == true
+        }));
+        assert!(inventory["capabilities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value == "waf.rules.inventory"));
+
+        let managed = ManagedPolicyHandle::default();
+        managed.activate(vec![RuleExclusionConfig {
+            name: Some("Disable one rule".into()),
+            rule_ids: vec![rules[0]["id"].as_str().unwrap().to_string()],
+            ..RuleExclusionConfig::default()
+        }]);
+        let updated = rule_inventory(&config, &managed).unwrap();
+        assert_eq!(updated["managed_exclusions"], 1);
+        assert_eq!(updated["rule_inventory"][0]["enabled"], false);
+    }
+
+    #[test]
+    fn signed_waf_policy_requires_trust_and_produces_valid_exclusions() {
+        let signing_key = SigningKey::from_bytes(&[7_u8; 32]);
+        let public_key = URL_SAFE_NO_PAD.encode(signing_key.verifying_key().to_bytes());
+        let bundle = json!({
+            "protocol_version": 1,
+            "tenant_id": "tenant-a",
+            "policy_key": "waf-default",
+            "revision": 2,
+            "product": "waf",
+            "schema_version": 1,
+            "minimum_agent_version": "1.1.6",
+            "required_capabilities": [],
+            "policy": {
+                "mode": "monitor",
+                "rules": {
+                    "disabled_rule_ids": ["SAUGRA-XSS-001"],
+                    "exclusions": [{
+                        "name": "Allow article previews",
+                        "rule_ids": ["SAUGRA-XSS-001"],
+                        "path_prefixes": ["/preview"]
+                    }]
+                }
+            },
+            "rule_pack": null
+        });
+        let payload = serde_json::to_vec(&bundle).unwrap();
+        let response = EffectivePolicyResponse {
+            policy_key: "waf-default".into(),
+            revision: 2,
+            stage: PolicyStage::Monitor,
+            pinned: true,
+            assignment_source: "node".into(),
+            bundle,
+            signature: PolicyBundleSignature {
+                algorithm: "ed25519".into(),
+                key_id: "test-key".into(),
+                public_key: public_key.clone(),
+                signed_payload: URL_SAFE_NO_PAD.encode(&payload),
+                signature: URL_SAFE_NO_PAD.encode(signing_key.sign(&payload).to_bytes()),
+                sha256: format!("{:x}", Sha256::digest(&payload)),
+                signed_at: "2026-07-14T00:00:00Z".into(),
+            },
+        };
+        let mut config =
+            SaugraConfig::from_file(std::path::Path::new("configs/saugra-waf.example.yml"))
+                .unwrap();
+        config
+            .console
+            .trusted_signing_keys
+            .insert("test-key".into(), public_key);
+        let credential = ConsoleCredential {
+            protocol_version: 1,
+            node_id: "node-a".into(),
+            tenant_id: "tenant-a".into(),
+            product: SaugraProduct::Waf,
+            credential: "secret".into(),
+            credential_fingerprint: "fingerprint".into(),
+            credential_expires_at: "2027-01-01T00:00:00Z".into(),
+            stored_at_unix_secs: 0,
+        };
+
+        let exclusions = verify_effective_policy(&response, &credential, &config).unwrap();
+        assert_eq!(exclusions.len(), 2);
+        assert_eq!(exclusions[0].path_prefixes, vec!["/preview"]);
+        assert_eq!(exclusions[1].rule_ids, vec!["SAUGRA-XSS-001"]);
+
+        config.console.trusted_signing_keys.clear();
+        assert!(verify_effective_policy(&response, &credential, &config)
+            .unwrap_err()
+            .to_string()
+            .contains("not trusted"));
     }
 }
