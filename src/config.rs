@@ -373,6 +373,8 @@ pub struct ConsoleConfig {
     #[serde(default)]
     pub emergency_override_path: Option<PathBuf>,
     #[serde(default)]
+    pub policy_transition_path: Option<PathBuf>,
+    #[serde(default)]
     pub trusted_signing_keys: std::collections::BTreeMap<String, String>,
 }
 
@@ -405,6 +407,7 @@ impl Default for ConsoleConfig {
             policy_poll_interval_secs: default_console_policy_poll_interval_secs(),
             policy_cache_path: None,
             emergency_override_path: None,
+            policy_transition_path: None,
             trusted_signing_keys: std::collections::BTreeMap::new(),
         }
     }
@@ -440,6 +443,11 @@ impl ConsoleConfig {
     pub fn emergency_override_path(&self, event_log_path: &str) -> PathBuf {
         self.emergency_override_path.clone().unwrap_or_else(|| {
             PathBuf::from(format!("{event_log_path}.console-emergency-override.json"))
+        })
+    }
+    pub fn policy_transition_path(&self, event_log_path: &str) -> PathBuf {
+        self.policy_transition_path.clone().unwrap_or_else(|| {
+            PathBuf::from(format!("{event_log_path}.console-policy-transitions.json"))
         })
     }
 }

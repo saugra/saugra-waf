@@ -83,9 +83,22 @@ pub fn disable_emergency_override(config: &SaugraConfig) -> Result<bool> {
     Ok(true)
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PolicyTransition {
+    transition_id: String,
+    lifecycle: String,
+    policy_key: Option<String>,
+    revision: Option<i64>,
+    digest: Option<String>,
+    reason: Option<String>,
+    occurred_at_unix_secs: u64,
+}
+
 #[derive(Clone, Default)]
 pub struct ManagedPolicyHandle {
     state: Arc<RwLock<ManagedPolicyState>>,
+    transitions: Arc<Mutex<Vec<PolicyTransition>>>,
+    transition_path: Option<Arc<PathBuf>>,
 }
 
 #[derive(Default)]
@@ -97,9 +110,76 @@ struct ManagedPolicyState {
     lifecycle: String,
     reason: Option<String>,
     updated_at_unix_secs: u64,
+    mode: Option<crate::config::WafMode>,
+    anomaly_threshold: Option<u16>,
+    detection_paranoia_level: Option<u8>,
+    blocking_paranoia_level: Option<u8>,
 }
 
 impl ManagedPolicyHandle {
+    pub fn from_config(config: &SaugraConfig) -> Result<Self> {
+        let path = config
+            .console
+            .policy_transition_path(&config.logging.event_log_path);
+        let transitions = if path.exists() {
+            serde_json::from_slice(&fs::read(&path)?)
+                .context("invalid Console policy transition journal")?
+        } else {
+            Vec::new()
+        };
+        Ok(Self {
+            state: Arc::default(),
+            transitions: Arc::new(Mutex::new(transitions)),
+            transition_path: Some(Arc::new(path)),
+        })
+    }
+
+    fn persist_transition(&self, transition: PolicyTransition) {
+        let Ok(mut transitions) = self.transitions.lock() else {
+            return;
+        };
+        if transitions.last().is_some_and(|previous| {
+            previous.lifecycle == transition.lifecycle
+                && previous.policy_key == transition.policy_key
+                && previous.revision == transition.revision
+                && previous.digest == transition.digest
+                && previous.reason == transition.reason
+        }) {
+            return;
+        }
+        transitions.push(transition);
+        if let Some(path) = &self.transition_path {
+            if let Some(parent) = path.parent() {
+                let _ = fs::create_dir_all(parent);
+            }
+            let temporary = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+            if fs::write(
+                &temporary,
+                serde_json::to_vec_pretty(&*transitions).unwrap_or_default(),
+            )
+            .is_ok()
+            {
+                let _ = protect_file(&temporary);
+                let _ = fs::rename(temporary, path.as_ref());
+            }
+        }
+    }
+
+    fn pending_transitions(&self) -> Vec<PolicyTransition> {
+        self.transitions
+            .lock()
+            .map(|v| v.clone())
+            .unwrap_or_default()
+    }
+    fn acknowledge_transitions(&self) {
+        if let Ok(mut transitions) = self.transitions.lock() {
+            transitions.clear();
+            if let Some(path) = &self.transition_path {
+                let _ = fs::write(path.as_ref(), b"[]");
+                let _ = protect_file(path);
+            }
+        }
+    }
     pub fn exclusions(&self) -> Vec<RuleExclusionConfig> {
         self.state
             .read()
@@ -121,6 +201,7 @@ impl ManagedPolicyHandle {
         response: &EffectivePolicyResponse,
         exclusions: Vec<RuleExclusionConfig>,
     ) {
+        let policy = response.bundle.get("policy").unwrap_or(&Value::Null);
         *self
             .state
             .write()
@@ -132,7 +213,53 @@ impl ManagedPolicyHandle {
             lifecycle: "activated".to_string(),
             reason: None,
             updated_at_unix_secs: now_unix_secs(),
+            mode: policy
+                .get("mode")
+                .and_then(Value::as_str)
+                .and_then(parse_managed_mode),
+            anomaly_threshold: policy
+                .get("anomaly_threshold")
+                .and_then(Value::as_u64)
+                .and_then(|v| u16::try_from(v).ok()),
+            detection_paranoia_level: policy
+                .get("detection_paranoia_level")
+                .and_then(Value::as_u64)
+                .and_then(|v| u8::try_from(v).ok()),
+            blocking_paranoia_level: policy
+                .get("blocking_paranoia_level")
+                .and_then(Value::as_u64)
+                .and_then(|v| u8::try_from(v).ok()),
         };
+        self.persist_transition(PolicyTransition {
+            transition_id: uuid::Uuid::new_v4().to_string(),
+            lifecycle: "activated".into(),
+            policy_key: Some(response.policy_key.clone()),
+            revision: Some(response.revision),
+            digest: Some(response.signature.sha256.clone()),
+            reason: None,
+            occurred_at_unix_secs: now_unix_secs(),
+        });
+    }
+
+    pub fn effective_config(&self, local: &SaugraConfig) -> SaugraConfig {
+        let state = self
+            .state
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let mut effective = local.clone();
+        if let Some(value) = state.mode {
+            effective.server.mode = value;
+        }
+        if let Some(value) = state.anomaly_threshold {
+            effective.rules.inbound_anomaly_threshold = value;
+        }
+        if let Some(value) = state.detection_paranoia_level {
+            effective.rules.detection_paranoia_level = Some(value);
+        }
+        if let Some(value) = state.blocking_paranoia_level {
+            effective.rules.blocking_paranoia_level = Some(value);
+        }
+        effective
     }
 
     fn record_lifecycle(&self, lifecycle: &str, reason: Option<String>) {
@@ -143,18 +270,72 @@ impl ManagedPolicyHandle {
         state.lifecycle = lifecycle.to_string();
         state.reason = reason;
         state.updated_at_unix_secs = now_unix_secs();
+        let transition = PolicyTransition {
+            transition_id: uuid::Uuid::new_v4().to_string(),
+            lifecycle: lifecycle.to_string(),
+            policy_key: state.policy_key.clone(),
+            revision: state.revision,
+            digest: state.digest.clone(),
+            reason: state.reason.clone(),
+            occurred_at_unix_secs: state.updated_at_unix_secs,
+        };
+        drop(state);
+        self.persist_transition(transition);
+    }
+
+    fn record_policy_lifecycle(
+        &self,
+        response: &EffectivePolicyResponse,
+        lifecycle: &str,
+        reason: Option<String>,
+    ) {
+        let mut state = self
+            .state
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.policy_key = Some(response.policy_key.clone());
+        state.revision = Some(response.revision);
+        state.digest = Some(response.signature.sha256.clone());
+        state.lifecycle = lifecycle.to_string();
+        state.reason = reason;
+        state.updated_at_unix_secs = now_unix_secs();
+        let transition = PolicyTransition {
+            transition_id: uuid::Uuid::new_v4().to_string(),
+            lifecycle: lifecycle.to_string(),
+            policy_key: state.policy_key.clone(),
+            revision: state.revision,
+            digest: state.digest.clone(),
+            reason: state.reason.clone(),
+            occurred_at_unix_secs: state.updated_at_unix_secs,
+        };
+        drop(state);
+        self.persist_transition(transition);
     }
 
     fn activate_emergency_override(&self, reason: String) {
-        *self
+        let mut state = self
             .state
             .write()
-            .unwrap_or_else(|poisoned| poisoned.into_inner()) = ManagedPolicyState {
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let policy_key = state.policy_key.clone();
+        let revision = state.revision;
+        let digest = state.digest.clone();
+        *state = ManagedPolicyState {
             lifecycle: "rolled_back".to_string(),
-            reason: Some(reason),
+            reason: Some(reason.clone()),
             updated_at_unix_secs: now_unix_secs(),
             ..ManagedPolicyState::default()
         };
+        drop(state);
+        self.persist_transition(PolicyTransition {
+            transition_id: uuid::Uuid::new_v4().to_string(),
+            lifecycle: "rolled_back".into(),
+            policy_key,
+            revision,
+            digest,
+            reason: Some(reason),
+            occurred_at_unix_secs: now_unix_secs(),
+        });
     }
 
     fn status(&self) -> Value {
@@ -171,7 +352,17 @@ impl ManagedPolicyHandle {
             "lifecycle": if state.lifecycle.is_empty() { "local" } else { &state.lifecycle },
             "reason": state.reason,
             "updated_at_unix_secs": state.updated_at_unix_secs
+            ,"pending_transitions": self.pending_transitions()
         })
+    }
+}
+
+fn parse_managed_mode(value: &str) -> Option<crate::config::WafMode> {
+    match value {
+        "monitor" => Some(crate::config::WafMode::Monitor),
+        "block" => Some(crate::config::WafMode::Block),
+        "strict" => Some(crate::config::WafMode::Strict),
+        _ => None,
     }
 }
 
@@ -691,6 +882,7 @@ async fn send_heartbeat(
     if acknowledgement.node_id != credential.node_id {
         bail!("Console heartbeat acknowledgement node mismatch");
     }
+    managed_policy.acknowledge_transitions();
     Ok(())
 }
 
@@ -979,6 +1171,33 @@ fn verify_effective_policy(
         }
     }
     let mut validation = config.clone();
+    let policy = response.bundle.get("policy").unwrap_or(&Value::Null);
+    if let Some(mode) = policy.get("mode").and_then(Value::as_str) {
+        validation.server.mode =
+            parse_managed_mode(mode).context("Console policy contains an invalid WAF mode")?;
+    }
+    if let Some(value) = policy.get("anomaly_threshold").and_then(Value::as_u64) {
+        validation.rules.inbound_anomaly_threshold =
+            u16::try_from(value).context("Console anomaly threshold exceeds supported range")?;
+    }
+    if let Some(value) = policy
+        .get("detection_paranoia_level")
+        .and_then(Value::as_u64)
+    {
+        let value =
+            u8::try_from(value).context("Console detection paranoia exceeds supported range")?;
+        if value > config.rules.detection_paranoia_level() {
+            bail!("Console policy cannot enable rules above the locally loaded detection paranoia level");
+        }
+        validation.rules.detection_paranoia_level = Some(value);
+    }
+    if let Some(value) = policy
+        .get("blocking_paranoia_level")
+        .and_then(Value::as_u64)
+    {
+        validation.rules.blocking_paranoia_level =
+            Some(u8::try_from(value).context("Console blocking paranoia exceeds supported range")?);
+    }
     validation.rules.exclusions.extend(exclusions.clone());
     validation
         .validate()
@@ -1079,7 +1298,7 @@ async fn fetch_effective_policy(
     }
     let response: EffectivePolicyResponse =
         serde_json::from_slice(&body).context("invalid Console effective policy response")?;
-    managed_policy.record_lifecycle("downloaded", None);
+    managed_policy.record_policy_lifecycle(&response, "downloaded", None);
     let exclusions = verify_effective_policy(&response, credential, config)?;
     persist_effective_policy(config, &response)?;
     let count = exclusions.len();
@@ -1341,6 +1560,24 @@ mod tests {
         assert_eq!(status["lifecycle"], "rejected");
         assert_eq!(status["reason"], "signature verification failed");
         assert!(status["updated_at_unix_secs"].as_u64().unwrap() > 0);
+        assert_eq!(status["pending_transitions"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn policy_transition_journal_survives_restart_until_acknowledged() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config =
+            SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
+        config.console.policy_transition_path = Some(directory.path().join("transitions.json"));
+        let handle = ManagedPolicyHandle::from_config(&config).unwrap();
+        handle.record_lifecycle("downloaded", Some("verified bundle".into()));
+        let restored = ManagedPolicyHandle::from_config(&config).unwrap();
+        assert_eq!(restored.pending_transitions().len(), 1);
+        restored.acknowledge_transitions();
+        assert!(ManagedPolicyHandle::from_config(&config)
+            .unwrap()
+            .pending_transitions()
+            .is_empty());
     }
 
     #[test]
@@ -1447,7 +1684,10 @@ mod tests {
             "minimum_agent_version": "1.1.6",
             "required_capabilities": [],
             "policy": {
-                "mode": "monitor",
+                "mode": "block",
+                "anomaly_threshold": 9,
+                "detection_paranoia_level": 1,
+                "blocking_paranoia_level": 1,
                 "rules": {
                     "disabled_rule_ids": ["SAUGRA-XSS-001"],
                     "exclusions": [{
@@ -1499,6 +1739,11 @@ mod tests {
         assert_eq!(exclusions.len(), 2);
         assert_eq!(exclusions[0].path_prefixes, vec!["/preview"]);
         assert_eq!(exclusions[1].rule_ids, vec!["SAUGRA-XSS-001"]);
+        let handle = ManagedPolicyHandle::default();
+        handle.activate_verified(&response, exclusions);
+        let effective = handle.effective_config(&config);
+        assert_eq!(effective.server.mode, crate::config::WafMode::Block);
+        assert_eq!(effective.rules.inbound_anomaly_threshold, 9);
 
         config.console.trusted_signing_keys.clear();
         assert!(verify_effective_policy(&response, &credential, &config)

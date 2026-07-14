@@ -1179,6 +1179,7 @@ console:
   batch_size: 100
   policy_poll_interval_secs: 30
   policy_cache_path: /var/lib/saugra-waf/console-policy.json
+  policy_transition_path: /var/lib/saugra-waf/console-policy-transitions.json
   trusted_signing_keys:
     console-key-id: base64url-ed25519-public-key
 ```
@@ -1233,10 +1234,14 @@ active.
 
 Each heartbeat includes the managed-policy lifecycle state and its update
 timestamp. Operators can distinguish policy resolution, download, activation,
-rejection, and an unassigned policy. Rejections include an operational reason
-while the WAF continues using its last verified policy (or local YAML when no
-verified policy has ever been activated). These inventory fields never contain
-signing keys, node credentials, or policy bodies.
+rejection, rollback, and an unassigned policy. Transition records include the
+policy key, revision, digest, reason, and timestamp when applicable. They are
+kept in the protected journal at `policy_transition_path` until Console
+acknowledges the heartbeat, so restarts or temporary network failures do not
+lose audit evidence. Rejections include an operational reason while the WAF
+continues using its last verified policy (or local YAML when no verified policy
+has ever been activated). These inventory fields never contain signing keys,
+node credentials, or policy bodies.
 
 For an emergency false-positive or unsafe managed-policy rollout, suspend
 Console policy locally without deleting the last verified cache:

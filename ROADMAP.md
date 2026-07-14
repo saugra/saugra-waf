@@ -10,7 +10,7 @@ repository.
 
 ## Current Status
 
-Current phase: **Phase 8.5 in progress — Saugra Console telemetry integration**
+Current phase: **Phase 8.5 complete — Saugra Console integration**
 
 The repository has a working Rust foundation:
 
@@ -176,10 +176,10 @@ telemetry, policy, investigations, relay operation, and audit workflows.
 - [x] Report active WAF rule IDs, sources, severity, category, target, risk,
       effective action, and tuning thresholds so tenant administrators can
       inspect each connected WAF in Console.
-- [ ] Add a WAF-focused Console editor for immutable policy revisions covering
+- [x] Add a WAF-focused Console editor for immutable policy revisions covering
       mode, anomaly thresholds, detection/blocking paranoia, enabled rules,
       disabled rules/categories, and narrowly scoped exclusions.
-- [ ] Preview policy and exclusion impact against retained tenant telemetry
+- [x] Preview policy and exclusion impact against retained tenant telemetry
       before signing or assigning a revision.
 - [x] Support tenant, group, and individual-WAF assignment with monitor,
       canary, and enforcement rollout stages.
@@ -190,18 +190,18 @@ telemetry, policy, investigations, relay operation, and audit workflows.
       them atomically,
       and retain the last-known-good policy when validation or Console access
       fails.
-- [ ] Report resolved, downloaded, rejected, activated, and rolled-back policy
+- [x] Report resolved, downloaded, rejected, activated, and rolled-back policy
       state with node, revision, digest, reason, and timestamps.
 - [x] Provide explicit rollback and local emergency override workflows without
       allowing Console policy to disable standalone protection silently.
-- [ ] Audit every policy edit, signature, assignment, rollout, activation,
+- [x] Audit every policy edit, signature, assignment, rollout, activation,
       rejection, exclusion, and rollback within its tenant boundary.
 - [x] Add response-command support only for deterministic WAF-safe actions such
       as managed runtime block/allow policy changes with expiry and audit
       records.
 - [x] Support Saugra Relay endpoints with the same contracts for restricted
       networks.
-- [ ] Add live Console integration tests that validate WAF payloads with
+- [x] Add live Console integration tests that validate WAF payloads with
       Console contract validators and cover accepted, duplicate, retry, and
       rejected acknowledgements.
 

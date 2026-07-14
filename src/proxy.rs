@@ -207,7 +207,7 @@ pub async fn run(config: SaugraConfig) -> anyhow::Result<()> {
         .console
         .enabled
         .then(|| ConsoleOutbox::from_config(&config));
-    let managed_policy = ManagedPolicyHandle::default();
+    let managed_policy = ManagedPolicyHandle::from_config(&config)?;
     let _console_task = console_outbox
         .as_ref()
         .map(|outbox| console::start_telemetry(&config, outbox.clone(), managed_policy.clone()))
@@ -265,10 +265,11 @@ async fn proxy_request_with_connect_info(
 }
 
 async fn proxy_request_inner(
-    state: ProxyState,
+    mut state: ProxyState,
     peer_addr: Option<SocketAddr>,
     request: Request<Body>,
 ) -> Result<Response<Body>, Response<Body>> {
+    state.config = state.managed_policy.effective_config(&state.config);
     let request_id = Uuid::new_v4().to_string();
     let (mut parts, body) = request.into_parts();
     let trusted_forwarded_headers =

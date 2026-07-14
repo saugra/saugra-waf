@@ -17,6 +17,7 @@ server:
 #   batch_size: 100
 #   policy_poll_interval_secs: 30
 #   policy_cache_path: ./data/saugra-waf/console-policy.json
+#   policy_transition_path: ./data/saugra-waf/console-policy-transitions.json
 #   emergency_override_path: ./data/saugra-waf/console-emergency-override.json
 #   trusted_signing_keys:
 #     console-key-id: base64url-ed25519-public-key
