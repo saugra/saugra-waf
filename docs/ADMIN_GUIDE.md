@@ -1180,14 +1180,20 @@ console:
 ```
 
 Create a one-time token for product **WAF** under Console's node enrollment
-screen. Enroll as the service owner or root so Saugra can create the credential
-directory and file:
+screen. On packaged installations, enroll as the same `saugra-waf` account used
+by the systemd service. The package creates `/var/lib/saugra-waf` for this
+account:
 
 ```bash
-sudo saugra-waf console enroll \
+sudo -u saugra-waf /usr/bin/saugra-waf console enroll \
   --config /etc/saugra-waf/saugra-waf.yml \
   --enrollment-token '<one-time-token>'
 ```
+
+For source installations or custom service units, substitute the account that
+runs `saugra-waf run`. Do not enroll as `root` when the runtime uses an
+unprivileged account: the protected credential is intentionally created with
+mode `0600`, so only the account that created it can read it.
 
 Alternatively, provide the token through `SAUGRA_CONSOLE_ENROLLMENT_TOKEN` to
 avoid placing it in shell history. The command sends `POST /api/v1/nodes/enroll`
@@ -1213,6 +1219,67 @@ Re-enroll only if the node credential is lost, expired, or revoked, or if the
 node must deliberately receive a new identity. Revoke the old Console node
 credential first, preserve it only as required by your audit policy, generate a
 fresh one-time WAF token, and rerun the enrollment command.
+
+### Console Credential Permission Denied
+
+The Console can show an enrolled WAF while the local service repeatedly exits
+with this error:
+
+```text
+Error: Console is enabled but its node credential could not be loaded; run `saugra-waf console enroll`
+Caused by:
+    Permission denied (os error 13)
+```
+
+This means enrollment succeeded, but the runtime account cannot read
+`console.credential_path`. A common cause is running enrollment with `sudo` as
+`root`, which creates a root-owned credential with the required `0600` mode,
+while the packaged systemd service runs as `saugra-waf`. Do not re-enroll or
+revoke the node when the credential is present; repair its ownership instead:
+
+```bash
+sudo systemctl stop saugra-waf
+
+sudo install -d \
+  -o saugra-waf \
+  -g saugra-waf \
+  -m 0750 \
+  /var/lib/saugra-waf
+
+sudo chown saugra-waf:saugra-waf \
+  /var/lib/saugra-waf/console-credential.json
+sudo chmod 0600 \
+  /var/lib/saugra-waf/console-credential.json
+
+sudo -u saugra-waf test -r \
+  /var/lib/saugra-waf/console-credential.json \
+  && echo "Credential is readable"
+
+sudo systemctl reset-failed saugra-waf
+sudo systemctl start saugra-waf
+sudo journalctl -u saugra-waf -f -o cat
+```
+
+Successful recovery produces both of these messages:
+
+```text
+Console heartbeat acknowledged
+Saugra listening on http://127.0.0.1:8787
+```
+
+If the read test still fails, verify the configured path and permissions on
+every parent directory:
+
+```bash
+sudo namei -l /var/lib/saugra-waf/console-credential.json
+sudo stat /var/lib/saugra-waf/console-credential.json
+sudo systemctl cat saugra-waf
+```
+
+The credential should be owned by the runtime account with mode `0600`; its
+parent directory must allow that account to traverse it. Custom systemd units
+must also permit the credential path through any `ProtectSystem`,
+`ProtectHome`, or `ReadOnlyPaths` restrictions.
 
 ### WebSocket Routing Failures
 
