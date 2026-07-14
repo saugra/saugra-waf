@@ -13,7 +13,9 @@ use ed25519_dalek::{Signature, Verifier, VerifyingKey};
 use reqwest::{Client, Url};
 use saugra_console_contracts::{
     DeliveryAcknowledgement, EffectivePolicyResponse, EnrollmentRequest, EnrollmentResponse,
-    EventIngestRequest, HeartbeatAcknowledgement, HeartbeatRequest, ManagedNodeRef, SaugraProduct,
+    EventIngestRequest, HeartbeatAcknowledgement, HeartbeatRequest, ManagedNodeRef,
+    ResponseActionKind, ResponseCommand, ResponseCommandBatch, ResponseResultAcknowledgement,
+    ResponseResultRequest, SaugraProduct,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -22,11 +24,64 @@ use sha2::{Digest, Sha256};
 use crate::{
     config::{RuleExclusionConfig, SaugraConfig},
     event_store::SecurityEvent,
-    rules,
+    rules, runtime_policy,
 };
 use tracing::{info, warn};
 
 pub const CONSOLE_PROTOCOL_VERSION: u16 = 1;
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct EmergencyOverride {
+    pub enabled_at_unix_secs: u64,
+    pub reason: String,
+}
+
+pub fn emergency_override(config: &SaugraConfig) -> Result<Option<EmergencyOverride>> {
+    let path = config
+        .console
+        .emergency_override_path(&config.logging.event_log_path);
+    if !path.exists() {
+        return Ok(None);
+    }
+    serde_json::from_slice(&fs::read(&path)?)
+        .context("invalid Console emergency override file")
+        .map(Some)
+}
+
+pub fn enable_emergency_override(config: &SaugraConfig, reason: &str) -> Result<()> {
+    let reason = reason.trim();
+    if reason.is_empty() || reason.len() > 500 {
+        bail!("emergency override reason must contain 1-500 characters");
+    }
+    let path = config
+        .console
+        .emergency_override_path(&config.logging.event_log_path);
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let temporary = path.with_extension(format!("tmp-{}", uuid::Uuid::new_v4()));
+    fs::write(
+        &temporary,
+        serde_json::to_vec_pretty(&EmergencyOverride {
+            enabled_at_unix_secs: now_unix_secs(),
+            reason: reason.to_string(),
+        })?,
+    )?;
+    protect_file(&temporary)?;
+    fs::rename(temporary, path)?;
+    Ok(())
+}
+
+pub fn disable_emergency_override(config: &SaugraConfig) -> Result<bool> {
+    let path = config
+        .console
+        .emergency_override_path(&config.logging.event_log_path);
+    if !path.exists() {
+        return Ok(false);
+    }
+    fs::remove_file(path)?;
+    Ok(true)
+}
 
 #[derive(Clone, Default)]
 pub struct ManagedPolicyHandle {
@@ -39,6 +94,9 @@ struct ManagedPolicyState {
     policy_key: Option<String>,
     revision: Option<i64>,
     digest: Option<String>,
+    lifecycle: String,
+    reason: Option<String>,
+    updated_at_unix_secs: u64,
 }
 
 impl ManagedPolicyHandle {
@@ -71,6 +129,31 @@ impl ManagedPolicyHandle {
             policy_key: Some(response.policy_key.clone()),
             revision: Some(response.revision),
             digest: Some(response.signature.sha256.clone()),
+            lifecycle: "activated".to_string(),
+            reason: None,
+            updated_at_unix_secs: now_unix_secs(),
+        };
+    }
+
+    fn record_lifecycle(&self, lifecycle: &str, reason: Option<String>) {
+        let mut state = self
+            .state
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        state.lifecycle = lifecycle.to_string();
+        state.reason = reason;
+        state.updated_at_unix_secs = now_unix_secs();
+    }
+
+    fn activate_emergency_override(&self, reason: String) {
+        *self
+            .state
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = ManagedPolicyState {
+            lifecycle: "rolled_back".to_string(),
+            reason: Some(reason),
+            updated_at_unix_secs: now_unix_secs(),
+            ..ManagedPolicyState::default()
         };
     }
 
@@ -84,7 +167,10 @@ impl ManagedPolicyHandle {
             "revision": state.revision,
             "digest": state.digest,
             "managed_exclusions": state.exclusions.len(),
-            "status": if state.policy_key.is_some() { "active" } else { "local" }
+            "status": if state.policy_key.is_some() { "active" } else { "local" },
+            "lifecycle": if state.lifecycle.is_empty() { "local" } else { &state.lifecycle },
+            "reason": state.reason,
+            "updated_at_unix_secs": state.updated_at_unix_secs
         })
     }
 }
@@ -283,11 +369,132 @@ pub fn enrollment_request(
             "security_event_storage": true,
             "rule_inventory": true,
             "managed_policy": true,
+            "response_capabilities": [
+                "response.waf.ip.block", "response.waf.ip.allow",
+                "response.waf.runtime.remove"
+            ],
             "managed_exclusions": true
         }),
     };
     request.validate()?;
     Ok(request)
+}
+
+fn execute_response_command(
+    config: &SaugraConfig,
+    command: &ResponseCommand,
+) -> ResponseResultRequest {
+    let result = || -> Result<String> {
+        if !config.runtime_policy.enabled {
+            bail!("runtime policy is disabled")
+        }
+        let expires_at = chrono::DateTime::parse_from_rfc3339(&command.expires_at)
+            .context("invalid response command expiry")?;
+        if expires_at <= chrono::Utc::now() {
+            bail!("response command expired")
+        }
+        match command.action {
+            ResponseActionKind::WafBlockIp | ResponseActionKind::WafAllowIp => {
+                let value = command.target["value"]
+                    .as_str()
+                    .context("missing IP target")?;
+                let duration = command.target["duration_seconds"]
+                    .as_u64()
+                    .filter(|value| (60..=2_592_000).contains(value))
+                    .context("invalid response duration")?;
+                runtime_policy::upsert_console_ip_entry(
+                    &config.runtime_policy.path,
+                    &command.request_id,
+                    value,
+                    duration,
+                    "Console-managed bounded response",
+                    command.action == ResponseActionKind::WafBlockIp,
+                )?;
+                Ok(format!("runtime entry {} applied", command.request_id))
+            }
+            ResponseActionKind::WafRemoveRuntimeEntry => {
+                let entry_id = command.target["entry_id"]
+                    .as_str()
+                    .context("missing entry id")?;
+                runtime_policy::remove_entry(&config.runtime_policy.path, entry_id)?;
+                Ok(format!("runtime entry {entry_id} is absent"))
+            }
+            _ => bail!("response action is not supported by Saugra WAF"),
+        }
+    }();
+    let (outcome, message, error) = match result {
+        Ok(message) => ("succeeded", message, None),
+        Err(error)
+            if error.to_string().contains("not supported")
+                || error.to_string().contains("disabled") =>
+        {
+            (
+                "unsupported",
+                "command was not executed".to_string(),
+                Some(error.to_string()),
+            )
+        }
+        Err(error) => (
+            "failed",
+            "command was not executed".to_string(),
+            Some(error.to_string()),
+        ),
+    };
+    ResponseResultRequest {
+        protocol_version: CONSOLE_PROTOCOL_VERSION,
+        request_id: command.request_id.clone(),
+        idempotency_key: command.idempotency_key.clone(),
+        outcome: outcome.to_string(),
+        message,
+        error,
+        rollback_guidance: Some(command.rollback_guidance.clone()),
+    }
+}
+
+async fn process_response_commands(
+    client: &Client,
+    base: &str,
+    credential: &ConsoleCredential,
+    config: &SaugraConfig,
+) -> Result<usize> {
+    let response = authenticated(
+        client.get(console_endpoint(
+            config,
+            base,
+            "responses/commands?limit=10",
+        )?),
+        credential,
+    )
+    .send()
+    .await?;
+    let status = response.status();
+    let body = response.bytes().await?;
+    if !status.is_success() {
+        bail!("Console response poll failed with HTTP {status}")
+    }
+    let batch: ResponseCommandBatch =
+        serde_json::from_slice(&body).context("invalid Console response batch")?;
+    for command in &batch.commands {
+        let result = execute_response_command(config, command);
+        result.validate().context("invalid local response result")?;
+        let response = authenticated(
+            client.post(console_endpoint(config, base, "responses/results")?),
+            credential,
+        )
+        .json(&result)
+        .send()
+        .await?;
+        let status = response.status();
+        let body = response.bytes().await?;
+        if !status.is_success() {
+            bail!("Console response result failed with HTTP {status}")
+        }
+        let acknowledgement: ResponseResultAcknowledgement = serde_json::from_slice(&body)?;
+        if acknowledgement.request_id != command.request_id {
+            bail!("Console response acknowledgement mismatch")
+        }
+    }
+    Ok(batch.commands.len())
 }
 
 pub async fn enroll_with_console(
@@ -303,15 +510,7 @@ pub async fn enroll_with_console(
         .management_url
         .as_deref()
         .ok_or_else(|| anyhow::anyhow!("console.management_url is not configured"))?;
-    let base = if base.ends_with('/') {
-        base.to_string()
-    } else {
-        format!("{base}/")
-    };
-    let url = Url::parse(&base)
-        .context("invalid console.management_url")?
-        .join("api/v1/nodes/enroll")
-        .context("invalid Console enrollment URL")?;
+    let url = console_endpoint(config, base, "nodes/enroll")?;
     let response = reqwest::Client::new()
         .post(url)
         .bearer_auth(enrollment_token)
@@ -438,6 +637,14 @@ fn endpoint(base: &str, path: &str) -> Result<Url> {
         .context("invalid Console endpoint URL")
 }
 
+fn console_endpoint(config: &SaugraConfig, base: &str, resource: &str) -> Result<Url> {
+    let prefix = match config.console.transport {
+        crate::config::ConsoleTransport::Direct => "api/v1/",
+        crate::config::ConsoleTransport::Relay => "v1/",
+    };
+    endpoint(base, &format!("{prefix}{resource}"))
+}
+
 fn authenticated(
     request: reqwest::RequestBuilder,
     credential: &ConsoleCredential,
@@ -464,7 +671,7 @@ async fn send_heartbeat(
         inventory,
     );
     let response = authenticated(
-        client.post(endpoint(base, "api/v1/ingest/health")?),
+        client.post(console_endpoint(config, base, "ingest/health")?),
         credential,
     )
     .json(&heartbeat)
@@ -565,6 +772,7 @@ pub fn rule_inventory(
 async fn deliver_batch(
     client: &Client,
     base: &str,
+    config: &SaugraConfig,
     credential: &ConsoleCredential,
     outbox: &ConsoleOutbox,
     batch_size: usize,
@@ -576,7 +784,7 @@ async fn deliver_batch(
     let request = event_ingest_request(&credential.tenant_id, &credential.node_id, &events)?;
     request.validate(500)?;
     let response = authenticated(
-        client.post(endpoint(base, "api/v1/ingest/events")?),
+        client.post(console_endpoint(config, base, "ingest/events")?),
         credential,
     )
     .json(&request)
@@ -596,21 +804,51 @@ async fn deliver_batch(
     if acknowledgement.batch_id != request.batch_id {
         bail!("Console delivery acknowledgement batch mismatch");
     }
-    let mut terminal = acknowledgement
-        .accepted_keys
-        .into_iter()
-        .collect::<HashSet<_>>();
-    terminal.extend(acknowledgement.duplicate_keys);
+    let terminal = terminal_acknowledgement_keys(&request, &acknowledgement)?;
     if !acknowledgement.rejected_keys.is_empty() {
         warn!(
             rejected = acknowledgement.rejected_keys.len(),
             "Console permanently rejected WAF events"
         );
-        terminal.extend(acknowledgement.rejected_keys);
     }
     let delivered = terminal.len();
     outbox.remove_terminal(&terminal)?;
     Ok(delivered)
+}
+
+fn terminal_acknowledgement_keys(
+    request: &EventIngestRequest,
+    acknowledgement: &DeliveryAcknowledgement,
+) -> Result<HashSet<String>> {
+    if acknowledgement.batch_id != request.batch_id {
+        bail!("Console delivery acknowledgement batch mismatch");
+    }
+    let requested: HashSet<&str> = request
+        .deduplication_keys
+        .iter()
+        .map(String::as_str)
+        .collect();
+    let mut observed = HashSet::new();
+    let mut terminal = HashSet::new();
+    for (keys, is_terminal) in [
+        (&acknowledgement.accepted_keys, true),
+        (&acknowledgement.duplicate_keys, true),
+        (&acknowledgement.rejected_keys, true),
+        (&acknowledgement.retry_keys, false),
+    ] {
+        for key in keys {
+            if !requested.contains(key.as_str()) {
+                bail!("Console acknowledgement contains an unknown event key");
+            }
+            if !observed.insert(key.as_str()) {
+                bail!("Console acknowledgement assigns an event to multiple outcomes");
+            }
+            if is_terminal {
+                terminal.insert(key.clone());
+            }
+        }
+    }
+    Ok(terminal)
 }
 
 fn verify_effective_policy(
@@ -816,14 +1054,19 @@ async fn fetch_effective_policy(
     config: &SaugraConfig,
     managed_policy: &ManagedPolicyHandle,
 ) -> Result<Option<(String, i64, usize)>> {
+    managed_policy.record_lifecycle("resolving", None);
     let response = authenticated(
-        client.get(endpoint(base, "api/v1/policy/effective")?),
+        client.get(console_endpoint(config, base, "policy/effective")?),
         credential,
     )
     .send()
     .await
     .context("failed to fetch effective Console policy")?;
     if response.status() == reqwest::StatusCode::NOT_FOUND {
+        managed_policy.record_lifecycle(
+            "resolved",
+            Some("no managed policy is currently assigned; retaining local or last-known-good protection".to_string()),
+        );
         return Ok(None);
     }
     let status = response.status();
@@ -836,11 +1079,30 @@ async fn fetch_effective_policy(
     }
     let response: EffectivePolicyResponse =
         serde_json::from_slice(&body).context("invalid Console effective policy response")?;
+    managed_policy.record_lifecycle("downloaded", None);
     let exclusions = verify_effective_policy(&response, credential, config)?;
     persist_effective_policy(config, &response)?;
     let count = exclusions.len();
+    if let Some(override_state) = emergency_override(config)? {
+        managed_policy.activate_emergency_override(override_state.reason);
+        return Ok(Some((response.policy_key, response.revision, 0)));
+    }
     managed_policy.activate_verified(&response, exclusions);
     Ok(Some((response.policy_key, response.revision, count)))
+}
+
+async fn sync_effective_policy(
+    client: &Client,
+    base: &str,
+    credential: &ConsoleCredential,
+    config: &SaugraConfig,
+    managed_policy: &ManagedPolicyHandle,
+) -> Result<Option<(String, i64, usize)>> {
+    if let Some(override_state) = emergency_override(config)? {
+        managed_policy.activate_emergency_override(override_state.reason);
+        return Ok(None);
+    }
+    fetch_effective_policy(client, base, credential, config, managed_policy).await
 }
 
 pub fn start_telemetry(
@@ -862,16 +1124,18 @@ pub fn start_telemetry(
     let policy_config = config.clone();
     let heartbeat_config = config.clone();
     if policy_enabled {
+        let local_override = emergency_override(config)?;
+        if let Some(override_state) = local_override.as_ref() {
+            managed_policy.activate_emergency_override(override_state.reason.clone());
+            warn!("Console managed policy is suspended by the local emergency override");
+        }
         match load_cached_policy(config, &credential) {
             Ok(Some((response, exclusions))) => {
-                let count = exclusions.len();
-                managed_policy.activate_verified(&response, exclusions);
-                info!(
-                    policy_key = %response.policy_key,
-                    revision = response.revision,
-                    exclusions = count,
-                    "verified cached Console WAF policy activated"
-                );
+                if local_override.is_none() {
+                    let count = exclusions.len();
+                    managed_policy.activate_verified(&response, exclusions);
+                    info!(policy_key = %response.policy_key, revision = response.revision, exclusions = count, "verified cached Console WAF policy activated");
+                }
             }
             Ok(None) => {}
             Err(error) => warn!(
@@ -887,21 +1151,30 @@ pub fn start_telemetry(
         let mut deliveries =
             tokio::time::interval(std::time::Duration::from_secs(delivery_interval));
         let mut policies = tokio::time::interval(std::time::Duration::from_secs(policy_interval));
+        let mut responses = tokio::time::interval(std::time::Duration::from_secs(15));
         loop {
             tokio::select! {
                 _ = heartbeats.tick() => match send_heartbeat(&client, &base, &credential, &heartbeat_config, &managed_policy).await {
                     Ok(()) => info!(node_id = %credential.node_id, "Console heartbeat acknowledged"),
                     Err(error) => warn!(%error, "Console heartbeat failed; local WAF protection remains active"),
                 },
-                _ = deliveries.tick() => match deliver_batch(&client, &base, &credential, &outbox, batch_size).await {
+                _ = deliveries.tick() => match deliver_batch(&client, &base, &heartbeat_config, &credential, &outbox, batch_size).await {
                     Ok(count) if count > 0 => info!(count, "Console WAF events acknowledged"),
                     Ok(_) => {},
                     Err(error) => warn!(%error, "Console event delivery failed; events remain in the durable outbox"),
                 },
-                _ = policies.tick(), if policy_enabled => match fetch_effective_policy(&client, &base, &credential, &policy_config, &managed_policy).await {
+                _ = policies.tick(), if policy_enabled => match sync_effective_policy(&client, &base, &credential, &policy_config, &managed_policy).await {
                     Ok(Some((policy_key, revision, exclusions))) => info!(%policy_key, revision, exclusions, "verified Console WAF policy activated"),
                     Ok(None) => {},
-                    Err(error) => warn!(%error, "Console WAF policy rejected; last-known-good policy remains active"),
+                    Err(error) => {
+                        managed_policy.record_lifecycle("rejected", Some(error.to_string()));
+                        warn!(%error, "Console WAF policy rejected; last-known-good policy remains active");
+                    },
+                },
+                _ = responses.tick() => match process_response_commands(&client, &base, &credential, &heartbeat_config).await {
+                    Ok(count) if count > 0 => info!(count, "Console WAF response commands acknowledged"),
+                    Ok(_) => {},
+                    Err(error) => warn!(%error, "Console WAF response processing failed; commands remain retryable"),
                 },
             }
         }
@@ -971,6 +1244,36 @@ mod tests {
     }
 
     #[test]
+    fn acknowledgement_outcomes_only_remove_terminal_batch_events() {
+        let directory = tempfile::tempdir().unwrap();
+        let outbox = ConsoleOutbox::new(directory.path().join("outbox.jsonl"));
+        for id in ["accepted", "duplicate", "rejected", "retry"] {
+            outbox.append(&event(id, WafAction::Monitor)).unwrap();
+        }
+        let events = outbox.batch(10).unwrap();
+        let request = event_ingest_request("tenant-a", "node-a", &events).unwrap();
+        let acknowledgement = DeliveryAcknowledgement {
+            batch_id: request.batch_id.clone(),
+            accepted_keys: vec!["accepted".into()],
+            duplicate_keys: vec!["duplicate".into()],
+            rejected_keys: vec!["rejected".into()],
+            retry_keys: vec!["retry".into()],
+            retry_after_seconds: Some(10),
+        };
+        let terminal = terminal_acknowledgement_keys(&request, &acknowledgement).unwrap();
+        outbox.remove_terminal(&terminal).unwrap();
+        let remaining = outbox.batch(10).unwrap();
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].decision.request_id, "retry");
+
+        let mut invalid = acknowledgement;
+        invalid.retry_keys = vec!["accepted".into()];
+        assert!(terminal_acknowledgement_keys(&request, &invalid).is_err());
+        invalid.retry_keys = vec!["not-in-batch".into()];
+        assert!(terminal_acknowledgement_keys(&request, &invalid).is_err());
+    }
+
+    #[test]
     fn authenticated_requests_have_replay_protection_headers() {
         let credential = ConsoleCredential {
             protocol_version: 1,
@@ -1026,6 +1329,108 @@ mod tests {
         let updated = rule_inventory(&config, &managed).unwrap();
         assert_eq!(updated["managed_exclusions"], 1);
         assert_eq!(updated["rule_inventory"][0]["enabled"], false);
+    }
+
+    #[test]
+    fn managed_policy_lifecycle_is_reported_without_discarding_active_policy() {
+        let handle = ManagedPolicyHandle::default();
+        handle.record_lifecycle("rejected", Some("signature verification failed".into()));
+
+        let status = handle.status();
+        assert_eq!(status["status"], "local");
+        assert_eq!(status["lifecycle"], "rejected");
+        assert_eq!(status["reason"], "signature verification failed");
+        assert!(status["updated_at_unix_secs"].as_u64().unwrap() > 0);
+    }
+
+    #[test]
+    fn waf_response_execution_is_idempotent_and_bounded() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config =
+            SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
+        config.runtime_policy.enabled = true;
+        config.runtime_policy.path = directory.path().join("runtime-policy.json");
+        let request_id = uuid::Uuid::new_v4().to_string();
+        let command = ResponseCommand {
+            protocol_version: 1,
+            request_id: request_id.clone(),
+            idempotency_key: format!("console-{request_id}"),
+            action: ResponseActionKind::WafBlockIp,
+            target: json!({"value": "198.51.100.0/24", "duration_seconds": 3600}),
+            policy_mode: "enforce".into(),
+            expires_at: (chrono::Utc::now() + chrono::Duration::minutes(5)).to_rfc3339(),
+            rollback_guidance: "remove the entry after review".into(),
+        };
+        assert_eq!(
+            execute_response_command(&config, &command).outcome,
+            "succeeded"
+        );
+        assert_eq!(
+            execute_response_command(&config, &command).outcome,
+            "succeeded"
+        );
+        let policy = runtime_policy::list_policy(&config.runtime_policy.path).unwrap();
+        assert_eq!(policy.blocklisted_ips.len(), 1);
+        assert_eq!(policy.blocklisted_ips[0].id, request_id);
+    }
+
+    #[test]
+    fn console_transport_selects_direct_or_relay_contract_routes() {
+        let mut config =
+            SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
+        assert_eq!(
+            console_endpoint(&config, "https://management.test", "ingest/events")
+                .unwrap()
+                .path(),
+            "/api/v1/ingest/events"
+        );
+        config.console.transport = crate::config::ConsoleTransport::Relay;
+        assert_eq!(
+            console_endpoint(&config, "https://relay.test", "ingest/events")
+                .unwrap()
+                .path(),
+            "/v1/ingest/events"
+        );
+    }
+
+    #[tokio::test]
+    async fn emergency_override_rolls_back_active_policy_without_network_access() {
+        let directory = tempfile::tempdir().unwrap();
+        let mut config =
+            SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
+        config.console.emergency_override_path = Some(directory.path().join("override.json"));
+        let handle = ManagedPolicyHandle::default();
+        handle.activate(vec![RuleExclusionConfig {
+            name: Some("managed".into()),
+            rule_ids: vec!["SAUGRA-SQLI-001".into()],
+            ..Default::default()
+        }]);
+        enable_emergency_override(&config, "Console policy caused a production false positive")
+            .unwrap();
+        let credential = ConsoleCredential {
+            protocol_version: 1,
+            node_id: "node-a".into(),
+            tenant_id: "tenant-a".into(),
+            product: SaugraProduct::Waf,
+            credential: "secret".into(),
+            credential_fingerprint: "fingerprint".into(),
+            credential_expires_at: "2027-01-01T00:00:00Z".into(),
+            stored_at_unix_secs: now_unix_secs(),
+        };
+        let result = sync_effective_policy(
+            &Client::new(),
+            "http://127.0.0.1:1",
+            &credential,
+            &config,
+            &handle,
+        )
+        .await
+        .unwrap();
+        assert!(result.is_none());
+        assert!(handle.exclusions().is_empty());
+        assert_eq!(handle.status()["lifecycle"], "rolled_back");
+        assert!(disable_emergency_override(&config).unwrap());
+        assert!(emergency_override(&config).unwrap().is_none());
     }
 
     #[test]

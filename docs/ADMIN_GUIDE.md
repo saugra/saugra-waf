@@ -1231,6 +1231,49 @@ verified cached policy is restored after restart; invalid or unavailable
 Console policy leaves the last-known-good policy or local YAML configuration
 active.
 
+Each heartbeat includes the managed-policy lifecycle state and its update
+timestamp. Operators can distinguish policy resolution, download, activation,
+rejection, and an unassigned policy. Rejections include an operational reason
+while the WAF continues using its last verified policy (or local YAML when no
+verified policy has ever been activated). These inventory fields never contain
+signing keys, node credentials, or policy bodies.
+
+For an emergency false-positive or unsafe managed-policy rollout, suspend
+Console policy locally without deleting the last verified cache:
+
+```bash
+sudo -u saugra-waf saugra-waf console policy-override enable \
+  --config /etc/saugra-waf/saugra-waf.yml \
+  --reason "production checkout false positive under incident INC-1042"
+sudo -u saugra-waf saugra-waf console policy-override status \
+  --config /etc/saugra-waf/saugra-waf.yml
+```
+
+The protected marker is checked before network policy retrieval, so it rolls
+back to local YAML even while Console or Relay is unreachable. The heartbeat
+reports `rolled_back` and Console audits the node-reported transition. After
+the managed revision is corrected and signed, remove the override; the next
+successful policy poll revalidates and atomically activates the verified
+revision:
+
+```bash
+sudo -u saugra-waf saugra-waf console policy-override disable \
+  --config /etc/saugra-waf/saugra-waf.yml
+```
+
+Set `console.transport: relay` when `management_url` points to Saugra Relay.
+Direct Console connections use `direct`, the default. Enrollment, telemetry,
+heartbeats, policy retrieval, response commands, and results all follow the
+selected transport while local protection remains independent.
+
+Console response operations are limited to temporary IPv4/CIDR blocks,
+temporary IPv4/CIDR allows, and removal of a Console-created runtime entry.
+Durations must be between 60 seconds and 30 days. Temporary allows and entry
+removal require second approval in Console. The WAF rejects expired commands,
+unsupported actions, malformed targets, and all response commands when local
+runtime policy is disabled. Request UUIDs become runtime-entry UUIDs, making
+delivery replay idempotent after a crash or acknowledgement failure.
+
 The initial managed WAF rule schema is:
 
 ```yaml

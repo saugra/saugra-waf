@@ -209,6 +209,37 @@ pub fn add_block_ip_entry(
     Ok(entry)
 }
 
+pub fn upsert_console_ip_entry(
+    path: &Path,
+    id: &str,
+    value: &str,
+    duration_seconds: u64,
+    reason: &str,
+    block: bool,
+) -> anyhow::Result<RuntimeAllowlistEntry> {
+    Uuid::parse_str(id).context("Console runtime entry id must be a UUID")?;
+    validate_ip_or_cidr(value)?;
+    let mut policy = read_policy(path).unwrap_or_default();
+    policy.allowlisted_ips.retain(|entry| entry.id != id);
+    policy.blocklisted_ips.retain(|entry| entry.id != id);
+    let now = unix_seconds_now();
+    let entry = RuntimeAllowlistEntry {
+        id: id.to_string(),
+        value: normalize_ip_value(value),
+        reason: reason.trim().to_string(),
+        created_by: "saugra-console".to_string(),
+        created_at_unix_seconds: now,
+        expires_at_unix_seconds: Some(now.saturating_add(duration_seconds)),
+    };
+    if block {
+        policy.blocklisted_ips.push(entry.clone());
+    } else {
+        policy.allowlisted_ips.push(entry.clone());
+    }
+    write_policy_atomic(path, &policy)?;
+    Ok(entry)
+}
+
 pub fn remove_entry(path: &Path, id: &str) -> anyhow::Result<bool> {
     let mut policy = read_policy(path).unwrap_or_default();
     let before = policy.allowlisted_ips.len() + policy.blocklisted_ips.len();

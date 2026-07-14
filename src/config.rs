@@ -349,6 +349,8 @@ pub struct ConsoleConfig {
     #[serde(default)]
     pub enabled: bool,
     #[serde(default)]
+    pub transport: ConsoleTransport,
+    #[serde(default)]
     pub management_url: Option<String>,
     #[serde(default)]
     pub external_id: Option<String>,
@@ -368,6 +370,8 @@ pub struct ConsoleConfig {
     pub policy_poll_interval_secs: u64,
     #[serde(default)]
     pub policy_cache_path: Option<PathBuf>,
+    #[serde(default)]
+    pub emergency_override_path: Option<PathBuf>,
     #[serde(default)]
     pub trusted_signing_keys: std::collections::BTreeMap<String, String>,
 }
@@ -389,6 +393,7 @@ impl Default for ConsoleConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            transport: ConsoleTransport::Direct,
             management_url: None,
             external_id: None,
             display_name: None,
@@ -399,9 +404,18 @@ impl Default for ConsoleConfig {
             batch_size: default_console_batch_size(),
             policy_poll_interval_secs: default_console_policy_poll_interval_secs(),
             policy_cache_path: None,
+            emergency_override_path: None,
             trusted_signing_keys: std::collections::BTreeMap::new(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConsoleTransport {
+    #[default]
+    Direct,
+    Relay,
 }
 
 impl ConsoleConfig {
@@ -421,6 +435,12 @@ impl ConsoleConfig {
         self.policy_cache_path
             .clone()
             .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-policy.json")))
+    }
+
+    pub fn emergency_override_path(&self, event_log_path: &str) -> PathBuf {
+        self.emergency_override_path.clone().unwrap_or_else(|| {
+            PathBuf::from(format!("{event_log_path}.console-emergency-override.json"))
+        })
     }
 }
 

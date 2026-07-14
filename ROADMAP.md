@@ -192,14 +192,14 @@ telemetry, policy, investigations, relay operation, and audit workflows.
       fails.
 - [ ] Report resolved, downloaded, rejected, activated, and rolled-back policy
       state with node, revision, digest, reason, and timestamps.
-- [ ] Provide explicit rollback and local emergency override workflows without
+- [x] Provide explicit rollback and local emergency override workflows without
       allowing Console policy to disable standalone protection silently.
 - [ ] Audit every policy edit, signature, assignment, rollout, activation,
       rejection, exclusion, and rollback within its tenant boundary.
-- [ ] Add response-command support only for deterministic WAF-safe actions such
+- [x] Add response-command support only for deterministic WAF-safe actions such
       as managed runtime block/allow policy changes with expiry and audit
       records.
-- [ ] Support Saugra Relay endpoints with the same contracts for restricted
+- [x] Support Saugra Relay endpoints with the same contracts for restricted
       networks.
 - [ ] Add live Console integration tests that validate WAF payloads with
       Console contract validators and cover accepted, duplicate, retry, and
