@@ -6,6 +6,7 @@ server:
 # in Console, then run `saugra-waf console enroll`. Never store that token here.
 # console:
 #   enabled: true
+#   transport: direct # use relay when management_url points to Saugra Relay
 #   management_url: https://console.saugra.example
 #   external_id: waf-example-com
 #   display_name: Example.com WAF
@@ -16,6 +17,8 @@ server:
 #   batch_size: 100
 #   policy_poll_interval_secs: 30
 #   policy_cache_path: ./data/saugra-waf/console-policy.json
+#   policy_transition_path: ./data/saugra-waf/console-policy-transitions.json
+#   emergency_override_path: ./data/saugra-waf/console-emergency-override.json
 #   trusted_signing_keys:
 #     console-key-id: base64url-ed25519-public-key
 

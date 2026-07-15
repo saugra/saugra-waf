@@ -333,6 +333,7 @@ logging:
 # stored with owner-only permissions at credential_path.
 console:
   enabled: false
+  transport: direct # set relay when management_url points to Saugra Relay
   management_url: https://console.saugra.example
   external_id: waf-example-com
   display_name: Example.com WAF
@@ -344,6 +345,7 @@ console:
   batch_size: 100
   policy_poll_interval_secs: 30
   policy_cache_path: /var/lib/saugra-waf/console-policy.json
+  emergency_override_path: /var/lib/saugra-waf/console-emergency-override.json
   # Copy the key ID and public key shown in Console's Policy library. Managed
   # policy remains disabled when no trusted signing keys are configured.
   trusted_signing_keys: {}

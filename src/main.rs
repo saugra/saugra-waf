@@ -120,6 +120,23 @@ enum ConsoleCommand {
         #[arg(long)]
         display_name: Option<String>,
     },
+    /// Inspect or change the local managed-policy emergency override.
+    PolicyOverride {
+        #[arg(short, long, default_value_os_t = default_config_path())]
+        config: PathBuf,
+        #[command(subcommand)]
+        command: PolicyOverrideCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum PolicyOverrideCommand {
+    Status,
+    Enable {
+        #[arg(long)]
+        reason: String,
+    },
+    Disable,
 }
 
 #[derive(Debug, Subcommand)]
@@ -450,6 +467,27 @@ async fn main() -> anyhow::Result<()> {
                     "enrolled with Saugra Console as node {} (tenant {}, credential fingerprint {})",
                     credential.node_id, credential.tenant_id, credential.credential_fingerprint
                 );
+                Ok(())
+            }
+            ConsoleCommand::PolicyOverride { config, command } => {
+                let config = load_valid_config(&config)?;
+                match command {
+                    PolicyOverrideCommand::Status => match console::emergency_override(&config)? {
+                        Some(state) => println!(
+                            "enabled since {}: {}",
+                            state.enabled_at_unix_secs, state.reason
+                        ),
+                        None => println!("disabled; verified managed policy may activate"),
+                    },
+                    PolicyOverrideCommand::Enable { reason } => {
+                        console::enable_emergency_override(&config, &reason)?;
+                        println!("enabled; restart or wait for the next policy poll to suspend managed policy");
+                    }
+                    PolicyOverrideCommand::Disable => {
+                        let removed = console::disable_emergency_override(&config)?;
+                        println!("{}; restart or wait for the next policy poll to reactivate the verified policy", if removed { "disabled" } else { "already disabled" });
+                    }
+                }
                 Ok(())
             }
         },
