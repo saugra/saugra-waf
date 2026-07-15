@@ -4,6 +4,42 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.7 - 2026-07-15
+
+### Added
+
+- Fetch, verify, cache, and atomically activate signed effective WAF policies
+  from Saugra Console or Relay while preserving the last-known-good policy.
+- Report managed-policy lifecycle transitions through durable authenticated
+  heartbeats for tenant-scoped audit history.
+- Add bounded, idempotent Console response commands for temporary runtime
+  IPv4/CIDR blocks and allows, including approved removal workflows.
+- Add an emergency local policy override that rolls back to YAML protection
+  without deleting the last verified managed-policy cache.
+- Add live Console contract tests for enrollment, telemetry acknowledgements,
+  policy delivery, response commands, and retry behavior.
+
+### Security
+
+- Verify Ed25519 signatures, SHA-256 digests, tenant and product identity,
+  policy keys, revisions, and locally validated exclusions before activation.
+- Keep standalone WAF protection active when Console policy is unavailable,
+  invalid, rejected, or locally suspended.
+- Protect credentials, cached policies, transition journals, and override state
+  with runtime-account ownership guidance and restrictive file permissions.
+
+### Documentation
+
+- Document trusted signing keys, managed policy rollout and rollback, Relay
+  transport, response actions, and Console credential permission recovery.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --locked --all-targets --all-features` passed with 317 tests,
+  including live Console HTTP and proxy integration tests.
+
 ## 1.1.6 - 2026-07-14
 
 ### Added
