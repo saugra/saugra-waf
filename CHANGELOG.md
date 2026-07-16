@@ -4,6 +4,22 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.8 - 2026-07-16
+
+### Documentation
+
+- Add the complete Saugra Console offline Attack Geography basemap runbook,
+  including PMTiles requirements, installation, permissions, configuration,
+  byte-range verification, per-WAF destinations, troubleshooting, refresh, and
+  rollback guidance.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --locked --all-targets --all-features` passed with 317 tests.
+- Documentation whitespace and diff checks passed.
+
 ## 1.1.7 - 2026-07-15
 
 ### Added

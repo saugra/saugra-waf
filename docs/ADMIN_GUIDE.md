@@ -1305,6 +1305,198 @@ node must deliberately receive a new identity. Revoke the old Console node
 credential first, preserve it only as required by your audit policy, generate a
 fresh one-time WAF token, and rerun the enrollment command.
 
+### Console Offline Attack Map Basemap
+
+The Console Attack Geography page can render a fully local MapLibre basemap
+without contacting Google, OpenStreetMap tile servers, a CDN, or another
+Internet service. MapLibre, the PMTiles browser protocol, and the dark map style
+are included with Console. The operator supplies the map dataset as a local
+PMTiles archive.
+
+Perform this procedure on the **Console host**, not on each WAF host.
+
+#### Basemap Requirements
+
+Use a Protomaps-compatible PMTiles archive containing the vector source layers
+used by Console's bundled style:
+
+- `earth`
+- `landuse`
+- `water`
+- `buildings`
+- `roads`
+- `boundaries`
+
+The archive may cover the whole world or only the regions needed by the
+deployment. A low-zoom global archive is suitable for attack-origin overviews;
+a regional archive with higher zoom levels provides street and building
+detail. Full-world, high-detail archives can be several gigabytes and are
+intentionally not included in the Console Debian package.
+
+Obtain or generate the archive through an approved map-data workflow. Record
+its source, generation date, geographic coverage, maximum zoom, checksum, and
+licence. OpenStreetMap-derived archives must retain the attribution required by
+their data licence.
+
+#### Install the Archive
+
+The Console package creates `/var/lib/saugra-console/maps` for operator-managed
+map data. Copy the archive into place with ownership readable by the
+unprivileged `saugra` service account:
+
+```bash
+sudo install -d \
+  -o saugra \
+  -g saugra \
+  -m 0750 \
+  /var/lib/saugra-console/maps
+
+sudo install \
+  -o saugra \
+  -g saugra \
+  -m 0640 \
+  basemap.pmtiles \
+  /var/lib/saugra-console/maps/basemap.pmtiles
+```
+
+Record a checksum for later integrity checks:
+
+```bash
+sha256sum /var/lib/saugra-console/maps/basemap.pmtiles |
+  sudo tee /var/lib/saugra-console/maps/basemap.pmtiles.sha256
+sudo chown saugra:saugra \
+  /var/lib/saugra-console/maps/basemap.pmtiles.sha256
+sudo chmod 0640 \
+  /var/lib/saugra-console/maps/basemap.pmtiles.sha256
+```
+
+Confirm that the service account can read the archive:
+
+```bash
+sudo -u saugra test -r \
+  /var/lib/saugra-console/maps/basemap.pmtiles \
+  && echo "Offline basemap is readable"
+```
+
+#### Configure and Restart Console
+
+Add the archive path to `/etc/saugra/console.env`:
+
+```env
+SAUGRA_OFFLINE_MAP_ARCHIVE=/var/lib/saugra-console/maps/basemap.pmtiles
+```
+
+Do not also configure `SAUGRA_MAP_STYLE_URL` unless the deployment deliberately
+uses a custom style. When only `SAUGRA_OFFLINE_MAP_ARCHIVE` is set, Console
+automatically selects its bundled offline style and does not require
+`SAUGRA_MAP_CONNECT_ORIGINS`.
+
+Restart and inspect Console:
+
+```bash
+sudo systemctl restart saugra-console
+sudo systemctl status saugra-console --no-pager
+sudo journalctl -u saugra-console -n 100 --no-pager
+```
+
+A missing, unreadable, or non-file archive path prevents Console startup so the
+configuration failure is observable rather than silently falling back to an
+external service.
+
+#### Verify Byte-Range Delivery
+
+PMTiles reads only the portions of the archive required for the current
+viewport. Console provides a same-origin endpoint with HTTP byte-range support.
+Verify it from the Console host:
+
+```bash
+curl -sS -D - -o /dev/null \
+  -H 'Range: bytes=0-126' \
+  http://127.0.0.1:8000/map-data/basemap.pmtiles
+```
+
+The response should include:
+
+```text
+HTTP/1.1 206 Partial Content
+Accept-Ranges: bytes
+Content-Range: bytes 0-126/<archive-size>
+Content-Length: 127
+Content-Type: application/vnd.pmtiles
+```
+
+A `404` response means the archive is not configured or cannot be opened. A
+`416` response means the requested range starts beyond the end of the file.
+
+#### Configure Each WAF Destination
+
+The basemap supplies geographic context, but Console still needs the protected
+location of each WAF. In Console:
+
+1. Open **Estate → WAF Operations**.
+2. Select a WAF instance.
+3. Find **Attack map destination**.
+4. Enter a map label, latitude, and longitude.
+5. Save the location.
+6. Repeat for every WAF shown on the tenant-wide map.
+
+When **All WAF instances** is selected, Console displays each configured WAF as
+a separate color-coded destination and routes every animated attack path to the
+WAF that received that event. Events for a WAF without coordinates remain in
+the source summary but do not receive a misleading trajectory.
+
+#### Verify in the Browser
+
+Open **Security Operations → Attack Geography** and confirm:
+
+- roads, borders, water, and land are rendered from the local archive;
+- browser developer tools show requests only to the Console origin;
+- map archive requests return `206 Partial Content`;
+- source markers appear at their telemetry- or GeoIP-derived locations;
+- configured WAF destinations appear in the legend;
+- animated paths terminate at the correct WAF;
+- zoom, pan, reset, pause, and popups operate normally.
+
+If Console shows the simplified polygon map instead, check:
+
+```bash
+sudo journalctl -u saugra-console -n 100 --no-pager
+sudo -u saugra test -r \
+  /var/lib/saugra-console/maps/basemap.pmtiles
+grep '^SAUGRA_OFFLINE_MAP_ARCHIVE=' /etc/saugra/console.env
+curl -sS -D - -o /dev/null \
+  -H 'Range: bytes=0-126' \
+  http://127.0.0.1:8000/map-data/basemap.pmtiles
+```
+
+Also inspect the browser console for WebGL, style-layer, Content Security
+Policy, or PMTiles errors. A readable archive can still render incompletely if
+it does not contain the Protomaps-compatible source layers expected by the
+bundled style.
+
+#### Refresh or Replace the Basemap
+
+Prepare replacements beside the active archive and switch them atomically:
+
+```bash
+sudo install \
+  -o saugra \
+  -g saugra \
+  -m 0640 \
+  basemap-new.pmtiles \
+  /var/lib/saugra-console/maps/basemap.pmtiles.new
+
+sudo mv \
+  /var/lib/saugra-console/maps/basemap.pmtiles.new \
+  /var/lib/saugra-console/maps/basemap.pmtiles
+
+sudo systemctl restart saugra-console
+```
+
+Re-run the checksum, byte-range, and browser verification steps after every
+replacement. Keep the previous validated archive until the new map has passed
+verification, according to the deployment's storage and rollback policy.
+
 ### Console Credential Permission Denied
 
 The Console can show an enrolled WAF while the local service repeatedly exits
