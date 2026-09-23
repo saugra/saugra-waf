@@ -1,7 +1,6 @@
 use super::*;
 use crate::config::{BotProtectionLists, BotProtectionRouteConfig};
 use eval::{evaluate_with_state, read_state, unix_seconds_now, BotProtectionState, ClientBotProtectionState};
-use super::store::{LocalBotProtectionStore, MemoryBotProtectionStore};
 
 #[test]
 fn monitors_deterministic_bot_signals() {

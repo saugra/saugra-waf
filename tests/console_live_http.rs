@@ -123,7 +123,7 @@ async fn run_outcome(outcome: &'static str) -> usize {
     config.console.management_url = Some(format!("http://{address}"));
     config.console.delivery_interval_secs = 1;
     config.console.heartbeat_interval_secs = 60;
-    config.logging.event_log_path = directory.path().join("events.jsonl").display().to_string();
+    config.logging.event_log_path = directory.path().join("events.jsonl");
     let credential = ConsoleCredential {
         protocol_version: 1,
         node_id: "node-live".into(),

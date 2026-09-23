@@ -436,7 +436,7 @@ pub struct StandardsConfig {
 }
 
 fn default_owasp_catalog() -> PathBuf {
-    PathBuf::from("configs/catalogs/owasp-top-10-2021.json")
+    PathBuf::from("configs/standards/owasp-top-10-2025.yml")
 }
 
 impl Default for StandardsConfig {

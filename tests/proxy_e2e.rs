@@ -1137,7 +1137,7 @@ async fn websocket_handshake_is_inspected_forwarded_and_tunneled() {
             upstream: "app".to_string(),
         },
     ];
-    config.logging.event_log_path = event_log_path.to_string_lossy().to_string();
+    config.logging.event_log_path = event_log_path.clone();
     config.websocket.allowed_origins = vec!["https://example.com".to_string()];
     config.websocket.allowed_hosts = vec!["example.com".to_string()];
     let listen = config.server.listen.clone();
@@ -1195,7 +1195,7 @@ async fn websocket_monitor_mode_records_attack_and_tunnels() {
     let mut config = test_config(WafMode::Monitor, 120);
     config.server.listen = free_loopback_addr();
     config.upstreams[0].target = format!("http://{}", upstream.addr);
-    config.logging.event_log_path = event_log_path.to_string_lossy().to_string();
+    config.logging.event_log_path = event_log_path.clone();
     let listen = config.server.listen.clone();
     let retention = EventLogRetention {
         max_size_bytes: config.event_log_max_size_bytes().unwrap(),
