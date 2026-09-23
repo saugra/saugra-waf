@@ -142,7 +142,10 @@ fn config_controls(
             controls.push(render_template(
                 &mapping.template,
                 &[
-                    ("event_log_path", config.logging.event_log_path.clone()),
+                    (
+                        "event_log_path",
+                        config.logging.event_log_path.display().to_string(),
+                    ),
                     (
                         "event_log_max_files",
                         config.logging.event_log_max_files.to_string(),
@@ -388,7 +391,7 @@ mod tests {
             runtime_policy: Default::default(),
             ai: AiConfig::default(),
             logging: LoggingConfig {
-                event_log_path: "/var/log/saugra-waf/saugra-waf-events.jsonl".to_string(),
+                event_log_path: std::path::PathBuf::from("/var/log/saugra-waf/saugra-waf-events.jsonl"),
                 event_log_max_files: 30,
                 ..LoggingConfig::default()
             },

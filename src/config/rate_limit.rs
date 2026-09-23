@@ -19,7 +19,6 @@ pub struct RateLimitConfig {
 fn default_requests_per_minute() -> u32 {
     120
 }
-
 fn default_rate_limit_burst() -> u32 {
     30
 }

@@ -117,6 +117,19 @@ Recommended Rust libraries:
 - `axum`
 - `tower`
 
+The proxy runtime also exposes a Prometheus metrics endpoint (`GET /_saugra-waf/metrics`) returning counters for total requests (`saugra_waf_requests_total`), blocked requests (`saugra_waf_blocked_total`), and monitored requests (`saugra_waf_monitored_total`).
+
+### Repository Structure & Modular Design
+
+The codebase enforces a strict maximum limit of 500 lines of code per file across all source files in `src/`. Logic is split into specialized submodules:
+
+- `src/config/`: Configuration parsing, field validation (`validation/`), server, rules posture, and unknown threats settings.
+- `src/proxy/`: Axum reverse proxy runtime, request handlers (`handlers/`), metrics exporter (`metrics.rs`), and utilities (`utils.rs`).
+- `src/rules/`: Inspection engine (`engine.rs`), rule pack loading (`pack.rs`), event replay (`replay.rs`), types (`types.rs`), and report generators (`reports.rs`).
+- `src/ai/`: Explainability layer, providers (`providers/`), prompt definitions (`prompts.rs`), and shadow evaluation (`shadow.rs`).
+- `src/console/`: Saugra Console integration split into API client commands (`commands.rs`), policy verification/syncing (`policy.rs`), and HTTP requests (`requests.rs`).
+- `src/cli/`: Command-line interface definitions (`commands.rs`), printers (`printers.rs`), and command handlers (`handlers.rs`).
+
 ### 2. Configuration Loader
 
 Responsible for:

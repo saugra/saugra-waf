@@ -589,6 +589,25 @@ curl -i -H "Host: example.com" http://127.0.0.1:8787/
 If the backend direct test fails, start or fix the application service before
 debugging Saugra.
 
+## Prometheus Metrics Endpoint
+
+Saugra WAF exposes operational metrics formatted for Prometheus scrapers at:
+
+```http
+GET /_saugra-waf/metrics
+```
+
+Exposed metrics include:
+- `saugra_waf_requests_total`: Total count of incoming HTTP requests processed.
+- `saugra_waf_blocked_total`: Total count of requests blocked by security rules or policies.
+- `saugra_waf_monitored_total`: Total count of requests monitored (logged without blocking).
+
+Example scrape query:
+
+```bash
+curl -i http://127.0.0.1:8787/_saugra-waf/metrics
+```
+
 ## Logs And Explanations
 
 Tail recent security events:

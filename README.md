@@ -89,8 +89,7 @@ This repository now has a production-oriented foundation:
 - Built-in rule metadata and basic regex inspection
 - Monitor/block/off mode model
 - Structured logging setup
-- Proxies all normal application traffic and exposes `/_saugra-waf/health` for
-  checking that the WAF service is alive
+- Proxies all normal application traffic and exposes `/_saugra-waf/health` and `/_saugra-waf/metrics` for health checks and Prometheus monitoring
 - Route-based multi-upstream HTTP and WebSocket forwarding
 - WebSocket handshake inspection and upgrade tunneling
 - Redis-backed production rate limiting option

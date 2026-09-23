@@ -54,7 +54,7 @@ To maintain a healthy commit history and welcoming community:
 
 - **Small, Focused Commits**: Ship features together with their tests in small, self-contained commits. Avoid large mixed PRs combining reformatting, refactoring, and features into a single diff.
 - **Good First Issues**: Maintainers actively tag modular refactoring, documentation improvements, and unit test additions with the `good first issue` label to welcome new contributors.
-- **Modular Code Organization**: Keep module files focused and maintainable. Modules exceeding size guidelines are split into dedicated submodules and re-exported via `pub use` to maintain stable interfaces.
+- **Modular Code Organization**: Keep module files focused and maintainable. Every source file under `src/` must strictly adhere to a maximum limit of **500 lines of code**. Large monoliths are split into dedicated submodules and re-exported via `pub use` to maintain clean interfaces.
 
 ---
 
@@ -125,14 +125,14 @@ Make sure you write tests for:
 
 ### 4. Coverage
 
-GitHub Actions generates an LCOV coverage report and uploads it to Codecov when
+GitHub Actions generates an LCOV coverage report using `cargo llvm-cov` with `--fail-under-lines 60` and uploads it to Codecov when
 the repository has a `CODECOV_TOKEN` Actions secret configured. Store the token
 only in the CI secret manager; do not commit it to source files, examples, or
 documentation.
 
 Run the normal Rust test suite before collecting coverage. Treat coverage as a
 regression signal for security-critical paths, not as a reason to add weak
-tests.
+tests. Ensure PRs maintain coverage above the 60% line threshold.
 
 ### 5. Validating Rules and Configs
 

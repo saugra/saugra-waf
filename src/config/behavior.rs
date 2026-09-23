@@ -1,5 +1,6 @@
-use serde::Deserialize;
 use std::path::PathBuf;
+
+use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct BehaviorConfig {
@@ -34,7 +35,7 @@ pub struct BehaviorConfig {
 }
 
 fn default_behavior_state_path() -> PathBuf {
-    PathBuf::from("/var/lib/saugra-waf/behavior-state.json")
+    PathBuf::from("logs/saugra-waf-behavior-state.json")
 }
 fn default_behavior_score_window() -> String {
     "10m".to_string()
@@ -43,13 +44,14 @@ fn default_behavior_decay_window() -> String {
     "30m".to_string()
 }
 fn default_behavior_monitor_threshold() -> u16 {
-    15
+    40
 }
 fn default_behavior_block_threshold() -> u16 {
-    30
+    80
 }
+
 fn default_probe_paths() -> Vec<String> {
-    Vec::new()
+    load_builtin_threat_path_catalog().behavior_probe_paths
 }
 
 impl Default for BehaviorConfig {
@@ -90,18 +92,26 @@ pub enum BehaviorBackend {
     Local,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct BehaviorRouteOverrideConfig {
     pub path: String,
-    pub multiplier: Option<f64>,
-    pub score_weight: Option<u32>,
-    pub monitor_threshold: Option<u32>,
-    pub block_threshold: Option<u32>,
+    #[serde(default)]
+    pub monitor_threshold: Option<u16>,
+    #[serde(default)]
+    pub block_threshold: Option<u16>,
+    #[serde(default)]
+    pub score_window: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct BehaviorCategoryOverrideConfig {
     pub category: String,
-    pub score_weight: Option<u32>,
-    pub multiplier: Option<f64>,
+    #[serde(default)]
+    pub monitor_threshold: Option<u16>,
+    #[serde(default)]
+    pub block_threshold: Option<u16>,
+    #[serde(default)]
+    pub score_delta: Option<u16>,
 }
+
+use crate::config::campaign_bot::load_builtin_threat_path_catalog;

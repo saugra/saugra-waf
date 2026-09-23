@@ -78,34 +78,45 @@ pub enum ConsoleTransport {
     Relay,
 }
 
+use std::path::Path;
+
 impl ConsoleConfig {
-    pub fn credential_path(&self, event_log_path: &str) -> PathBuf {
-        self.credential_path
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-credential.json")))
-    }
-
-    pub fn outbox_path(&self, event_log_path: &str) -> PathBuf {
-        self.outbox_path
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-outbox.jsonl")))
-    }
-
-    pub fn policy_cache_path(&self, event_log_path: &str) -> PathBuf {
-        self.policy_cache_path
-            .clone()
-            .unwrap_or_else(|| PathBuf::from(format!("{event_log_path}.console-policy.json")))
-    }
-
-    pub fn emergency_override_path(&self, event_log_path: &str) -> PathBuf {
-        self.emergency_override_path.clone().unwrap_or_else(|| {
-            PathBuf::from(format!("{event_log_path}.console-emergency-override.json"))
+    pub fn credential_path(&self, event_log_path: &Path) -> PathBuf {
+        self.credential_path.clone().unwrap_or_else(|| {
+            PathBuf::from(format!(
+                "{}.console-credential.json",
+                event_log_path.display()
+            ))
         })
     }
 
-    pub fn policy_transition_path(&self, event_log_path: &str) -> PathBuf {
+    pub fn outbox_path(&self, event_log_path: &Path) -> PathBuf {
+        self.outbox_path.clone().unwrap_or_else(|| {
+            PathBuf::from(format!("{}.console-outbox.jsonl", event_log_path.display()))
+        })
+    }
+
+    pub fn policy_cache_path(&self, event_log_path: &Path) -> PathBuf {
+        self.policy_cache_path.clone().unwrap_or_else(|| {
+            PathBuf::from(format!("{}.console-policy.json", event_log_path.display()))
+        })
+    }
+
+    pub fn emergency_override_path(&self, event_log_path: &Path) -> PathBuf {
+        self.emergency_override_path.clone().unwrap_or_else(|| {
+            PathBuf::from(format!(
+                "{}.console-emergency-override.json",
+                event_log_path.display()
+            ))
+        })
+    }
+
+    pub fn policy_transition_path(&self, event_log_path: &Path) -> PathBuf {
         self.policy_transition_path.clone().unwrap_or_else(|| {
-            PathBuf::from(format!("{event_log_path}.console-policy-transitions.json"))
+            PathBuf::from(format!(
+                "{}.console-policy-transitions.json",
+                event_log_path.display()
+            ))
         })
     }
 }
