@@ -48,6 +48,16 @@ When writing code or adding rules to Saugra, please keep these primary design go
 
 ---
 
+## Commit Cadence & Good First Issues
+
+To maintain a healthy commit history and welcoming community:
+
+- **Small, Focused Commits**: Ship features together with their tests in small, self-contained commits. Avoid large mixed PRs combining reformatting, refactoring, and features into a single diff.
+- **Good First Issues**: Maintainers actively tag modular refactoring, documentation improvements, and unit test additions with the `good first issue` label to welcome new contributors.
+- **Modular Code Organization**: Keep module files focused and maintainable. Modules exceeding size guidelines are split into dedicated submodules and re-exported via `pub use` to maintain stable interfaces.
+
+---
+
 ## Development Environment Setup
 
 Saugra is built with Rust. You will need a modern Rust toolchain installed.

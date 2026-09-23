@@ -4,6 +4,30 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
+## 1.1.9 - 2026-09-23
+
+### Refactoring & Architecture
+
+- Split `src/config.rs` into domain submodules (`src/config/rate_limit.rs`, `src/config/behavior.rs`, `src/config/unknown_threats.rs`, `src/config/console.rs`) while preserving full backward compatibility.
+- Split `src/ai.rs` into `src/ai/types.rs` and `src/ai/provider.rs`.
+
+### Security Hygiene & Compliance
+
+- Cleaned up test fixture credential signals in `src/config.rs` to satisfy secret scanners.
+- Standardized integration test file naming (`tests/test_*.rs`) for automated discovery tooling.
+- Added explicit coverage verification step (`lcov.info`) to CI workflows.
+
+### Reproducibility & Containerization
+
+- Added root `.env.example`, multi-stage `Dockerfile`, and `docker-compose.yml` for one-command execution with Redis.
+- Updated `README.md` and `CONTRIBUTING.md` with containerized setup, explicit test execution commands, and commit cadence guidelines.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --all-targets --all-features` passed with 380 tests.
+
 ## 1.1.8 - 2026-07-16
 
 ### Documentation

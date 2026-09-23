@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  saugra-waf:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8787:8787"
+    environment:
+      - SAUGRA_WAF_CONFIG=/app/configs/saugra-waf.example.yml
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    restart: unless-stopped

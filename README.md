@@ -181,10 +181,19 @@ sudo apt-mark hold saugra-waf
 git clone https://github.com/saugra/saugra-waf.git
 cd saugra-waf
 cargo build
+cargo test --all-targets --all-features
 cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- rules view <saugra-rule-id> --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- run --config configs/saugra-waf.example.yml
+```
+
+### Run Containerized With Docker Compose
+
+```bash
+cp .env.example .env
+docker compose up -d
+curl http://127.0.0.1:8787/_saugra-waf/health
 ```
 
 Leave Saugra running, then use another terminal for the checks below.
