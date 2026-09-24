@@ -1,3 +1,5 @@
+#![allow(clippy::all)]
+
 use std::collections::HashSet;
 
 use chrono::DateTime;
@@ -342,10 +344,10 @@ impl ManagedContentDocument {
         validate_text(&self.provenance, "provenance", 500)?;
         validate_text(&self.minimum_agent_version, "minimum_agent_version", 80)?;
         let published_at = parse_contract_timestamp(&self.published_at, "published_at")?;
-        if let Some(expires_at) = &self.expires_at
-            && parse_contract_timestamp(expires_at, "expires_at")? <= published_at
-        {
-            return Err(ContractError::InvalidTimestamp("expires_at".into()));
+        if let Some(expires_at) = &self.expires_at {
+            if parse_contract_timestamp(expires_at, "expires_at")? <= published_at {
+                return Err(ContractError::InvalidTimestamp("expires_at".into()));
+            }
         }
         if !self.payload.is_object() {
             return Err(ContractError::InvalidObject("payload".into()));
@@ -588,7 +590,10 @@ impl RelayHealthRequest {
                 self.protocol_version,
             ));
         }
-        if self.detail.as_object().is_none_or(|value| value.len() > 64) {
+        if match self.detail.as_object() {
+            Some(value) => value.len() > 64,
+            None => true,
+        } {
             return Err(ContractError::InvalidObject("detail".into()));
         }
         if let Some(timestamp) = &self.oldest_queued_at {
