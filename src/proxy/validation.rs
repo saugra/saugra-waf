@@ -364,5 +364,4 @@ mod tests {
         let rule_match = err.to_rule_match();
         assert_eq!(rule_match.rule_id, "SAUGRA-VAL-004");
     }
-
 }
