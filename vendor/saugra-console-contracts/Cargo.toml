@@ -1,0 +1,15 @@
+[package]
+name = "saugra-console-contracts"
+version = "0.1.0"
+edition = "2024"
+license-file = "LICENSE"
+rust-version = "1.90"
+description = "Shared Saugra Console wire contracts for EDR, WAF, server, and relay nodes"
+repository = "https://github.com/saugra/saugra-console-contracts"
+publish = false
+
+[dependencies]
+chrono = { version = "0.4", features = ["serde"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+thiserror = "2.0"

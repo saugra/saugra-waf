@@ -85,6 +85,9 @@ jobs:
       - name: Verify coverage file
         run: test -s lcov.info && echo "Coverage file lcov.info generated successfully"
 
+      - name: Print per-module coverage summary
+        run: python3 scripts/coverage-summary.py lcov.info
+
       - name: Upload coverage
         if: ${{ env.CODECOV_TOKEN != '' }}
         uses: codecov/codecov-action@v7

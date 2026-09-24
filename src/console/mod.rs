@@ -17,8 +17,8 @@ mod tests;
 
 pub use client::{
     authenticated, console_endpoint, enroll_with_console, enrollment_request, event_ingest_request,
-    execute_response_command, heartbeat_request, rule_inventory, start_telemetry, sync_effective_policy,
-    terminal_acknowledgement_keys, verify_effective_policy,
+    execute_response_command, heartbeat_request, rule_inventory, start_telemetry,
+    sync_effective_policy, terminal_acknowledgement_keys, verify_effective_policy,
 };
 pub use outbox::{ConsoleCredential, ConsoleCredentialStore, ConsoleOutbox};
 pub use policy::{parse_managed_mode, ManagedPolicyHandle, PolicyTransition};

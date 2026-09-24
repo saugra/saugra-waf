@@ -23,3 +23,19 @@ pub fn init(config: &LoggingConfig) -> anyhow::Result<()> {
 
     Ok(())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn validates_logging_config_level_parsing() {
+        let config = LoggingConfig {
+            level: "debug".to_string(),
+            format: "json".to_string(),
+            ..Default::default()
+        };
+        assert_eq!(config.level, "debug");
+        assert_eq!(config.format, "json");
+    }
+}

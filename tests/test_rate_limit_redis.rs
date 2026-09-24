@@ -6,6 +6,7 @@ use saugra_waf::{
 };
 
 #[tokio::test]
+#[ignore = "Requires live Redis instance on 127.0.0.1:6379"]
 async fn test_live_redis_rate_limiting() {
     let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
 

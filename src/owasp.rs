@@ -391,7 +391,9 @@ mod tests {
             runtime_policy: Default::default(),
             ai: AiConfig::default(),
             logging: LoggingConfig {
-                event_log_path: std::path::PathBuf::from("/var/log/saugra-waf/saugra-waf-events.jsonl"),
+                event_log_path: std::path::PathBuf::from(
+                    "/var/log/saugra-waf/saugra-waf-events.jsonl",
+                ),
                 event_log_max_files: 30,
                 ..LoggingConfig::default()
             },

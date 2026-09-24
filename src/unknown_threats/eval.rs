@@ -427,7 +427,11 @@ fn body_size_bucket(body_size: usize) -> usize {
     }
 }
 
-pub(super) fn prune_stale_routes(state: &mut UnknownThreatState, now: u64, retention_seconds: u64) -> usize {
+pub(super) fn prune_stale_routes(
+    state: &mut UnknownThreatState,
+    now: u64,
+    retention_seconds: u64,
+) -> usize {
     for baseline in state.routes.values_mut() {
         if baseline.first_observed_at == 0 {
             baseline.first_observed_at = now;

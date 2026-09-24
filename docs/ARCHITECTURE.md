@@ -88,15 +88,27 @@ tuning evidence. The [security model](#security-model) defines that strategy.
 1. Client sends a request.
 2. Nginx or Apache forwards the request to Saugra.
 3. Saugra assigns a request ID.
-4. Saugra normalizes request metadata.
-5. Saugra checks body size and content type.
-6. Saugra applies rate limits.
-7. Saugra runs built-in and custom rules.
-8. Saugra computes a risk score.
-9. Saugra creates a decision: allow, monitor, or block.
-10. Saugra logs the decision.
-11. If allowed or monitored, Saugra forwards the request to the backend.
-12. If blocked, Saugra returns a safe block response.
+4. Saugra performs strict input validation (bounds checks on URI path length, header field sizes, total header bytes, header counts, and content-type format).
+5. Saugra normalizes request metadata.
+6. Saugra checks body size and content type.
+7. Saugra applies rate limits.
+8. Saugra runs built-in and custom rules.
+9. Saugra computes a risk score.
+10. Saugra creates a decision: allow, monitor, or block.
+11. Saugra logs the decision.
+12. If allowed or monitored, Saugra forwards the request to the backend.
+13. If blocked, Saugra returns a safe block response.
+
+### Input Validation Boundary
+
+Before any request body parsing or rule evaluation occurs, Saugra enforces schema-based input bounds validation at the HTTP entry point (`src/proxy/validation.rs`):
+
+- **URI Path Length**: Rejects request URIs exceeding configured path length limits (default 8,192 bytes) with rule ID `SAUGRA-VAL-001`.
+- **Header Field Limits**: Enforces bounds on individual header name lengths (max 1,024 bytes) and header value lengths (max 8,192 bytes) with rule ID `SAUGRA-VAL-002`.
+- **Header Count & Size Bounds**: Limits total header count per request (max 100 headers, `SAUGRA-VAL-003`) and total header byte volume (max 64 KB, `SAUGRA-VAL-004`).
+- **Content-Type Format**: Rejects malformed Content-Type headers containing non-ASCII control characters (`\0`, `\r`, `\n`) with rule ID `SAUGRA-VAL-005`.
+
+Requests violating these structural bounds produce a `WafDecision` immediately, logging a structured security event with OWASP category mappings and preventing malformed inputs from reaching downstream parsing or upstream applications.
 
 ## Core Modules
 

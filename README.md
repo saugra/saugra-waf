@@ -187,6 +187,8 @@ cargo run --bin saugra-waf -- rules view <saugra-rule-id> --config configs/saugr
 cargo run --bin saugra-waf -- run --config configs/saugra-waf.example.yml
 ```
 
+> **Note on test isolation**: `cargo test --all-targets --all-features` runs fully offline with zero external service dependencies (using in-memory rate limiting fallbacks). To run integration tests against a live Redis instance, run `cargo test --test test_rate_limit_redis -- --ignored`.
+
 ### Run Containerized With Docker Compose
 
 ```bash

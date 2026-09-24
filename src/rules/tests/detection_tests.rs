@@ -4,7 +4,9 @@ use super::super::{builtin_rules, load_rule_set_with_report, RequestParts, RuleT
 use crate::config::RuleSettings;
 
 fn inspect(parts: &RequestParts<'_>) -> Vec<crate::rules::RuleMatch> {
-    let rule_set = load_rule_set_with_report(&RuleSettings::default()).unwrap().0;
+    let rule_set = load_rule_set_with_report(&RuleSettings::default())
+        .unwrap()
+        .0;
     rule_set.inspect(parts)
 }
 

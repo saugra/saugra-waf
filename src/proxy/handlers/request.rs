@@ -93,6 +93,49 @@ async fn proxy_request_inner(
             )
         })?;
     let websocket_handshake = is_websocket_upgrade(&parts.headers);
+    if let Err(val_err) = super::super::validation::validate_request_bounds(
+        &parts.uri,
+        &parts.headers,
+        &super::super::validation::InputValidationConfig::default(),
+    ) {
+        let decision = super::super::validation::create_validation_decision(
+            request_id.clone(),
+            state.config.server.mode,
+            val_err,
+            state.config.rules.inbound_anomaly_threshold,
+        );
+        log_decision(
+            &parts.method,
+            parts.uri.path(),
+            parts.uri.query().unwrap_or_default(),
+            &client_ip,
+            &decision,
+            &upstream,
+            false,
+        );
+        record_event(
+            &state,
+            EventRequest {
+                method: parts.method.as_str(),
+                path: parts.uri.path(),
+                query: parts.uri.query().unwrap_or_default(),
+                client_ip: &client_ip,
+                evidence: request_evidence(
+                    parts.uri.query().unwrap_or_default(),
+                    &parts.headers,
+                    0,
+                ),
+            },
+            &decision,
+            &upstream,
+            None,
+        );
+        track_decision(&state, decision.action);
+        if decision.action == WafAction::Block {
+            return Err(blocked_response(&decision));
+        }
+    }
+
     let client_upgrade = if websocket_handshake {
         parts.extensions.remove::<OnUpgrade>()
     } else {

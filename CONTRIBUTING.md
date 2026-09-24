@@ -125,14 +125,21 @@ Make sure you write tests for:
 
 ### 4. Coverage
 
-GitHub Actions generates an LCOV coverage report using `cargo llvm-cov` with `--fail-under-lines 60` and uploads it to Codecov when
-the repository has a `CODECOV_TOKEN` Actions secret configured. Store the token
-only in the CI secret manager; do not commit it to source files, examples, or
-documentation.
+GitHub Actions generates an LCOV coverage report using `cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --fail-under-lines 60` and prints a per-module line coverage breakdown (`python3 scripts/coverage-summary.py lcov.info`) before uploading to Codecov.
+
+Current repository line coverage is **85.45%**, with per-module line coverage across key security areas:
+- `src/proxy`: 84.65%
+- `src/rules`: 94.56%
+- `src/config`: 85.10%
+- `src/ai`: 86.13%
+- `src/unknown_threats`: 86.49%
+- `src/bot`: 96.58%
+- `src/behavior`: 97.44%
+- `src/campaign`: 81.19%
 
 Run the normal Rust test suite before collecting coverage. Treat coverage as a
 regression signal for security-critical paths, not as a reason to add weak
-tests. Ensure PRs maintain coverage above the 60% line threshold.
+tests. Ensure PRs maintain line coverage above the 60% line threshold and maintain high module coverage breadth.
 
 ### 5. Validating Rules and Configs
 

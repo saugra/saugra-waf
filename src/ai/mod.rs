@@ -10,8 +10,8 @@ mod tests;
 
 pub use eval::evaluate_provider;
 pub use explain::{
-    content_digest, explain, explain_event, narrow_tuning_suggestions, parse_duration, rotated_audit_path,
-    sanitized_identifier, sanitized_input, sanitized_route_shape, sha256,
+    content_digest, explain, explain_event, narrow_tuning_suggestions, parse_duration,
+    rotated_audit_path, sanitized_identifier, sanitized_input, sanitized_route_shape, sha256,
     suggestion_matches_input, validate_provider_explanation,
 };
 pub use provider::*;

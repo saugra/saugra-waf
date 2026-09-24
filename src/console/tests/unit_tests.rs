@@ -4,8 +4,8 @@ use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
 use ed25519_dalek::{Signer, SigningKey};
 use reqwest::Client;
 use saugra_console_contracts::{
-    DeliveryAcknowledgement, EffectivePolicyResponse, PolicyBundleSignature, PolicyStage, ResponseActionKind,
-    ResponseCommand, SaugraProduct,
+    DeliveryAcknowledgement, EffectivePolicyResponse, PolicyBundleSignature, PolicyStage,
+    ResponseActionKind, ResponseCommand, SaugraProduct,
 };
 use serde_json::json;
 use sha2::{Digest, Sha256};

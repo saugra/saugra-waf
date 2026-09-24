@@ -23,9 +23,9 @@ Configure `SAUGRA_APT_GPG_KEY_ID`, `SAUGRA_APT_GPG_PRIVATE_KEY`, and
 `SAUGRA_APT_GPG_PASSPHRASE` as GitHub Actions secrets. Keep an encrypted
 offline backup and never commit exported private keys.
 
-### Console Contracts Dependency Token
+### Console Contracts Dependency
 
-Release builds fetch the private `saugra/saugra-console-contracts` repository.
+`saugra-console-contracts` is vendored directly under `vendor/saugra-console-contracts` as a local path dependency in `Cargo.toml`. This ensures completely reproducible, offline release builds without requiring git credentials during build time.
 Create a dedicated fine-grained personal access token instead of reusing a
 maintainer token with broad organization or account permissions:
 

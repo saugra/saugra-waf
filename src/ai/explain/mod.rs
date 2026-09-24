@@ -14,8 +14,8 @@ use super::{
 mod audit;
 mod sanitized;
 
-pub use audit::{content_digest, rotated_audit_path, sha256};
 use audit::{append_audit, digest};
+pub use audit::{content_digest, rotated_audit_path, sha256};
 pub use sanitized::{sanitized_identifier, sanitized_input, sanitized_route_shape};
 
 pub async fn explain_event(

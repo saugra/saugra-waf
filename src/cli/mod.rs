@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Context;
 use clap::Parser;
@@ -83,7 +83,7 @@ pub async fn run() -> anyhow::Result<()> {
                 let config = load_valid_config(&config)?;
                 let retention = event_log_retention(&config)?;
                 let events = event_store::tail(
-                    PathBuf::from(config.logging.event_log_path).as_path(),
+                    std::path::Path::new(&config.logging.event_log_path),
                     retention,
                     limit,
                 )?;
@@ -96,7 +96,7 @@ pub async fn run() -> anyhow::Result<()> {
                 let config = load_valid_config(&config)?;
                 let retention = event_log_retention(&config)?;
                 let events = event_store::tail(
-                    PathBuf::from(config.logging.event_log_path).as_path(),
+                    std::path::Path::new(&config.logging.event_log_path),
                     retention,
                     limit,
                 )?;
@@ -108,7 +108,7 @@ pub async fn run() -> anyhow::Result<()> {
             let config = load_valid_config(&config)?;
             let retention = event_log_retention(&config)?;
             let event = event_store::find_by_request_id(
-                PathBuf::from(config.logging.event_log_path).as_path(),
+                std::path::Path::new(&config.logging.event_log_path),
                 retention,
                 &request_id,
             )?

@@ -285,3 +285,39 @@ fn managed_policy_exclusions_are_combined_with_local_exclusions() {
     assert_eq!(exclusions[0].rule_ids, vec!["LOCAL-001"]);
     assert_eq!(exclusions[1].rule_ids, vec!["MANAGED-001"]);
 }
+
+#[test]
+fn input_validation_rejects_oversized_path_and_header() {
+    use crate::proxy::validation::{
+        validate_request_bounds, InputValidationConfig, ValidationError,
+    };
+    use axum::http::{HeaderMap, HeaderValue, Uri};
+
+    let uri: Uri = "/".parse().unwrap();
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        "x-oversized-key",
+        HeaderValue::from_str(&"v".repeat(200)).unwrap(),
+    );
+
+    let config = InputValidationConfig {
+        max_header_value_length: 50,
+        ..Default::default()
+    };
+
+    let result = validate_request_bounds(&uri, &headers, &config);
+    assert!(result.is_err());
+    let err = result.unwrap_err();
+    match err {
+        ValidationError::OversizedHeader {
+            header,
+            length,
+            max,
+        } => {
+            assert_eq!(header, "x-oversized-key");
+            assert_eq!(length, 200);
+            assert_eq!(max, 50);
+        }
+        _ => panic!("Expected OversizedHeader error"),
+    }
+}
