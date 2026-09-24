@@ -315,4 +315,54 @@ mod tests {
         assert_eq!(decision.matched_rules.len(), 1);
         assert_eq!(decision.matched_rules[0].rule_id, "SAUGRA-VAL-001");
     }
+
+    #[test]
+    fn rejects_oversized_header_name() {
+        let uri: Uri = "/".parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert(
+            axum::http::HeaderName::from_bytes(b"x-very-long-custom-header-name").unwrap(),
+            HeaderValue::from_static("val"),
+        );
+
+        let config = InputValidationConfig {
+            max_header_name_length: 10,
+            ..Default::default()
+        };
+
+        let err = validate_request_bounds(&uri, &headers, &config).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::OversizedHeader {
+                header: "x-very-long-custom-header-name".to_string(),
+                length: 30,
+                max: 10
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_oversized_total_headers() {
+        let uri: Uri = "/".parse().unwrap();
+        let mut headers = HeaderMap::new();
+        headers.insert("x-hdr-1", HeaderValue::from_static("value-1"));
+        headers.insert("x-hdr-2", HeaderValue::from_static("value-2"));
+
+        let config = InputValidationConfig {
+            max_total_header_bytes: 15,
+            ..Default::default()
+        };
+
+        let err = validate_request_bounds(&uri, &headers, &config).unwrap_err();
+        assert_eq!(
+            err,
+            ValidationError::OversizedTotalHeaders {
+                length: 28,
+                max: 15
+            }
+        );
+        let rule_match = err.to_rule_match();
+        assert_eq!(rule_match.rule_id, "SAUGRA-VAL-004");
+    }
+
 }
