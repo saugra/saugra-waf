@@ -45,6 +45,7 @@ pub fn track_decision(state: &ProxyState, action: WafAction) {
     }
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn proxy_request(
     State(state): State<ProxyState>,
     request: Request<Body>,
@@ -52,6 +53,7 @@ pub async fn proxy_request(
     proxy_request_inner(state, None, request).await
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn proxy_request_with_connect_info(
     State(state): State<ProxyState>,
     ConnectInfo(peer_addr): ConnectInfo<SocketAddr>,
@@ -60,6 +62,7 @@ pub async fn proxy_request_with_connect_info(
     proxy_request_inner(state, Some(peer_addr), request).await
 }
 
+#[allow(clippy::result_large_err)]
 async fn proxy_request_inner(
     mut state: ProxyState,
     peer_addr: Option<SocketAddr>,

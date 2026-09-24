@@ -108,6 +108,7 @@ pub fn sha256(input: &[u8]) -> String {
     }
     message.extend_from_slice(&bit_len.to_be_bytes());
     let mut state = INITIAL;
+    #[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
     for chunk in message.chunks_exact(64) {
         let mut words = [0_u32; 64];
         for (index, word) in words.iter_mut().take(16).enumerate() {

@@ -22,6 +22,7 @@ use super::{
     helpers::{copy_forward_headers, decision_with_behavior_and_bot, DecisionRequest},
 };
 
+#[allow(clippy::result_large_err)]
 pub async fn proxy_websocket_handshake(
     state: ProxyState,
     upstream: UpstreamConfig,
