@@ -75,7 +75,7 @@ fn enrollment_request_and_protected_credential_use_waf_identity() {
             node_id: "console-node-a".to_string(),
             tenant_id: "tenant-a".to_string(),
             product: saugra_console_contracts::SaugraProduct::Waf,
-            credential: "secret-node-credential".to_string(),
+            credential: "node-auth-credential".to_string(),
             credential_fingerprint: "sha256:fingerprint".to_string(),
             credential_expires_at: "2027-01-01T00:00:00Z".to_string(),
         },
@@ -85,7 +85,7 @@ fn enrollment_request_and_protected_credential_use_waf_identity() {
     assert_eq!(store.load().unwrap().node_id, "console-node-a");
     assert!(fs::read_to_string(path)
         .unwrap()
-        .contains("secret-node-credential"));
+        .contains("node-auth-credential"));
 }
 
 #[test]
