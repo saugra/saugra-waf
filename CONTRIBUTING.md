@@ -125,21 +125,21 @@ Make sure you write tests for:
 
 ### 4. Coverage
 
-GitHub Actions generates an LCOV coverage report using `cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --fail-under-lines 60` and prints a per-module line coverage breakdown (`python3 scripts/coverage-summary.py lcov.info`) before uploading to Codecov.
+GitHub Actions generates an LCOV coverage report using `cargo llvm-cov --all-features --workspace --lcov --output-path lcov.info --fail-under-lines 70` and prints a per-module line coverage breakdown (`python3 scripts/coverage-summary.py lcov.info`) before uploading to Codecov.
 
-Current repository line coverage is **85.45%**, with per-module line coverage across key security areas:
-- `src/proxy`: 84.65%
+Current repository line coverage is **85.64%**, with per-module line coverage across key security areas:
+- `src/proxy`: 86.41%
 - `src/rules`: 94.56%
 - `src/config`: 85.10%
 - `src/ai`: 86.13%
-- `src/unknown_threats`: 86.49%
+- `src/unknown_threats`: 86.57%
 - `src/bot`: 96.58%
 - `src/behavior`: 97.44%
 - `src/campaign`: 81.19%
 
 Run the normal Rust test suite before collecting coverage. Treat coverage as a
 regression signal for security-critical paths, not as a reason to add weak
-tests. Ensure PRs maintain line coverage above the 60% line threshold and maintain high module coverage breadth.
+tests. Ensure PRs maintain line coverage above the 70% line threshold and maintain high module coverage breadth.
 
 ### 5. Validating Rules and Configs
 
@@ -205,7 +205,15 @@ coverage model.
    git push origin feature/your-awesome-feature
    ```
 4. **Open a PR**: Open a Pull Request from your branch to the upstream repository's `main` branch. Fill out the Pull Request Template completely.
-5. **Address review feedback**: The project maintainers will review your PR and suggest changes or additions if needed.
+5. **PR Review & Architectural Module Boundaries**:
+   All submitted PRs are reviewed by maintainers according to the module boundary definitions in [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md):
+   - **Proxy Transport (`src/proxy/`)**: HTTP routing, WebSocket proxying, header preservation.
+   - **Rule Engine & Catalogs (`src/rules/`, `src/crs_convert/`)**: Deterministic pattern matching, paranoia levels, CRS conversions.
+   - **Configuration (`src/config/`)**: YAML schema parsing, validation, default settings.
+   - **Behavior & Threat Detection (`src/unknown_threats/`, `src/bot/`, `src/behavior/`, `src/campaign/`)**: Anomaly scoring, baseline learning, durable state retention.
+   - **AI Layer (`src/ai/`)**: Explain-only assistance, rule draft review workflows.
+
+   Maintainers will verify that PRs do not break module isolation, include corresponding unit/integration tests, and satisfy the 70% CI coverage floor.
 
 ---
 
