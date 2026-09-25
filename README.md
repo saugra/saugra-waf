@@ -179,15 +179,20 @@ sudo apt-mark hold saugra-waf
 ```bash
 git clone https://github.com/saugra/saugra-waf.git
 cd saugra-waf
-cargo build
-cargo test --all-targets --all-features
+
+# Build and run test suite via Makefile, test script, or cargo:
+make build
+make test
+# OR: scripts/test.sh
+# OR: cargo test --workspace --all-targets --all-features
+
 cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- rules view <saugra-rule-id> --config configs/saugra-waf.example.yml
 cargo run --bin saugra-waf -- run --config configs/saugra-waf.example.yml
 ```
 
-> **Note on test isolation**: `cargo test --all-targets --all-features` runs fully offline with zero external service dependencies (using in-memory rate limiting fallbacks). To run integration tests against a live Redis instance, run `cargo test --test test_rate_limit_redis -- --ignored`.
+> **Note on test isolation**: `make test` (or `cargo test --workspace --all-targets --all-features`) runs fully offline with zero external service dependencies (using in-memory rate limiting fallbacks). To run integration tests against a live Redis instance, run `cargo test --test test_rate_limit_redis -- --ignored`.
 
 ### Run Containerized With Docker Compose
 
