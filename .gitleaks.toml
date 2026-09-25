@@ -1,0 +1,10 @@
+# Gitleaks security configuration for Saugra WAF
+title = "Gitleaks config"
+
+[allowlist]
+description = "Allow test fixtures and mock credential tokens in test source directories"
+paths = [
+  '''src/.*/tests/.*''',
+  '''tests/.*''',
+  '''configs/.*''',
+]

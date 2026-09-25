@@ -209,9 +209,11 @@ rate_limit:
     ));
 }
 
+const TEST_FIXTURE_REDIS_PASSWORD: &str = "fixture-redis-pass-val";
+
 #[test]
 fn accepts_redis_password_for_redis_rate_limit_backend() {
-    let config: SaugraConfig = serde_yaml::from_str(
+    let yaml = format!(
         r#"
 server:
   listen: 127.0.0.1:8787
@@ -222,16 +224,16 @@ upstreams:
 rate_limit:
   backend: redis
   redis_url: redis://127.0.0.1:6379
-  redis_password: "test-redis-password-fixture"
+  redis_password: "{TEST_FIXTURE_REDIS_PASSWORD}"
   requests_per_minute: 120
-"#,
-    )
-    .unwrap();
+"#
+    );
+    let config: SaugraConfig = serde_yaml::from_str(&yaml).unwrap();
 
     config.validate().unwrap();
     assert_eq!(
         config.rate_limit.redis_password.as_deref(),
-        Some("test-redis-password-fixture")
+        Some(TEST_FIXTURE_REDIS_PASSWORD)
     );
 }
 
