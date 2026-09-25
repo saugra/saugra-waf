@@ -191,7 +191,6 @@ fn delivery_failure_records_local_admin_event() {
         },
         storage_cleanup: Default::default(),
     };
-
     assert!(send_from_config(&config).is_err());
     let admin_events = std::fs::read_to_string(
         temp_dir
@@ -201,6 +200,81 @@ fn delivery_failure_records_local_admin_event() {
     .unwrap();
 
     assert!(admin_events.contains("security_summary_delivery_failed"));
+}
+
+#[test]
+fn deliver_file_channel_writes_summary_file() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let summary_path = temp_dir.path().join("summary.json");
+    let mut config = SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
+    config.security_summary.output_path = summary_path.clone();
+    config.security_summary.channels = vec![crate::config::SecuritySummaryChannelConfig {
+        channel_type: "file".to_string(),
+        to: Vec::new(),
+        from: None,
+        sendmail_path: "/usr/sbin/sendmail".to_string(),
+    }];
+
+    let summary = generate(&[], 86_400, 1_700_000_000, "UTC");
+    let report = deliver(&config, &summary).unwrap();
+
+    assert_eq!(report.output_path, Some(summary_path.clone()));
+    assert!(summary_path.exists());
+    let content = std::fs::read_to_string(&summary_path).unwrap();
+    assert!(content.contains("\"generated_at_unix_seconds\": 1700000000"));
+}
+
+#[test]
+fn deliver_email_channel_failure_returns_error() {
+    let temp_dir = tempfile::tempdir().unwrap();
+    let mut config = SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
+    config.security_summary.channels = vec![crate::config::SecuritySummaryChannelConfig {
+        channel_type: "email".to_string(),
+        to: vec!["admin@example.com".to_string()],
+        from: Some("waf@example.com".to_string()),
+        sendmail_path: temp_dir
+            .path()
+            .join("nonexistent-sendmail")
+            .display()
+            .to_string(),
+    }];
+
+    let summary = generate(&[], 86_400, 1_700_000_000, "UTC");
+    let result = deliver(&config, &summary);
+    assert!(result.is_err());
+}
+
+#[test]
+fn deliver_handles_unknown_channel_type() {
+    let mut config = SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
+    config.security_summary.channels = vec![crate::config::SecuritySummaryChannelConfig {
+        channel_type: "unsupported".to_string(),
+        to: Vec::new(),
+        from: None,
+        sendmail_path: "/usr/sbin/sendmail".to_string(),
+    }];
+
+    let summary = generate(&[], 86_400, 1_700_000_000, "UTC");
+    let report = deliver(&config, &summary).unwrap();
+    assert_eq!(report.output_path, None);
+    assert!(report.email_recipients.is_empty());
+}
+
+#[test]
+fn admin_event_path_handles_relative_and_absolute_paths() {
+    let path = Path::new("summary.json");
+    let admin_path = html::admin_event_path(path);
+    assert_eq!(
+        admin_path,
+        PathBuf::from("saugra-waf-security-summary-admin-events.jsonl")
+    );
+
+    let nested_path = Path::new("/var/log/saugra/summary.json");
+    let nested_admin = html::admin_event_path(nested_path);
+    assert_eq!(
+        nested_admin,
+        PathBuf::from("/var/log/saugra/saugra-waf-security-summary-admin-events.jsonl")
+    );
 }
 
 fn event(

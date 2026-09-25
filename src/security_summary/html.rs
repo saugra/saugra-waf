@@ -71,7 +71,7 @@ pub(super) fn deliver(
     })
 }
 
-fn admin_event_path(output_path: &Path) -> PathBuf {
+pub(super) fn admin_event_path(output_path: &Path) -> PathBuf {
     output_path
         .parent()
         .unwrap_or_else(|| Path::new("."))

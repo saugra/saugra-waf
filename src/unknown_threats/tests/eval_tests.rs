@@ -255,3 +255,105 @@ fn shadow_report_surfaces_false_positive_review_pressure() {
     assert_eq!(report.routes[0].route_shape, "/admin/:id");
     assert_eq!(report.sample_request_ids, vec!["shadow-request"]);
 }
+
+#[test]
+fn prune_stale_routes_initializes_zero_timestamps_and_prunes() {
+    let mut state = UnknownThreatState::default();
+    state.routes.insert(
+        "/uninitialized".to_string(),
+        RouteBaseline {
+            observations: 5,
+            first_observed_at: 0,
+            last_observed_at: 0,
+            ..RouteBaseline::default()
+        },
+    );
+    state.routes.insert(
+        "/stale".to_string(),
+        RouteBaseline {
+            observations: 10,
+            first_observed_at: 10,
+            last_observed_at: 100,
+            ..RouteBaseline::default()
+        },
+    );
+
+    let removed = super::super::eval::prune_stale_routes(&mut state, 1000, 500);
+    assert_eq!(removed, 1);
+    assert!(!state.routes.contains_key("/stale"));
+    assert!(state.routes.contains_key("/uninitialized"));
+    assert_eq!(state.routes["/uninitialized"].first_observed_at, 1000);
+    assert_eq!(state.routes["/uninitialized"].last_observed_at, 1000);
+}
+
+#[test]
+fn evaluate_with_state_at_enforces_baseline_too_new_gate() {
+    let config = blocking_config(UnknownThreatMode::Block);
+    let mut state = mature_state();
+    let baseline = state.routes.get_mut("/admin/:id").unwrap();
+    baseline.first_observed_at = 999_900;
+
+    let outcome = evaluate_with_state_at(
+        &config,
+        anomalous_request(WafMode::Block),
+        &mut state,
+        "memory",
+        1_000_000,
+    );
+
+    assert_eq!(outcome.action, WafAction::Monitor);
+    assert!(!outcome.would_block);
+    assert!(outcome
+        .enforcement_gates
+        .contains(&"baseline_too_new".to_string()));
+}
+
+#[test]
+fn shadow_report_counts_single_signal_and_new_baseline_candidates() {
+    let config = blocking_config(UnknownThreatMode::Shadow);
+    let mut state = mature_state();
+
+    let single_signal_req = super::super::UnknownThreatRequest {
+        content_type: "application/json",
+        ..anomalous_request(WafMode::Block)
+    };
+    let outcome1 =
+        evaluate_with_state_at(&config, single_signal_req, &mut state, "memory", 1_000_000);
+    let decision1 = crate::decision::WafDecision::from_matches(
+        "req-1".to_string(),
+        WafMode::Monitor,
+        Vec::new(),
+        5,
+    )
+    .with_unknown_threats(outcome1);
+    let event1 = SecurityEvent::new("DELETE", "/admin/42", "", decision1);
+
+    let mut state2 = mature_state();
+    state2
+        .routes
+        .get_mut("/admin/:id")
+        .unwrap()
+        .first_observed_at = 999_900;
+    let outcome2 = evaluate_with_state_at(
+        &config,
+        anomalous_request(WafMode::Block),
+        &mut state2,
+        "memory",
+        1_000_000,
+    );
+    let decision2 = crate::decision::WafDecision::from_matches(
+        "req-2".to_string(),
+        WafMode::Monitor,
+        Vec::new(),
+        5,
+    )
+    .with_unknown_threats(outcome2);
+    let event2 = SecurityEvent::new("DELETE", "/admin/42", "", decision2);
+
+    let report = shadow_report(&[event1, event2]);
+    assert_eq!(report.total_events, 2);
+    assert_eq!(report.analyzed_events, 2);
+    assert_eq!(report.single_signal_candidates, 1);
+    assert_eq!(report.new_baseline_candidates, 1);
+    assert_eq!(report.gated_candidates, 2);
+}
