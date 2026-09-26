@@ -29,6 +29,16 @@ impl ErrorTrackingSink {
     }
 }
 
+pub fn format_panic_payload(payload: &(dyn std::any::Any + Send)) -> String {
+    if let Some(s) = payload.downcast_ref::<&str>() {
+        (*s).to_string()
+    } else if let Some(s) = payload.downcast_ref::<String>() {
+        s.clone()
+    } else {
+        "unspecified panic payload".to_string()
+    }
+}
+
 pub fn setup_panic_hook(sink: Option<ErrorTrackingSink>) {
     let sink = sink.unwrap_or_else(ErrorTrackingSink::from_env);
     std::panic::set_hook(Box::new(move |info| {
@@ -36,13 +46,7 @@ pub fn setup_panic_hook(sink: Option<ErrorTrackingSink>) {
             .location()
             .map(|loc| format!("{}:{}:{}", loc.file(), loc.line(), loc.column()))
             .unwrap_or_else(|| "unknown location".to_string());
-        let payload = if let Some(s) = info.payload().downcast_ref::<&str>() {
-            (*s).to_string()
-        } else if let Some(s) = info.payload().downcast_ref::<String>() {
-            s.clone()
-        } else {
-            "unspecified panic payload".to_string()
-        };
+        let payload = format_panic_payload(info.payload());
 
         error!(%location, %payload, "uncaught process panic recorded in Saugra WAF");
         sink.record_error(&format!("panic at {location}: {payload}"));
@@ -105,6 +109,50 @@ mod tests {
             Some("https://key@sentry.example.com/1")
         );
         sink.record_error("test error event");
+        std::env::remove_var(ERROR_TRACKING_DSN_ENV);
+    }
+
+    #[test]
+    fn format_panic_payload_handles_str_string_and_unknown() {
+        let str_payload: &(dyn std::any::Any + Send) = &"slice error";
+        assert_eq!(format_panic_payload(str_payload), "slice error");
+
+        let string_payload: &(dyn std::any::Any + Send) = &"owned string error".to_string();
+        assert_eq!(format_panic_payload(string_payload), "owned string error");
+
+        let int_payload: &(dyn std::any::Any + Send) = &42i32;
+        assert_eq!(
+            format_panic_payload(int_payload),
+            "unspecified panic payload"
+        );
+    }
+
+    #[test]
+    fn setup_panic_hook_registers_without_panic() {
+        setup_panic_hook(None);
+        let sink = ErrorTrackingSink {
+            dsn: Some("https://example.com/dsn".to_string()),
+            enabled: true,
+        };
+        setup_panic_hook(Some(sink));
+    }
+
+    #[test]
+    fn init_configures_logging_and_sink() {
+        std::env::set_var(ERROR_TRACKING_DSN_ENV, "https://key@sentry.example.com/1");
+        let json_config = LoggingConfig {
+            level: "info".to_string(),
+            format: "json".to_string(),
+            ..Default::default()
+        };
+        assert!(init(&json_config).is_ok());
+
+        let text_config = LoggingConfig {
+            level: "invalid_level_falls_back".to_string(),
+            format: "text".to_string(),
+            ..Default::default()
+        };
+        assert!(init(&text_config).is_ok());
         std::env::remove_var(ERROR_TRACKING_DSN_ENV);
     }
 }

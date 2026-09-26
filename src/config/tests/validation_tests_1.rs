@@ -4,6 +4,8 @@ use crate::config::{
     errors::ConfigError, BehaviorBackend, BehaviorMode, SaugraConfig, UnknownThreatMode,
 };
 
+const TEST_FIXTURE_REDIS_PASSWORD: &str = "fixture-redis-pass-val";
+
 #[test]
 fn rejects_blank_websocket_allowed_origin() {
     let config: SaugraConfig = serde_yaml::from_str(
@@ -208,8 +210,6 @@ rate_limit:
         Err(ConfigError::MissingRedisUrl)
     ));
 }
-
-const TEST_FIXTURE_REDIS_PASSWORD: &str = "fixture-redis-pass-val";
 
 #[test]
 fn accepts_redis_password_for_redis_rate_limit_backend() {
