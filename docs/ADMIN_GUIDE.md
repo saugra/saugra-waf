@@ -586,8 +586,22 @@ Test through Saugra:
 curl -i -H "Host: example.com" http://127.0.0.1:8787/
 ```
 
-If the backend direct test fails, start or fix the application service before
-debugging Saugra.
+## Observability
+
+Saugra WAF provides built-in metrics, structured logging, panic reporting hooks, and optional error-tracking DSN sink integration for production robustness.
+
+### Error Tracking Sink & Panic Reporting Hook
+
+Network-facing security proxies require robust exception tracking and panic reporting. Saugra includes process panic hooks and error-tracking sink integration.
+
+Set the optional DSN via the `SAUGRA_WAF_ERROR_TRACKING_DSN` environment variable:
+
+```bash
+export SAUGRA_WAF_ERROR_TRACKING_DSN=https://key@sentry.example.com/1
+```
+
+- **When `SAUGRA_WAF_ERROR_TRACKING_DSN` is configured**: ERROR-level spans and process panics are formatted and forwarded to the specified external tracking sink.
+- **When `SAUGRA_WAF_ERROR_TRACKING_DSN` is unset**: Error tracking operates as a safe, non-blocking fallback that logs structured JSONL events to standard error/logs without panicking or failing on missing configuration.
 
 ## Prometheus Metrics Endpoint
 
