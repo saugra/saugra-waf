@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use crate::{
     behavior::BehaviorOutcome,
     bot::BotProtectionOutcome,
-    config::SaugraConfig,
     decision::{WafAction, WafDecision},
     event_store::SecurityEvent,
     rules::{RuleMatch, RuleSeverity, RuleTarget},
