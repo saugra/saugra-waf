@@ -70,6 +70,9 @@ jobs:
           test -f package-lock.json || (echo "Missing package-lock.json" && exit 1)
           test -f docs/requirements.lock || (echo "Missing docs/requirements.lock" && exit 1)
 
+      - name: Fetch dependencies (locked)
+        run: cargo fetch --locked
+
       - name: Offline build verification (zero network access drift check)
         run: cargo build --locked --offline
 
