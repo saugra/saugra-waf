@@ -4,7 +4,7 @@ use tracing_subscriber::EnvFilter;
 
 use crate::config::LoggingConfig;
 
-pub const ERROR_TRACKING_DSN_ENV: &str = "SAUGRA_WAF_ERROR_TRACKING_DSN";
+pub use crate::error_tracking::ERROR_TRACKING_DSN_ENV;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ErrorTrackingSink {
@@ -14,18 +14,16 @@ pub struct ErrorTrackingSink {
 
 impl ErrorTrackingSink {
     pub fn from_env() -> Self {
-        let dsn = std::env::var(ERROR_TRACKING_DSN_ENV)
-            .ok()
-            .map(|val| val.trim().to_string())
-            .filter(|val| !val.is_empty());
-        let enabled = dsn.is_some();
-        Self { dsn, enabled }
+        let tracker = crate::error_tracking::ErrorTracker::from_env();
+        Self {
+            enabled: tracker.is_enabled(),
+            dsn: tracker.dsn,
+        }
     }
 
     pub fn record_error(&self, message: &str) {
-        if let Some(dsn) = &self.dsn {
-            info!(sink_dsn = %dsn, %message, "forwarded error event to error tracking DSN sink");
-        }
+        let tracker = crate::error_tracking::ErrorTracker::new(self.dsn.clone());
+        tracker.record_error(message);
     }
 }
 

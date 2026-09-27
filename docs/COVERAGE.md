@@ -1,6 +1,6 @@
 # Saugra WAF Code Coverage & Module Breadth Summary
 
-**Total Line Coverage**: `86.65%` (11704/13507 lines hit)
+**Total Line Coverage**: `86.65%` (11763/13575 lines hit)
 
 ## Per-Module Line Coverage
 
@@ -15,8 +15,9 @@
 | `src/console` | `892/1168` | `76.37%` |
 | `src/crs_convert` | `389/457` | `85.12%` |
 | `src/decision.rs` | `282/283` | `99.65%` |
+| `src/error_tracking.rs` | `61/70` | `87.14%` |
 | `src/event_store` | `469/484` | `96.90%` |
-| `src/logging.rs` | `98/107` | `91.59%` |
+| `src/logging.rs` | `96/105` | `91.43%` |
 | `src/main.rs` | `3/3` | `100.00%` |
 | `src/owasp.rs` | `287/305` | `94.10%` |
 | `src/posture.rs` | `240/282` | `85.11%` |
@@ -32,7 +33,7 @@
 | `src/storage_cleanup.rs` | `191/198` | `96.46%` |
 | `src/unknown_threats` | `566/648` | `87.35%` |
 | `vendor` | `320/433` | `73.90%` |
-| **TOTAL** | `11704/13507` | **`86.65%`** |
+| **TOTAL** | `11763/13575` | **`86.65%`** |
 
 ## Module Test Breadth & Dedicated Test File Mapping
 

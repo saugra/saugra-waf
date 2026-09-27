@@ -356,6 +356,16 @@ Example:
 }
 ```
 
+### 7.1. Error Tracking Hooks
+
+Responsible for capturing and forwarding internal error events and process panics to external telemetry sinks.
+
+When `SAUGRA_WAF_ERROR_TRACKING_DSN` is set in the environment to a valid HTTP/HTTPS endpoint DSN (such as a Sentry-compatible webhook or error tracking service), `src/error_tracking.rs` captures `anyhow::Error` and uncaught process panics (`setup_panic_hook`).
+
+- **DSN Configuration**: `SAUGRA_WAF_ERROR_TRACKING_DSN` defines the target HTTP POST sink URL.
+- **Guard & Fallback**: If the DSN environment variable is empty or unconfigured, error tracking defaults to a safe no-op mode without making network calls.
+- **Event Payload Shape**: Error events are POSTed as JSON payloads containing `event_id`, `timestamp` (ISO-8601 UTC), `level`, `message`, and `service` (`saugra-waf`).
+
 ### 8. AI Explanation Layer
 
 Responsible for human-friendly explanations.

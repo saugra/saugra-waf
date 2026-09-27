@@ -6,6 +6,7 @@ pub mod config;
 pub mod console;
 pub mod crs_convert;
 pub mod decision;
+pub mod error_tracking;
 pub mod event_store;
 pub mod logging;
 pub mod owasp;
