@@ -15,8 +15,8 @@ use axum::{
 use saugra_waf::{
     config::{
         AiConfig, BehaviorBackend, BehaviorConfig, BotProtectionConfig, LoggingConfig,
-        ProxyRouteConfig, RateLimitBackend, RateLimitConfig, RuleSettings, SaugraConfig,
-        SecurityConfig, ServerConfig, UpstreamConfig, WafMode,
+        RateLimitBackend, RateLimitConfig, RuleSettings, SaugraConfig, SecurityConfig,
+        ServerConfig, UpstreamConfig, WafMode,
     },
     event_store::EventLogRetention,
     proxy::{ProxyState, UpstreamTransport},
