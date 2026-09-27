@@ -176,6 +176,7 @@ sudo apt-mark hold saugra-waf
 - **C Compiler & Build Tools** (`build-essential`, `make`, or `gcc`)
 - **Redis** (optional, for production rate limiting tests)
 - **Node.js / Python** (optional, standard package lockfiles included for multi-ecosystem test tools)
+- **Zero Tokens Required**: `vendor/saugra-console-contracts` is committed in full to the repository. No git credentials, access tokens (`SAUGRA_CONTRACTS_TOKEN`), or network connectivity are required for local builds.
 
 ### Fresh Clone Setup
 

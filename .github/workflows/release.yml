@@ -24,18 +24,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Verify Console contracts dependency access
-        env:
-          SAUGRA_CONTRACTS_TOKEN: ${{ secrets.SAUGRA_CONTRACTS_TOKEN }}
+      - name: Verify Console contracts vendored dependency presence
         run: |
-          if [ -d "vendor/saugra-console-contracts" ]; then
-            echo "saugra-console-contracts is vendored locally in vendor/saugra-console-contracts."
-          elif [ -n "$SAUGRA_CONTRACTS_TOKEN" ]; then
-            git config --global \
-              url."https://${SAUGRA_CONTRACTS_TOKEN}:x-oauth-basic@github.com/".insteadOf \
-              "https://github.com/"
-            echo "CARGO_NET_GIT_FETCH_WITH_CLI=true" >> "$GITHUB_ENV"
-          fi
+          test -d vendor/saugra-console-contracts || (echo "ERROR: vendor/saugra-console-contracts missing!" && exit 1)
+          echo "saugra-console-contracts is vendored locally in vendor/saugra-console-contracts for offline builds."
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
