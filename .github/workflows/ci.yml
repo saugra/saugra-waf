@@ -73,6 +73,12 @@ jobs:
       - name: Fetch dependencies (locked)
         run: cargo fetch --locked
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: Audit Rust dependencies
+        run: cargo audit --deny warnings
+
       - name: Offline build verification (zero network access drift check)
         run: cargo build --locked --offline
 
@@ -112,9 +118,3 @@ jobs:
           token: ${{ env.CODECOV_TOKEN }}
           files: lcov.info
           fail_ci_if_error: false
-
-      - name: Install cargo-audit
-        uses: taiki-e/install-action@cargo-audit
-
-      - name: Audit Rust dependencies
-        run: cargo audit
