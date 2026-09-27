@@ -8,11 +8,17 @@ use saugra_waf::{
 #[tokio::test]
 #[ignore = "Requires live Redis instance on 127.0.0.1:6379"]
 async fn test_live_redis_rate_limiting() {
-    let redis_url = env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
+    let redis_url = match env::var("REDIS_URL") {
+        Ok(url) if !url.trim().is_empty() => url,
+        _ => {
+            println!("Skipping live Redis test: REDIS_URL environment variable is unset.");
+            return;
+        }
+    };
 
     let config = RateLimitConfig {
         backend: RateLimitBackend::Redis,
-        redis_url: Some(redis_url),
+        redis_url: Some(redis_url.clone()),
         redis_password: None,
         requests_per_minute: 2,
         burst: 1,
@@ -22,7 +28,7 @@ async fn test_live_redis_rate_limiting() {
     let store = match build_store(&config).await {
         Ok(store) => store,
         Err(err) => {
-            eprintln!("Skipping live Redis test (Redis not available): {err}");
+            println!("Skipping live Redis test (Redis unreachable at {redis_url}): {err}");
             return;
         }
     };

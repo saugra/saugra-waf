@@ -115,8 +115,12 @@ cargo clippy --all-targets -- -D warnings
 
 Run the full integration and unit test suite:
 ```bash
-cargo test
+make test
+# OR: cargo test --locked --workspace --all-targets --all-features
 ```
+
+> **Note on test isolation**: `make test` (and `cargo test --locked --workspace --all-targets --all-features`) runs fully offline without requiring any external services or live Redis connection. Live Redis tests are isolated behind `#[ignore]` and skip gracefully when `REDIS_URL` is unset.
+
 Make sure you write tests for:
 * Configuration parsing & invalid YAML schemas.
 * Custom rules (e.g. SQLi, XSS, Path Traversal).
