@@ -1,0 +1,30 @@
+# Lockfile for Python documentation dependencies
+# Generated for reproducible builds of Saugra WAF documentation
+babel==2.17.0
+backports.tarfile==1.2.0
+certifi==2025.1.31
+charset-normalizer==3.4.1
+click==8.1.8
+colorama==0.4.6
+ghp-import==2.1.0
+idna==3.10
+jinja2==3.1.5
+markdown==3.7
+markupsafe==3.0.2
+mergedeep==1.3.4
+mkdocs==1.6.1
+mkdocs-get-deps==1.0.3
+mkdocs-material==9.7.7
+mkdocs-material-extensions==1.3.1
+paginate==0.5.7
+pathspec==0.12.1
+platformdirs==4.3.6
+pygments==2.20.0
+pymdown-extensions==11.0.1
+python-dateutil==2.9.0.post0
+pyyaml==6.0.2
+pyyaml-env-tag==0.1
+requests==2.32.3
+six==1.17.0
+urllib3==2.3.0
+watchdog==6.0.0

@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "==> Running Saugra WAF test suite..."
+echo "==> Verifying lockfiles..."
+test -f Cargo.lock || { echo "ERROR: Cargo.lock missing!"; exit 1; }
+test -f package-lock.json || { echo "ERROR: package-lock.json missing!"; exit 1; }
+
+echo "==> Running Saugra WAF test suite (300+ unit and integration tests)..."
 cargo test --locked --workspace --all-targets --all-features
+
+echo "==> Saugra WAF test suite passed successfully!"

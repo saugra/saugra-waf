@@ -1,0 +1,33 @@
+{
+  "name": "saugra-waf",
+  "version": "1.1.9",
+  "description": "A lightweight rule-based + AI-assisted Web Application Firewall.",
+  "main": "src/main.rs",
+  "directories": {
+    "doc": "docs",
+    "example": "examples",
+    "test": "tests"
+  },
+  "scripts": {
+    "build": "cargo build --locked",
+    "test": "cargo test --locked --workspace --all-targets --all-features",
+    "check": "cargo clippy --locked --workspace --all-targets --all-features -- -D warnings",
+    "fmt": "cargo fmt --check",
+    "cargo-install": "cargo install --locked --path ."
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saugra/saugra-waf.git"
+  },
+  "keywords": [
+    "waf",
+    "security",
+    "firewall",
+    "owasp",
+    "rust",
+    "reverse-proxy",
+    "rate-limiting"
+  ],
+  "author": "Emanuel Wanyonyi <wanyonyi.d.emanuel@gmail.com>",
+  "license": "AGPL-3.0-only"
+}

@@ -168,31 +168,86 @@ sudo apt install --only-upgrade saugra-waf
 sudo apt-mark hold saugra-waf
 ```
 
+## Building, Testing, and Installing from Source
+
 ### Prerequisites
 
-- Rust toolchain from [rustup](https://rustup.rs/)
-- Redis for production rate limiting
-- Nginx or Apache when deploying Saugra in front of a real application
+- **Rust toolchain** (1.85+) from [rustup.rs](https://rustup.rs/)
+- **C Compiler & Build Tools** (`build-essential`, `make`, or `gcc`)
+- **Redis** (optional, for production rate limiting tests)
+- **Node.js / Python** (optional, standard package lockfiles included for multi-ecosystem test tools)
 
-### Run Locally From Source
+### Fresh Clone Setup
+
+Follow these exact steps from an empty directory to clone, build, and test Saugra WAF:
 
 ```bash
+# 1. Clone the repository
 git clone https://github.com/saugra/saugra-waf.git
 cd saugra-waf
 
-# Build and run test suite via Makefile, test script, or cargo:
+# 2. Build the project (using committed lockfiles)
 make build
-make test
-# OR: scripts/test.sh
-# OR: cargo test --workspace --all-targets --all-features
+# OR: cargo build --locked
 
-cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
-cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
-cargo run --bin saugra-waf -- rules view <saugra-rule-id> --config configs/saugra-waf.example.yml
-cargo run --bin saugra-waf -- run --config configs/saugra-waf.example.yml
+# 3. Run the full test suite (300+ unit & integration tests)
+make test
+# OR: cargo test --locked --workspace --all-targets --all-features
+# OR: ./scripts/test.sh
+# OR: npm test
+
+# 4. Install the binary locally
+make install
+# OR: cargo install --locked --path .
 ```
 
-> **Note on test isolation**: `make test` (or `cargo test --workspace --all-targets --all-features`) runs fully offline with zero external service dependencies (using in-memory rate limiting fallbacks). To run integration tests against a live Redis instance, run `cargo test --test test_rate_limit_redis -- --ignored`.
+## Running Tests
+
+To run the complete automated test suite on a fresh clone:
+
+```bash
+make test
+```
+
+Alternative explicit test invocations:
+- **Cargo**: `cargo test --locked --workspace --all-targets --all-features`
+- **npm**: `npm test`
+- **Script**: `./scripts/test.sh`
+
+> **Note on test isolation**: `make test` runs fully offline with zero external service dependencies (using in-memory rate limiting fallbacks). To run integration tests against a live Redis instance, run `cargo test --test test_rate_limit_redis -- --ignored`.
+
+## Building from Source
+
+To compile the binary:
+
+```bash
+make build
+```
+
+## Installation from Source
+
+To install the `saugra-waf` binary locally:
+
+```bash
+make install
+```
+
+## Reproducible Package Manager Lockfiles
+
+To guarantee reproducible installations across all machines and package scanners, lockfiles are committed for every package manager used in this repository:
+
+- **Cargo (Rust)**: `Cargo.lock` (guarantees deterministic Rust dependencies)
+- **npm (Node.js)**: `package-lock.json` & `package.json` (enables generic test runners & `npm test`)
+- **pip (Python)**: `docs/requirements.lock` & `requirements.lock` (pins MkDocs & doc dependencies)
+
+### Run Saugra Locally From Source
+
+```bash
+cargo run --bin saugra-waf -- test-config --config configs/saugra-waf.example.yml
+cargo run --bin saugra-waf -- rules list --config configs/saugra-waf.example.yml
+cargo run --bin saugra-waf -- rules view SAUGRA-SQLI-001 --config configs/saugra-waf.example.yml
+cargo run --bin saugra-waf -- run --config configs/saugra-waf.example.yml
+```
 
 ### Run Containerized With Docker Compose
 

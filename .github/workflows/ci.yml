@@ -21,15 +21,15 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-          cache-dependency-path: docs/requirements.txt
+          cache-dependency-path: docs/requirements.lock
 
-      - name: Install documentation dependencies
-        run: pip install --requirement docs/requirements.txt
+      - name: Install documentation dependencies (locked)
+        run: pip install --requirement docs/requirements.lock
 
       - name: Audit documentation dependencies
         run: |
           pip install pip-audit
-          pip-audit --requirement docs/requirements.txt
+          pip-audit --requirement docs/requirements.lock
 
       - name: Build documentation
         run: mkdocs build --strict
@@ -64,14 +64,20 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Verify package lockfiles present
+        run: |
+          test -f Cargo.lock || (echo "Missing Cargo.lock" && exit 1)
+          test -f package-lock.json || (echo "Missing package-lock.json" && exit 1)
+          test -f docs/requirements.lock || (echo "Missing docs/requirements.lock" && exit 1)
+
       - name: Check formatting
         run: cargo fmt --check
 
       - name: Run clippy
         run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
 
-      - name: Run tests
-        run: cargo test --locked --workspace --all-targets --all-features
+      - name: Run tests (via script)
+        run: ./scripts/test.sh
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
