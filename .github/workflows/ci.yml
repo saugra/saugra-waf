@@ -91,14 +91,19 @@ jobs:
       - name: Generate coverage
         run: cargo llvm-cov --locked --all-features --workspace --lcov --output-path lcov.info --fail-under-lines 70
 
+      - name: Fail if overall region coverage drops below 70%
+        run: cargo llvm-cov --locked --all-features --workspace --fail-under-regions 70
+
       - name: Verify coverage file
         run: test -s lcov.info && echo "Coverage file lcov.info generated successfully"
 
-      - name: Print per-module coverage summary and update docs/COVERAGE.md
+      - name: Print per-module coverage summary and update COVERAGE.md
         run: |
           python3 scripts/coverage-summary.py lcov.info
           python3 scripts/coverage-summary.py lcov.info --markdown > docs/COVERAGE.md
+          cp docs/COVERAGE.md COVERAGE.md
           test -s docs/COVERAGE.md && echo "docs/COVERAGE.md generated successfully"
+          test -s COVERAGE.md && echo "COVERAGE.md generated successfully"
 
       - name: Upload coverage
         if: ${{ env.CODECOV_TOKEN != '' }}

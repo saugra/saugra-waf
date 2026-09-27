@@ -64,9 +64,6 @@ def print_text_summary(modules, total_hits, total_lines, overall_pct):
 def print_markdown_summary(modules, total_hits, total_lines, overall_pct):
     print("# Saugra WAF Code Coverage & Module Breadth Summary")
     print()
-    print("[![CI](https://github.com/saugra/saugra-waf/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/saugra/saugra-waf/actions/workflows/ci.yml?query=branch%3Amain)")
-    print("[![codecov](https://codecov.io/github/saugra/saugra-waf/graph/badge.svg)](https://codecov.io/github/saugra/saugra-waf)")
-    print()
     print(f"**Total Line Coverage**: `{overall_pct:.2f}%` ({total_hits}/{total_lines} lines hit)")
     print()
     print("## Per-Module Line Coverage")
