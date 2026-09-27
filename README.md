@@ -214,6 +214,22 @@ Alternative explicit test invocations:
 - **npm**: `npm test`
 - **Script**: `./scripts/test.sh`
 
+### Module Test Breadth & Integration Suites
+
+To ensure test discovery transparency across static analysis tools, dedicated test suites cover key modules:
+
+| Subsystem / Module | Primary Source Path | Dedicated Test Suite File(s) | Test Type |
+| :--- | :--- | :--- | :--- |
+| `rules` | `src/rules/` | Dedicated unit tests (`src/rules/*.rs`) + [`tests/test_proxy_e2e.rs`](tests/test_proxy_e2e.rs) | Unit & E2E Integration |
+| `unknown_threats` | `src/unknown_threats/` | Dedicated unit tests (`src/unknown_threats/*.rs`) + [`tests/test_proxy_e2e.rs`](tests/test_proxy_e2e.rs) | Unit & E2E Integration |
+| `ai` | `src/ai/` | Dedicated unit tests (`src/ai/*.rs`) + [`tests/test_cli.rs`](tests/test_cli.rs) | Unit & CLI Integration |
+| `proxy` | `src/proxy/` | Dedicated integration suite ([`tests/test_proxy_e2e.rs`](tests/test_proxy_e2e.rs)) | E2E Proxy Tunneling |
+| `cli` | `src/cli/` | Dedicated integration suite ([`tests/test_cli.rs`](tests/test_cli.rs)) | CLI Integration |
+| `console` | `src/console/` | Integration suites ([`tests/test_console_integration.rs`](tests/test_console_integration.rs), [`tests/test_console_live_http.rs`](tests/test_console_live_http.rs)) | Console API Integration |
+| `rate_limit` | `src/rate_limit.rs` | Dedicated suite ([`tests/test_rate_limit_redis.rs`](tests/test_rate_limit_redis.rs)) + unit tests | Redis & Local Rate Limits |
+
+See [docs/COVERAGE.md](docs/COVERAGE.md) for checked-in line coverage reports per module.
+
 > **Note on test isolation**: `make test` runs fully offline with zero external service dependencies (using in-memory rate limiting fallbacks). To run integration tests against a live Redis instance, run `cargo test --test test_rate_limit_redis -- --ignored`.
 
 ## Building from Source
