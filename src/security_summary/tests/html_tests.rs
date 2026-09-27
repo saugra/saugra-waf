@@ -103,6 +103,7 @@ fn delivery_failure_records_local_admin_event() {
             output_path: temp_dir.path().join("summary.json"),
             channels: vec![crate::config::SecuritySummaryChannelConfig {
                 channel_type: "email".to_string(),
+                path: None,
                 to: vec!["security@example.com".to_string()],
                 from: Some("saugra-waf@example.com".to_string()),
                 sendmail_path: temp_dir
@@ -134,6 +135,7 @@ fn deliver_file_channel_writes_summary_file() {
     config.security_summary.output_path = summary_path.clone();
     config.security_summary.channels = vec![crate::config::SecuritySummaryChannelConfig {
         channel_type: "file".to_string(),
+        path: None,
         to: Vec::new(),
         from: None,
         sendmail_path: "/usr/sbin/sendmail".to_string(),
@@ -154,6 +156,7 @@ fn deliver_email_channel_failure_returns_error() {
     let mut config = SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
     config.security_summary.channels = vec![crate::config::SecuritySummaryChannelConfig {
         channel_type: "email".to_string(),
+        path: None,
         to: vec!["admin@example.com".to_string()],
         from: Some("waf@example.com".to_string()),
         sendmail_path: temp_dir
@@ -173,6 +176,7 @@ fn deliver_handles_unknown_channel_type() {
     let mut config = SaugraConfig::from_file(Path::new("configs/saugra-waf.example.yml")).unwrap();
     config.security_summary.channels = vec![crate::config::SecuritySummaryChannelConfig {
         channel_type: "unsupported".to_string(),
+        path: None,
         to: Vec::new(),
         from: None,
         sendmail_path: "/usr/sbin/sendmail".to_string(),

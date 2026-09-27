@@ -1,7 +1,8 @@
 use std::fs;
 
 use crate::config::{
-    errors::ConfigError, helpers::is_local_http_url, AiConfig, BehaviorMode, SaugraConfig,
+    errors::ConfigError, helpers::is_local_http_url, AiConfig, BehaviorMode, RuntimePolicyConfig,
+    SecuritySummaryConfig, SaugraConfig,
 };
 
 #[test]
@@ -445,3 +446,55 @@ fn accepts_custom_loopback_ollama_port() {
     assert!(is_local_http_url("http://127.0.0.1:11435/api"));
     assert!(is_local_http_url("http://[::1]:11435"));
 }
+
+#[test]
+fn security_summary_config_validate_rejects_invalid_schedule() {
+    let mut config = SecuritySummaryConfig::default();
+    config.schedule = "weekly".to_string();
+    let err = config.validate().unwrap_err();
+    assert_eq!(err.to_string(), "security_summary.schedule must be daily");
+}
+
+#[test]
+fn security_summary_config_validate_rejects_negative_duration() {
+    let mut config = SecuritySummaryConfig::default();
+    config.lookback = "-24h".to_string();
+    let err = config.validate().unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "security_summary.lookback must be a positive duration, for example 24h"
+    );
+}
+
+#[test]
+fn runtime_policy_config_validate_rejects_invalid_duration() {
+    let mut config = RuntimePolicyConfig::default();
+    config.reload_interval = "-5s".to_string();
+    let err = config.validate().unwrap_err();
+    assert_eq!(
+        err.to_string(),
+        "runtime_policy.reload_interval must be a positive duration, for example 5s"
+    );
+}
+
+#[test]
+fn rejects_unknown_fields_in_security_summary_config() {
+    let yaml = r#"
+schedule: daily
+send_time: "08:00"
+invalid_unknown_key: 123
+"#;
+    let res: Result<SecuritySummaryConfig, _> = serde_yaml::from_str(yaml);
+    assert!(res.is_err());
+}
+
+#[test]
+fn rejects_unknown_fields_in_runtime_policy_config() {
+    let yaml = r#"
+enabled: true
+invalid_unknown_key: 123
+"#;
+    let res: Result<RuntimePolicyConfig, _> = serde_yaml::from_str(yaml);
+    assert!(res.is_err());
+}
+

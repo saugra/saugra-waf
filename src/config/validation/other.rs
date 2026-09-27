@@ -92,61 +92,50 @@ impl SaugraConfig {
     }
 
     pub(crate) fn validate_security_summary(&self) -> Result<(), ConfigError> {
-        if self.security_summary.schedule.trim() != "daily" {
-            return Err(ConfigError::InvalidSecuritySummarySchedule);
-        }
-
-        if !is_valid_send_time(&self.security_summary.send_time) {
-            return Err(ConfigError::InvalidSecuritySummarySendTime);
-        }
-
-        if !crate::event_store::is_supported_timestamp_timezone(&self.security_summary.timezone) {
-            return Err(ConfigError::InvalidSecuritySummaryTimezone);
-        }
-
-        if parse_duration_seconds(&self.security_summary.lookback).is_none() {
-            return Err(ConfigError::InvalidSecuritySummaryLookback);
-        }
-
-        if self.security_summary.output_path.as_os_str().is_empty() {
-            return Err(ConfigError::InvalidSecuritySummaryOutputPath);
-        }
-
-        for channel in &self.security_summary.channels {
-            match channel.channel_type.trim() {
-                "file" => {}
-                "email" => {
-                    if channel.to.is_empty()
-                        || channel
-                            .to
-                            .iter()
-                            .any(|recipient| recipient.trim().is_empty())
-                        || channel
-                            .from
-                            .as_deref()
-                            .is_some_and(|from| from.trim().is_empty())
-                    {
-                        return Err(ConfigError::InvalidSecuritySummaryRecipient);
-                    }
+        if let Err(err) = self.security_summary.validate() {
+            return Err(match err.to_string().as_str() {
+                "security_summary.schedule must be daily" => {
+                    ConfigError::InvalidSecuritySummarySchedule
                 }
-                _ => return Err(ConfigError::InvalidSecuritySummaryChannel),
-            }
+                "security_summary.send_time must use HH:MM 24-hour format" => {
+                    ConfigError::InvalidSecuritySummarySendTime
+                }
+                "security_summary.timezone must be UTC, Africa/Nairobi, or a fixed offset such as +03:00" => {
+                    ConfigError::InvalidSecuritySummaryTimezone
+                }
+                "security_summary.lookback must be a positive duration, for example 24h" => {
+                    ConfigError::InvalidSecuritySummaryLookback
+                }
+                "security_summary.output_path must not be blank" => {
+                    ConfigError::InvalidSecuritySummaryOutputPath
+                }
+                "security_summary.channels entries must use type file or email" => {
+                    ConfigError::InvalidSecuritySummaryChannel
+                }
+                "security_summary email channels must include at least one recipient" => {
+                    ConfigError::InvalidSecuritySummaryRecipient
+                }
+                _ => ConfigError::InvalidSecuritySummarySchedule,
+            });
         }
 
         Ok(())
     }
 
     pub(crate) fn validate_runtime_policy(&self) -> Result<(), ConfigError> {
-        if self.runtime_policy.enabled && self.runtime_policy.path.as_os_str().is_empty() {
-            return Err(ConfigError::InvalidRuntimePolicyPath);
-        }
-
-        if parse_duration_seconds(&self.runtime_policy.reload_interval).is_none() {
-            return Err(ConfigError::InvalidRuntimePolicyReloadInterval);
-        }
-
-        if parse_duration_seconds(&self.runtime_policy.default_duration).is_none() {
-            return Err(ConfigError::InvalidRuntimePolicyDefaultDuration);
+        if let Err(err) = self.runtime_policy.validate() {
+            return Err(match err.to_string().as_str() {
+                "runtime_policy.path must not be blank when runtime policy is enabled" => {
+                    ConfigError::InvalidRuntimePolicyPath
+                }
+                "runtime_policy.reload_interval must be a positive duration, for example 5s" => {
+                    ConfigError::InvalidRuntimePolicyReloadInterval
+                }
+                "runtime_policy.default_duration must be a positive duration, for example 2h" => {
+                    ConfigError::InvalidRuntimePolicyDefaultDuration
+                }
+                _ => ConfigError::InvalidRuntimePolicyPath,
+            });
         }
 
         Ok(())

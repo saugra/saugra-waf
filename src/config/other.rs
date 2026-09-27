@@ -15,6 +15,7 @@ pub enum RuntimeAllowlistEffect {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct RuntimePolicyConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -41,6 +42,19 @@ impl Default for RuntimePolicyConfig {
 }
 
 impl RuntimePolicyConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.enabled && self.path.as_os_str().is_empty() {
+            anyhow::bail!("runtime_policy.path must not be blank when runtime policy is enabled");
+        }
+        if parse_duration_seconds(&self.reload_interval).is_none() {
+            anyhow::bail!("runtime_policy.reload_interval must be a positive duration, for example 5s");
+        }
+        if parse_duration_seconds(&self.default_duration).is_none() {
+            anyhow::bail!("runtime_policy.default_duration must be a positive duration, for example 2h");
+        }
+        Ok(())
+    }
+
     pub fn reload_interval_seconds(&self) -> u64 {
         parse_duration_seconds(&self.reload_interval).unwrap_or(5)
     }
@@ -61,6 +75,7 @@ fn default_runtime_policy_default_duration() -> String {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SecuritySummaryConfig {
     #[serde(default)]
     pub enabled: bool,
@@ -93,6 +108,51 @@ impl Default for SecuritySummaryConfig {
 }
 
 impl SecuritySummaryConfig {
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.schedule.trim() != "daily" {
+            anyhow::bail!("security_summary.schedule must be daily");
+        }
+
+        if !crate::config::helpers::is_valid_send_time(&self.send_time) {
+            anyhow::bail!("security_summary.send_time must use HH:MM 24-hour format");
+        }
+
+        if !crate::event_store::is_supported_timestamp_timezone(&self.timezone) {
+            anyhow::bail!("security_summary.timezone must be UTC, Africa/Nairobi, or a fixed offset such as +03:00");
+        }
+
+        if parse_duration_seconds(&self.lookback).is_none() {
+            anyhow::bail!("security_summary.lookback must be a positive duration, for example 24h");
+        }
+
+        if self.output_path.as_os_str().is_empty() {
+            anyhow::bail!("security_summary.output_path must not be blank");
+        }
+
+        for channel in &self.channels {
+            match channel.channel_type.trim() {
+                "file" => {}
+                "email" => {
+                    if channel.to.is_empty()
+                        || channel
+                            .to
+                            .iter()
+                            .any(|recipient| recipient.trim().is_empty())
+                        || channel
+                            .from
+                            .as_deref()
+                            .is_some_and(|from| from.trim().is_empty())
+                    {
+                        anyhow::bail!("security_summary email channels must include at least one recipient");
+                    }
+                }
+                _ => anyhow::bail!("security_summary.channels entries must use type file or email"),
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn lookback_seconds(&self) -> u64 {
         parse_duration_seconds(&self.lookback).unwrap_or(24 * 60 * 60)
     }
@@ -113,6 +173,7 @@ fn default_security_summary_output_path() -> PathBuf {
 fn default_security_summary_channels() -> Vec<SecuritySummaryChannelConfig> {
     vec![SecuritySummaryChannelConfig {
         channel_type: "file".to_string(),
+        path: None,
         to: Vec::new(),
         from: None,
         sendmail_path: default_sendmail_path(),
@@ -120,9 +181,12 @@ fn default_security_summary_channels() -> Vec<SecuritySummaryChannelConfig> {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SecuritySummaryChannelConfig {
     #[serde(rename = "type")]
     pub channel_type: String,
+    #[serde(default)]
+    pub path: Option<PathBuf>,
     #[serde(default)]
     pub to: Vec<String>,
     #[serde(default)]
@@ -135,6 +199,7 @@ impl Default for SecuritySummaryChannelConfig {
     fn default() -> Self {
         Self {
             channel_type: "file".to_string(),
+            path: None,
             to: Vec::new(),
             from: None,
             sendmail_path: default_sendmail_path(),
