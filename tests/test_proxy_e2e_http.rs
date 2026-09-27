@@ -1,0 +1,1108 @@
+mod common;
+
+use std::{sync::Arc, time::Duration};
+
+use axum::{
+    body::{to_bytes, Body},
+    extract::State,
+    http::{header, Method, Request, StatusCode},
+};
+use saugra_waf::{
+    config::{
+        BehaviorBackend, BehaviorConfig, BehaviorMode, BotProtectionConfig, BotProtectionLists,
+        CampaignBackend, CampaignPolicyConfig, ProxyRouteConfig, RuleExclusionConfig,
+        RuntimeAllowlistEffect, RuntimePolicyConfig, UnknownThreatMode, UnknownThreatRouteConfig,
+        UpstreamConfig, WafMode,
+    },
+    decision::WafAction,
+    event_store,
+    proxy::{proxy_request, ProxyState},
+    rate_limit::MemoryRateLimitStore,
+    runtime_policy,
+};
+
+use common::*;
+
+#[tokio::test]
+async fn forwards_clean_requests_to_upstream() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let state = test_state_with_transport(WafMode::Block, 120, fake_upstream.clone());
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/orders?status=new")
+        .header(header::HOST, "public.example")
+        .header(header::AUTHORIZATION, "Bearer secret")
+        .body(Body::from("hello"))
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(&body[..], b"upstream-ok");
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].method, Method::POST);
+    assert_eq!(recorded[0].uri, "http://127.0.0.1:1/orders?status=new");
+    assert_eq!(
+        recorded[0].headers.get(header::HOST).unwrap(),
+        "example.com"
+    );
+    assert!(recorded[0].headers.get(header::AUTHORIZATION).is_some());
+    assert_eq!(recorded[0].body, b"hello");
+}
+
+#[tokio::test]
+async fn forwards_http_requests_to_longest_matching_upstream_route() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.upstreams.push(UpstreamConfig {
+        name: "api".to_string(),
+        host: "api.example.com".to_string(),
+        target: "http://127.0.0.1:2".to_string(),
+    });
+    config.upstreams.push(UpstreamConfig {
+        name: "admin-api".to_string(),
+        host: "admin-api.example.com".to_string(),
+        target: "http://127.0.0.1:3".to_string(),
+    });
+    config.routes = vec![
+        ProxyRouteConfig {
+            path_prefix: "/api/".to_string(),
+            upstream: "api".to_string(),
+        },
+        ProxyRouteConfig {
+            path_prefix: "/api/admin/".to_string(),
+            upstream: "admin-api".to_string(),
+        },
+        ProxyRouteConfig {
+            path_prefix: "/".to_string(),
+            upstream: "app".to_string(),
+        },
+    ];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/api/admin/users?active=true")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(
+        recorded[0].uri,
+        "http://127.0.0.1:3/api/admin/users?active=true"
+    );
+    assert_eq!(
+        recorded[0].headers.get(header::HOST).unwrap(),
+        "admin-api.example.com"
+    );
+    let upstream = events[0].upstream.as_ref().unwrap();
+    assert_eq!(upstream.name, "admin-api");
+    assert_eq!(upstream.host, "admin-api.example.com");
+    assert_eq!(upstream.target, "http://127.0.0.1:3");
+}
+
+#[tokio::test]
+async fn monitor_mode_records_attack_and_still_forwards() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let state = test_state_with_path(
+        WafMode::Monitor,
+        120,
+        fake_upstream.clone(),
+        event_log_path.clone(),
+        retention,
+    );
+    let request = Request::builder()
+        .uri("/search?q=--")
+        .header("x-forwarded-for", "203.0.113.10, 10.0.0.1")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].client_ip, "203.0.113.10");
+    assert_eq!(events[0].upstream.as_ref().unwrap().name, "app");
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    assert_eq!(
+        events[0].decision.matched_rules[0].rule_id,
+        "SAUGRA-SQLI-001"
+    );
+    assert!(event_store::find_by_request_id(
+        &event_log_path,
+        retention,
+        &events[0].decision.request_id
+    )
+    .unwrap()
+    .is_some());
+}
+
+#[tokio::test]
+async fn block_mode_records_attack_and_does_not_forward() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let state = test_state_with_path(
+        WafMode::Block,
+        120,
+        fake_upstream.clone(),
+        event_log_path.clone(),
+        retention,
+    );
+    let request = Request::builder()
+        .uri("/search?q=--")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(recorded.is_empty());
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].upstream.as_ref().unwrap().name, "app");
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(
+        events[0].decision.matched_rules[0].rule_id,
+        "SAUGRA-SQLI-001"
+    );
+}
+
+#[tokio::test]
+async fn block_mode_blocks_path_traversal_in_query_string() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let state = test_state_with_path(
+        WafMode::Block,
+        120,
+        fake_upstream.clone(),
+        event_log_path.clone(),
+        retention,
+    );
+    let request = Request::builder()
+        .uri("/?file=../../../../etc/passwd")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(recorded.is_empty());
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].path, "/");
+    assert_eq!(events[0].query, "file=../../../../etc/passwd");
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(
+        events[0].decision.matched_rules[0].rule_id,
+        "SAUGRA-PATH-002"
+    );
+}
+
+#[tokio::test]
+async fn block_mode_blocks_percent_encoded_sql_injection() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let state = test_state_with_path(
+        WafMode::Block,
+        120,
+        fake_upstream.clone(),
+        event_log_path.clone(),
+        retention,
+    );
+    let request = Request::builder()
+        .uri("/?id=1'%20OR%201=1")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(recorded.is_empty());
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].path, "/");
+    assert_eq!(events[0].query, "id=1'%20OR%201=1");
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(
+        events[0].decision.matched_rules[0].rule_id,
+        "SAUGRA-SQLI-001"
+    );
+}
+
+#[tokio::test]
+async fn block_mode_returns_safe_json_response_for_attack_request() {
+    let state = test_state(WafMode::Block, 120);
+    let request = Request::builder()
+        .uri("/search?q=--")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let status = response.status();
+    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(json["message"], "Denied");
+    assert!(json["reference"].as_str().is_some());
+    assert!(json.get("action").is_none());
+    assert!(json.get("request_id").is_none());
+    assert!(json.get("risk_score").is_none());
+    assert!(json.get("owasp_category").is_none());
+    assert!(json.get("owasp_categories").is_none());
+    assert!(json.get("matched_rules").is_none());
+    assert!(json.get("explanation").is_none());
+}
+
+#[tokio::test]
+async fn block_mode_monitors_findings_below_anomaly_threshold() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.rules.inbound_anomaly_threshold = 5;
+    config.rules.files = vec![single_low_rule_file()];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/?signal=low-risk")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    assert_eq!(events[0].decision.anomaly_score, 2);
+    assert_eq!(events[0].decision.anomaly_threshold, 5);
+}
+
+#[tokio::test]
+async fn campaign_correlation_records_monitor_only_campaign_ids() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.campaign_correlation.enabled = true;
+    config.campaign_correlation.backend = CampaignBackend::Memory;
+    config.campaign_correlation.policies = vec![CampaignPolicyConfig {
+        kind: "endpoint_discovery".to_string(),
+        scope: "client".to_string(),
+        score: 50,
+        minimum_events: 2,
+        minimum_clients: 1,
+        minimum_sessions: 1,
+        minimum_routes: 2,
+        categories: vec!["scanner_behavior".to_string()],
+        path_prefixes: Vec::new(),
+        stages: Vec::new(),
+        minimum_stages: 0,
+    }];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for path in ["/.env", "/wp-admin"] {
+        let request = Request::builder()
+            .uri(path)
+            .header(header::USER_AGENT, "sqlmap")
+            .header(header::COOKIE, "session=campaign-test")
+            .body(Body::empty())
+            .unwrap();
+        let response = proxy_request(State(state.clone()), request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let campaign = events.last().unwrap().decision.campaign.as_ref().unwrap();
+    assert_eq!(campaign.action, WafAction::Monitor);
+    assert_eq!(campaign.matches[0].kind, "endpoint_discovery");
+    assert!(campaign.campaign_ids[0].starts_with("cmp-"));
+    assert_eq!(fake_upstream.requests.lock().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn block_mode_blocks_combined_findings_at_anomaly_threshold() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.rules.inbound_anomaly_threshold = 5;
+    config.rules.files = vec![two_medium_rules_file()];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/?first=medium-one&second=medium-two")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(recorded.is_empty());
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(events[0].decision.anomaly_score, 6);
+    assert_eq!(events[0].decision.matched_rules.len(), 2);
+}
+
+#[tokio::test]
+async fn guarded_unknown_threat_policy_blocks_mature_high_risk_route() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.unknown_threats.enabled = true;
+    config.unknown_threats.mode = UnknownThreatMode::Block;
+    config.unknown_threats.backend = BehaviorBackend::Memory;
+    config.unknown_threats.shadow_review_completed = true;
+    config.unknown_threats.minimum_observations = 2;
+    config.unknown_threats.minimum_block_observations = 2;
+    config.unknown_threats.minimum_baseline_age = "1s".to_string();
+    config.unknown_threats.monitor_threshold = 10;
+    config.unknown_threats.block_threshold = 20;
+    config.unknown_threats.promotion_observations = 1;
+    config.unknown_threats.routes = vec![UnknownThreatRouteConfig {
+        path: "/admin".to_string(),
+        high_risk: true,
+        ..UnknownThreatRouteConfig::default()
+    }];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for id in [42, 43] {
+        let request = Request::builder()
+            .uri(format!("/admin/{id}?page=1"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from("{}"))
+            .unwrap();
+        assert_eq!(
+            proxy_request(State(state.clone()), request)
+                .await
+                .unwrap()
+                .status(),
+            StatusCode::OK
+        );
+    }
+    tokio::time::sleep(Duration::from_secs(2)).await;
+
+    let request = Request::builder()
+        .method(Method::DELETE)
+        .uri("/admin/44?page=1")
+        .header(header::CONTENT_TYPE, "text/plain")
+        .body(Body::from("ok"))
+        .unwrap();
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let outcome = events
+        .last()
+        .unwrap()
+        .decision
+        .unknown_threats
+        .as_ref()
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(events.last().unwrap().decision.action, WafAction::Block);
+    assert!(outcome.would_block);
+    assert!(outcome.block_eligible);
+    assert_eq!(outcome.signals.len(), 2);
+    assert!(events
+        .last()
+        .unwrap()
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-UNKNOWN-THREAT-001"));
+    assert_eq!(events.last().unwrap().decision.risk_score, 80);
+    assert!(fake_upstream.requests.lock().unwrap().len() == 2);
+}
+
+#[tokio::test]
+async fn block_mode_monitors_detection_paranoia_above_blocking_paranoia() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.rules.inbound_anomaly_threshold = 5;
+    config.rules.detection_paranoia_level = Some(2);
+    config.rules.blocking_paranoia_level = Some(1);
+    config.rules.files = vec![single_high_paranoia_rule_file()];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/?signal=pl2")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    assert_eq!(events[0].decision.anomaly_score, 5);
+    assert_eq!(events[0].decision.blocking_anomaly_score, 0);
+    assert_eq!(events[0].decision.blocking_paranoia_level, 1);
+    assert_eq!(events[0].decision.matched_rules[0].paranoia_level, 2);
+}
+
+#[tokio::test]
+async fn scoped_rule_exclusion_prevents_false_positive_blocking() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.rules.exclusions = vec![RuleExclusionConfig {
+        rule_ids: vec!["SAUGRA-XSS-001".to_string()],
+        path_prefixes: vec!["/api/articles".to_string()],
+        query_params: vec!["content".to_string()],
+        methods: vec!["POST".to_string()],
+        targets: vec![saugra_waf::rules::RuleTarget::Query],
+        content_types: vec!["application/json".to_string()],
+        trusted_headers: vec![saugra_waf::config::RuleExclusionHeaderValueConfig {
+            name: "X-Deployment".to_string(),
+            values: vec!["internal".to_string()],
+        }],
+        ..RuleExclusionConfig::default()
+    }];
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .method(Method::POST)
+        .uri("/api/articles/preview?content=%3Cscript%3Ealert(1)%3C/script%3E")
+        .header("content-type", "application/json; charset=utf-8")
+        .header("x-deployment", "internal")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Allow);
+    assert!(events[0].decision.matched_rules.is_empty());
+    assert_eq!(events[0].decision.anomaly_score, 0);
+    let evidence = events[0].evidence.as_ref().unwrap();
+    assert_eq!(evidence.content_type, "application/json");
+    assert_eq!(evidence.query_parameter_names, vec!["content"]);
+    assert!(evidence.header_names.contains(&"content-type".to_string()));
+    assert!(evidence.header_names.contains(&"x-deployment".to_string()));
+    let encoded = serde_json::to_string(&events[0]).unwrap();
+    assert!(!encoded.contains("internal"));
+    assert!(!encoded.contains("charset=utf-8"));
+}
+
+#[tokio::test]
+async fn rate_limit_blocks_and_persists_event_before_forwarding() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let state = test_state_with_path(
+        WafMode::Block,
+        1,
+        fake_upstream.clone(),
+        event_log_path.clone(),
+        retention,
+    );
+    let first_request = Request::builder()
+        .uri("/")
+        .header("x-real-ip", "198.51.100.80")
+        .body(Body::empty())
+        .unwrap();
+    let second_request = Request::builder()
+        .uri("/")
+        .header("x-real-ip", "198.51.100.80")
+        .body(Body::empty())
+        .unwrap();
+
+    let _ = proxy_request(State(state.clone()), first_request)
+        .await
+        .unwrap();
+    let response = proxy_request(State(state), second_request)
+        .await
+        .unwrap_err();
+    let status = response.status();
+    let body = to_bytes(response.into_body(), 1024 * 1024).await.unwrap();
+    let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(json["message"], "Denied");
+    assert!(json["reference"].as_str().is_some());
+    assert!(json.get("action").is_none());
+    assert!(json.get("request_id").is_none());
+    assert!(json.get("retry_after_seconds").is_none());
+    assert!(json.get("risk_score").is_none());
+    assert!(json.get("matched_rules").is_none());
+    assert!(json.get("explanation").is_none());
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[1].upstream.as_ref().unwrap().name, "app");
+    assert_eq!(events[1].decision.action, WafAction::Block);
+    assert_eq!(
+        events[1].decision.matched_rules[0].rule_id,
+        "SAUGRA-RATE-001"
+    );
+}
+
+#[tokio::test]
+async fn behavior_monitor_mode_records_score_and_still_forwards() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.behavior = BehaviorConfig {
+        enabled: true,
+        backend: BehaviorBackend::Memory,
+        monitor_threshold: 10,
+        block_threshold: 80,
+        ..BehaviorConfig::default()
+    };
+    config.bot_protection.enabled = false;
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/.env")
+        .header("x-real-ip", "198.51.100.44")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    let behavior = events[0].decision.behavior.as_ref().unwrap();
+    assert_eq!(behavior.action, WafAction::Monitor);
+    assert!(behavior.score >= 10);
+    assert!(behavior
+        .contributors
+        .iter()
+        .any(|contributor| contributor.reason == "scanner_path_probe"));
+}
+
+#[tokio::test]
+async fn behavior_block_mode_blocks_after_threshold_and_persists_event_shape() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Monitor, 120);
+    config.behavior = BehaviorConfig {
+        enabled: true,
+        mode: BehaviorMode::Block,
+        backend: BehaviorBackend::Memory,
+        monitor_threshold: 10,
+        block_threshold: 20,
+        ..BehaviorConfig::default()
+    };
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for path in ["/.env", "/.git/config"] {
+        let request = Request::builder()
+            .uri(path)
+            .header("x-real-ip", "198.51.100.45")
+            .body(Body::empty())
+            .unwrap();
+        let _ = proxy_request(State(state.clone()), request).await;
+    }
+
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+    let blocked = events.last().unwrap();
+
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(blocked.decision.action, WafAction::Block);
+    assert!(blocked
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-BEHAVIOR-001"));
+    let behavior = blocked.decision.behavior.as_ref().unwrap();
+    assert_eq!(behavior.action, WafAction::Block);
+    assert_eq!(behavior.storage_backend, "memory");
+    assert!(behavior.score >= behavior.block_threshold);
+}
+
+#[tokio::test]
+async fn bot_protection_monitor_mode_records_score_and_still_forwards() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.bot_protection = BotProtectionConfig {
+        enabled: true,
+        backend: BehaviorBackend::Memory,
+        monitor_threshold: 20,
+        block_threshold: 80,
+        ..BotProtectionConfig::default()
+    };
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/.env")
+        .header("user-agent", "curl/8.0")
+        .header("x-real-ip", "198.51.100.70")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    let bot = events[0].decision.bot_protection.as_ref().unwrap();
+    assert_eq!(bot.action, WafAction::Monitor);
+    assert!(bot
+        .contributors
+        .iter()
+        .any(|contributor| contributor.reason == "automation_user_agent"));
+}
+
+#[tokio::test]
+async fn monitor_only_bot_and_behavior_findings_do_not_combine_into_block() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.behavior = BehaviorConfig {
+        enabled: true,
+        backend: BehaviorBackend::Memory,
+        monitor_threshold: 40,
+        block_threshold: 80,
+        probe_paths: vec!["/admin".to_string()],
+        ..BehaviorConfig::default()
+    };
+    config.bot_protection = BotProtectionConfig {
+        enabled: true,
+        backend: BehaviorBackend::Memory,
+        monitor_threshold: 40,
+        block_threshold: 80,
+        scanner_paths: vec!["/admin".to_string()],
+        ..BotProtectionConfig::default()
+    };
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+
+    for _ in 0..3 {
+        let request = Request::builder()
+            .method(Method::POST)
+            .uri("/admin/login/?next=/admin/meeting/")
+            .header("user-agent", "Mozilla/5.0")
+            .header("x-real-ip", "198.51.100.75")
+            .body(Body::empty())
+            .unwrap();
+        let response = proxy_request(State(state.clone()), request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let final_decision = &events.last().unwrap().decision;
+
+    assert_eq!(fake_upstream.requests.lock().unwrap().len(), 3);
+    assert_eq!(final_decision.action, WafAction::Monitor);
+    assert_eq!(final_decision.anomaly_score, 6);
+    assert_eq!(final_decision.blocking_anomaly_score, 0);
+    assert_eq!(
+        final_decision.bot_protection.as_ref().unwrap().action,
+        WafAction::Monitor
+    );
+    assert_eq!(
+        final_decision.behavior.as_ref().unwrap().action,
+        WafAction::Monitor
+    );
+    assert!(!final_decision
+        .behavior
+        .as_ref()
+        .unwrap()
+        .contributors
+        .iter()
+        .any(|contributor| contributor.reason == "rule_match:bot_protection"));
+}
+
+#[tokio::test]
+async fn bot_protection_blocklist_blocks_and_persists_event_shape() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Monitor, 120);
+    config.bot_protection = BotProtectionConfig {
+        enabled: true,
+        mode: BehaviorMode::Block,
+        backend: BehaviorBackend::Memory,
+        blocklists: BotProtectionLists {
+            ip_ranges: vec!["198.51.100.71".to_string()],
+            user_agents: Vec::new(),
+        },
+        ..BotProtectionConfig::default()
+    };
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/")
+        .header("user-agent", "Mozilla/5.0")
+        .header("x-real-ip", "198.51.100.71")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(recorded.is_empty());
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert!(events[0]
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-BOT-PROTECTION-001"));
+    let bot = events[0].decision.bot_protection.as_ref().unwrap();
+    assert_eq!(bot.action, WafAction::Block);
+    assert!(bot.blocklisted);
+}
+
+#[tokio::test]
+async fn runtime_allowlist_bypasses_bot_block_without_restart() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let runtime_policy_file = tempfile::NamedTempFile::new().unwrap();
+    let retention = test_retention();
+    runtime_policy::add_ip_entry(
+        runtime_policy_file.path(),
+        "198.51.100.71",
+        Some(3600),
+        "admin verification",
+        "test",
+    )
+    .unwrap();
+
+    let mut config = test_config(WafMode::Block, 120);
+    config.runtime_policy = RuntimePolicyConfig {
+        enabled: true,
+        path: runtime_policy_file.path().to_path_buf(),
+        ..RuntimePolicyConfig::default()
+    };
+    config.bot_protection = BotProtectionConfig {
+        enabled: true,
+        mode: BehaviorMode::Block,
+        backend: BehaviorBackend::Memory,
+        blocklists: BotProtectionLists {
+            ip_ranges: vec!["198.51.100.71".to_string()],
+            user_agents: Vec::new(),
+        },
+        ..BotProtectionConfig::default()
+    };
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/")
+        .header("user-agent", "Mozilla/5.0")
+        .header("x-real-ip", "198.51.100.71")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Allow);
+    assert!(events[0].decision.bot_protection.is_none());
+    assert_eq!(
+        events[0]
+            .decision
+            .runtime_allowlist
+            .as_ref()
+            .map(|allowlist| allowlist.value.as_str()),
+        Some("198.51.100.71/32")
+    );
+}
+
+#[tokio::test]
+async fn runtime_allowlist_reload_applies_policy_mutation_without_restart() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let runtime_policy_file = tempfile::NamedTempFile::new().unwrap();
+    let retention = test_retention();
+    let mut config = test_config(WafMode::Block, 120);
+    config.runtime_policy = RuntimePolicyConfig {
+        enabled: true,
+        path: runtime_policy_file.path().to_path_buf(),
+        reload_interval: "1s".to_string(),
+        ..RuntimePolicyConfig::default()
+    };
+    config.bot_protection = BotProtectionConfig {
+        enabled: true,
+        mode: BehaviorMode::Block,
+        backend: BehaviorBackend::Memory,
+        blocklists: BotProtectionLists {
+            ip_ranges: vec!["198.51.100.74".to_string()],
+            user_agents: Vec::new(),
+        },
+        ..BotProtectionConfig::default()
+    };
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let blocked_request = Request::builder()
+        .uri("/")
+        .header("user-agent", "Mozilla/5.0")
+        .header("x-real-ip", "198.51.100.74")
+        .body(Body::empty())
+        .unwrap();
+
+    let blocked_response = proxy_request(State(state.clone()), blocked_request)
+        .await
+        .unwrap_err();
+
+    runtime_policy::add_ip_entry(
+        runtime_policy_file.path(),
+        "198.51.100.74",
+        Some(3600),
+        "reload verification",
+        "test",
+    )
+    .unwrap();
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let allowed_request = Request::builder()
+        .uri("/")
+        .header("user-agent", "Mozilla/5.0")
+        .header("x-real-ip", "198.51.100.74")
+        .body(Body::empty())
+        .unwrap();
+
+    let allowed_response = proxy_request(State(state), allowed_request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+    let recorded = fake_upstream.requests.lock().unwrap();
+
+    assert_eq!(blocked_response.status(), StatusCode::FORBIDDEN);
+    assert_eq!(allowed_response.status(), StatusCode::OK);
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(events.len(), 2);
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert_eq!(events[1].decision.action, WafAction::Allow);
+    assert_eq!(
+        events[1]
+            .decision
+            .runtime_allowlist
+            .as_ref()
+            .map(|allowlist| allowlist.reason.as_str()),
+        Some("reload verification")
+    );
+}
+
+#[tokio::test]
+async fn runtime_monitor_all_downgrades_waf_rule_block_without_restart() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let runtime_policy_file = tempfile::NamedTempFile::new().unwrap();
+    let retention = test_retention();
+    runtime_policy::add_ip_entry(
+        runtime_policy_file.path(),
+        "198.51.100.72",
+        Some(3600),
+        "admin verification",
+        "test",
+    )
+    .unwrap();
+
+    let mut config = test_config(WafMode::Block, 120);
+    config.runtime_policy = RuntimePolicyConfig {
+        enabled: true,
+        path: runtime_policy_file.path().to_path_buf(),
+        allowlist_effect: RuntimeAllowlistEffect::MonitorAll,
+        ..RuntimePolicyConfig::default()
+    };
+    config.bot_protection.enabled = false;
+    config.behavior.enabled = false;
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/search?q=%27%20OR%201%3D1--")
+        .header("x-real-ip", "198.51.100.72")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(fake_upstream.requests.lock().unwrap().len(), 1);
+    assert_eq!(events[0].decision.action, WafAction::Monitor);
+    assert!(events[0]
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-SQLI-001"));
+}
+
+#[tokio::test]
+async fn runtime_blocklist_blocks_clean_request_without_restart() {
+    let fake_upstream = Arc::new(FakeUpstreamTransport::new());
+    let event_log_path = test_event_log_path();
+    let runtime_policy_file = tempfile::NamedTempFile::new().unwrap();
+    let retention = test_retention();
+    runtime_policy::add_block_ip_entry(
+        runtime_policy_file.path(),
+        "198.51.100.73",
+        Some(3600),
+        "emergency deny",
+        "test",
+    )
+    .unwrap();
+
+    let mut config = test_config(WafMode::Monitor, 120);
+    config.runtime_policy = RuntimePolicyConfig {
+        enabled: true,
+        path: runtime_policy_file.path().to_path_buf(),
+        ..RuntimePolicyConfig::default()
+    };
+    config.bot_protection.enabled = false;
+    config.behavior.enabled = false;
+    let state = ProxyState::with_transport(
+        config,
+        fake_upstream.clone(),
+        Arc::new(MemoryRateLimitStore::new()),
+        event_log_path.clone(),
+        retention,
+    )
+    .unwrap();
+    let request = Request::builder()
+        .uri("/")
+        .header("x-real-ip", "198.51.100.73")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = proxy_request(State(state), request).await.unwrap_err();
+    let events = event_store::tail(&event_log_path, retention, 10).unwrap();
+
+    assert_eq!(response.status(), StatusCode::FORBIDDEN);
+    assert!(fake_upstream.requests.lock().unwrap().is_empty());
+    assert_eq!(events[0].decision.action, WafAction::Block);
+    assert!(events[0]
+        .decision
+        .matched_rules
+        .iter()
+        .any(|rule_match| rule_match.rule_id == "SAUGRA-RUNTIME-BLOCKLIST-001"));
+}
