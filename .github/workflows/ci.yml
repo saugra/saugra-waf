@@ -74,7 +74,7 @@ jobs:
         run: cargo fetch --locked
 
       - name: Install cargo-audit
-        run: cargo install cargo-audit --locked
+        uses: taiki-e/install-action@cargo-audit
 
       - name: Audit Rust dependencies
         run: cargo audit --deny warnings
