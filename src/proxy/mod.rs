@@ -35,6 +35,7 @@ use crate::{
 
 pub mod handlers;
 pub mod metrics;
+pub mod net;
 #[cfg(test)]
 mod tests;
 pub mod utils;
@@ -42,6 +43,7 @@ pub mod validation;
 
 pub use handlers::{proxy_request, proxy_request_with_connect_info, track_decision};
 pub use metrics::metrics_handler;
+pub use net::*;
 
 #[async_trait]
 pub trait UpstreamTransport: Send + Sync {

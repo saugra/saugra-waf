@@ -1,4 +1,4 @@
-use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::net::SocketAddr;
 
 use axum::{
     body::Body,
@@ -107,46 +107,7 @@ pub fn forwarded_headers_are_trusted(
     config
         .trusted_proxies
         .iter()
-        .any(|entry| ip_matches_proxy_entry(peer_addr.ip(), entry))
-}
-
-fn ip_matches_proxy_entry(ip: IpAddr, entry: &str) -> bool {
-    let entry = entry.trim();
-    if entry.eq_ignore_ascii_case("any") {
-        return true;
-    }
-
-    if let Ok(entry_ip) = entry.parse::<IpAddr>() {
-        return entry_ip == ip;
-    }
-
-    let IpAddr::V4(ip) = ip else {
-        return false;
-    };
-
-    ipv4_cidr_contains(entry, ip)
-}
-
-fn ipv4_cidr_contains(cidr: &str, ip: Ipv4Addr) -> bool {
-    let Some((network, prefix)) = cidr.split_once('/') else {
-        return false;
-    };
-    let Ok(prefix) = prefix.parse::<u32>() else {
-        return false;
-    };
-    if prefix > 32 {
-        return false;
-    }
-    let Ok(network) = network.parse::<Ipv4Addr>() else {
-        return false;
-    };
-
-    let mask = if prefix == 0 {
-        0
-    } else {
-        u32::MAX << (32 - prefix)
-    };
-    (u32::from(network) & mask) == (u32::from(ip) & mask)
+        .any(|entry| super::net::ip_matches_proxy_entry(peer_addr.ip(), entry))
 }
 
 pub struct SelectedRateLimit {

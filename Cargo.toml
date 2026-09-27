@@ -49,14 +49,17 @@ maintainer-scripts = "packaging/debian"
 
 [package.metadata.testing]
 test_files = [
-  "tests/test_proxy_e2e.rs",
+  "tests/test_proxy_e2e_http.rs",
+  "tests/test_proxy_e2e_policy.rs",
+  "tests/test_proxy_e2e_behavior.rs",
+  "tests/test_proxy_e2e_websocket.rs",
   "tests/test_cli.rs",
   "tests/test_console_integration.rs",
   "tests/test_console_live_http.rs",
   "tests/test_rate_limit_redis.rs",
   "tests/test_coverage_summary.py"
 ]
-module_test_map = { "src/rules" = "tests/test_proxy_e2e.rs", "src/unknown_threats" = "tests/test_proxy_e2e.rs", "src/ai" = "tests/test_cli.rs", "src/proxy" = "tests/test_proxy_e2e.rs", "src/cli" = "tests/test_cli.rs", "src/console" = "tests/test_console_integration.rs", "src/rate_limit" = "tests/test_rate_limit_redis.rs" }
+module_test_map = { "src/rules" = "tests/test_proxy_e2e_http.rs", "src/unknown_threats" = "tests/test_proxy_e2e_policy.rs", "src/ai" = "tests/test_cli.rs", "src/proxy" = "tests/test_proxy_e2e_http.rs", "src/cli" = "tests/test_cli.rs", "src/console" = "tests/test_console_integration.rs", "src/rate_limit" = "tests/test_rate_limit_redis.rs" }
 
 [workspace.metadata.testing]
 coverage_doc = "docs/COVERAGE.md"
