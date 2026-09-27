@@ -2,7 +2,7 @@ use std::fs;
 
 use crate::config::{
     errors::ConfigError, helpers::is_local_http_url, AiConfig, BehaviorMode, RuntimePolicyConfig,
-    SecuritySummaryConfig, SaugraConfig,
+    SaugraConfig, SecuritySummaryConfig,
 };
 
 #[test]
@@ -497,4 +497,3 @@ invalid_unknown_key: 123
     let res: Result<RuntimePolicyConfig, _> = serde_yaml::from_str(yaml);
     assert!(res.is_err());
 }
-

@@ -61,7 +61,10 @@ impl ErrorTracker {
         let response = self.client.post(dsn).json(&payload).send().await?;
 
         if !response.status().is_success() {
-            anyhow::bail!("error tracking DSN sink returned HTTP {}", response.status());
+            anyhow::bail!(
+                "error tracking DSN sink returned HTTP {}",
+                response.status()
+            );
         }
 
         info!(sink_dsn = %dsn, %message, "forwarded error event to DSN sink");
@@ -102,7 +105,10 @@ mod tests {
         std::env::remove_var(ERROR_TRACKING_DSN_ENV);
         let tracker = ErrorTracker::from_env();
         assert!(!tracker.is_enabled());
-        let dispatched = tracker.dispatch_event("test message", "error").await.unwrap();
+        let dispatched = tracker
+            .dispatch_event("test message", "error")
+            .await
+            .unwrap();
         assert!(!dispatched);
     }
 

@@ -47,10 +47,14 @@ impl RuntimePolicyConfig {
             anyhow::bail!("runtime_policy.path must not be blank when runtime policy is enabled");
         }
         if parse_duration_seconds(&self.reload_interval).is_none() {
-            anyhow::bail!("runtime_policy.reload_interval must be a positive duration, for example 5s");
+            anyhow::bail!(
+                "runtime_policy.reload_interval must be a positive duration, for example 5s"
+            );
         }
         if parse_duration_seconds(&self.default_duration).is_none() {
-            anyhow::bail!("runtime_policy.default_duration must be a positive duration, for example 2h");
+            anyhow::bail!(
+                "runtime_policy.default_duration must be a positive duration, for example 2h"
+            );
         }
         Ok(())
     }
@@ -143,7 +147,9 @@ impl SecuritySummaryConfig {
                             .as_deref()
                             .is_some_and(|from| from.trim().is_empty())
                     {
-                        anyhow::bail!("security_summary email channels must include at least one recipient");
+                        anyhow::bail!(
+                            "security_summary email channels must include at least one recipient"
+                        );
                     }
                 }
                 _ => anyhow::bail!("security_summary.channels entries must use type file or email"),
