@@ -80,23 +80,7 @@ Choose Saugra if you want:
 - Nginx and Apache compatibility
 - A rule-based + AI-assisted self-hosted WAF
 
-## Current Status
-
-This repository now has a production-oriented foundation:
-
-- Rust CLI scaffold
-- YAML config loading and validation
-- Built-in rule metadata and basic regex inspection
-- Monitor/block/off mode model
-- Structured logging setup
-- Proxies all normal application traffic and exposes `/_saugra-waf/health` and `/_saugra-waf/metrics` for health checks and Prometheus monitoring
-- Route-based multi-upstream HTTP and WebSocket forwarding
-- WebSocket handshake inspection and upgrade tunneling
-- Redis-backed production rate limiting option
-- Rotated local JSONL security event storage
-- Example config at `configs/saugra-waf.example.yml`
-
-See `ROADMAP.md` for the public development roadmap.
+## Documentation
 
 Documentation is organized by audience:
 
