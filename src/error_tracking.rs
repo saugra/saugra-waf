@@ -97,13 +97,19 @@ pub fn capture_error(err: &anyhow::Error) {
 }
 
 #[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
     #[tokio::test]
     async fn unconfigured_tracker_returns_false() {
-        std::env::remove_var(ERROR_TRACKING_DSN_ENV);
-        let tracker = ErrorTracker::from_env();
+        let tracker = {
+            let _guard = ENV_LOCK.lock().unwrap();
+            std::env::remove_var(ERROR_TRACKING_DSN_ENV);
+            ErrorTracker::from_env()
+        };
         assert!(!tracker.is_enabled());
         let dispatched = tracker
             .dispatch_event("test message", "error")
@@ -114,6 +120,7 @@ mod tests {
 
     #[test]
     fn capture_error_helper_runs_without_panic() {
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::remove_var(ERROR_TRACKING_DSN_ENV);
         let err = anyhow::anyhow!("test error event");
         capture_error(&err);

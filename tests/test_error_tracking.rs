@@ -17,6 +17,8 @@ async fn handle_mock_event(
     "OK"
 }
 
+static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[tokio::test]
 async fn test_error_tracking_posts_event_to_mock_dsn_sink() {
     let state = MockSinkState::default();
@@ -31,9 +33,11 @@ async fn test_error_tracking_posts_event_to_mock_dsn_sink() {
     });
 
     let mock_dsn = format!("http://{addr}/api/error-events");
-    std::env::set_var(ERROR_TRACKING_DSN_ENV, &mock_dsn);
-
-    let tracker = ErrorTracker::from_env();
+    let tracker = {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var(ERROR_TRACKING_DSN_ENV, &mock_dsn);
+        ErrorTracker::from_env()
+    };
     assert!(tracker.is_enabled());
 
     let dispatched = tracker
@@ -48,14 +52,20 @@ async fn test_error_tracking_posts_event_to_mock_dsn_sink() {
     assert_eq!(events[0].level, "error");
     assert_eq!(events[0].service, "saugra-waf");
 
-    std::env::remove_var(ERROR_TRACKING_DSN_ENV);
+    {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var(ERROR_TRACKING_DSN_ENV);
+    }
     server_handle.abort();
 }
 
 #[tokio::test]
 async fn test_error_tracking_disabled_when_dsn_unconfigured() {
-    std::env::remove_var(ERROR_TRACKING_DSN_ENV);
-    let tracker = ErrorTracker::from_env();
+    let tracker = {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::remove_var(ERROR_TRACKING_DSN_ENV);
+        ErrorTracker::from_env()
+    };
     assert!(!tracker.is_enabled());
 
     let dispatched = tracker

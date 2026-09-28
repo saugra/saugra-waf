@@ -90,6 +90,7 @@ mod tests {
 
     #[test]
     fn error_tracking_sink_is_noop_when_dsn_absent() {
+        let _guard = crate::error_tracking::ENV_LOCK.lock().unwrap();
         std::env::remove_var(ERROR_TRACKING_DSN_ENV);
         let sink = ErrorTrackingSink::from_env();
         assert!(!sink.enabled);
@@ -99,6 +100,7 @@ mod tests {
 
     #[test]
     fn error_tracking_sink_captures_dsn_from_env() {
+        let _guard = crate::error_tracking::ENV_LOCK.lock().unwrap();
         std::env::set_var(ERROR_TRACKING_DSN_ENV, "https://key@sentry.example.com/1");
         let sink = ErrorTrackingSink::from_env();
         assert!(sink.enabled);
@@ -137,6 +139,7 @@ mod tests {
 
     #[test]
     fn init_configures_logging_and_sink() {
+        let _guard = crate::error_tracking::ENV_LOCK.lock().unwrap();
         std::env::set_var(ERROR_TRACKING_DSN_ENV, "https://key@sentry.example.com/1");
         let json_config = LoggingConfig {
             level: "info".to_string(),
