@@ -4,7 +4,24 @@ All notable changes to Saugra are documented here.
 
 ## Unreleased
 
-## 1.1.9 - 2026-09-23
+## 1.1.10 - 2026-09-28
+
+### Added
+
+- Added complete production integration examples under `examples/`: `django-gunicorn-nginx`, `laravel-apache`, and `express-nginx`.
+- Added standard web server example configs `configs/nginx.example.conf` and `configs/apache.example.conf`.
+
+### Fixed & Improved
+
+- Handled AI explanation audit log write errors gracefully in `explain_event`, logging a warning instead of failing the command when operating in unwritable audit log paths.
+
+### Verified
+
+- `cargo fmt --check`
+- `cargo clippy --all-targets --all-features -- -D warnings`
+- `cargo test --all-targets --all-features` passed with 315 tests.
+- Verified live HTTP reverse proxy blocking for SQLi, XSS, Path Traversal, and Command Injection attacks.
+
 
 ### Refactoring & Architecture
 

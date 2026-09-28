@@ -71,7 +71,7 @@ pub async fn explain_event(
         latency_ms,
         fallback_used,
     };
-    append_audit(
+    if let Err(err) = append_audit(
         config,
         &ExplanationAuditRecord {
             timestamp_unix_seconds: unix_seconds_now(),
@@ -90,7 +90,9 @@ pub async fn explain_event(
             retention_policy: config.retention_policy.clone(),
             failure,
         },
-    )?;
+    ) {
+        tracing::warn!(error = %err, "failed to append AI explanation audit log");
+    }
     Ok(result)
 }
 

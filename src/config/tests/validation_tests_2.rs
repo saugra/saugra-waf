@@ -449,16 +449,20 @@ fn accepts_custom_loopback_ollama_port() {
 
 #[test]
 fn security_summary_config_validate_rejects_invalid_schedule() {
-    let mut config = SecuritySummaryConfig::default();
-    config.schedule = "weekly".to_string();
+    let config = SecuritySummaryConfig {
+        schedule: "weekly".to_string(),
+        ..Default::default()
+    };
     let err = config.validate().unwrap_err();
     assert_eq!(err.to_string(), "security_summary.schedule must be daily");
 }
 
 #[test]
 fn security_summary_config_validate_rejects_negative_duration() {
-    let mut config = SecuritySummaryConfig::default();
-    config.lookback = "-24h".to_string();
+    let config = SecuritySummaryConfig {
+        lookback: "-24h".to_string(),
+        ..Default::default()
+    };
     let err = config.validate().unwrap_err();
     assert_eq!(
         err.to_string(),
@@ -468,8 +472,10 @@ fn security_summary_config_validate_rejects_negative_duration() {
 
 #[test]
 fn runtime_policy_config_validate_rejects_invalid_duration() {
-    let mut config = RuntimePolicyConfig::default();
-    config.reload_interval = "-5s".to_string();
+    let config = RuntimePolicyConfig {
+        reload_interval: "-5s".to_string(),
+        ..Default::default()
+    };
     let err = config.validate().unwrap_err();
     assert_eq!(
         err.to_string(),

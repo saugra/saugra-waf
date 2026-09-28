@@ -1,0 +1,32 @@
+server:
+  listen: 127.0.0.1:8787
+  mode: monitor
+
+upstreams:
+  - name: express-app
+    host: localhost
+    target: http://127.0.0.1:3000
+
+routes:
+  - path_prefix: /
+    upstream: express-app
+
+security:
+  max_body_size: 5mb
+  enable_rate_limiting: true
+  block_suspicious_user_agents: true
+  inspect_json_body: true
+
+rate_limit:
+  backend: memory
+  requests_per_minute: 120
+  burst: 30
+
+rules:
+  owasp_crs: true
+  paranoia_level: 1
+
+logging:
+  format: json
+  level: info
+  event_log_path: /var/log/saugra-waf/saugra-waf-events.jsonl
