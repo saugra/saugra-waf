@@ -70,7 +70,7 @@ min_coverage_pct = 70.0
 anyhow = "1.0"
 async-trait = "0.1"
 axum = "0.8"
-base64 = "0.22"
+base64 = "0.23"
 chrono = "0.4"
 clap = { version = "4.5", features = ["derive", "env"] }
 hyper = "1.4"
